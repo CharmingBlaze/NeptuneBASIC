@@ -473,6 +473,49 @@ fn entity_scale(h: &mut Host3D, a: &[Value], axis: usize) -> Result<Value, Strin
     float(s[axis])
 }
 
+/// `CameraClsMode`: a camera that does not clear its colour is drawn over
+/// the others. Fyrox copies each camera's picture to the screen opaquely,
+/// so such a camera renders into a texture whose background is transparent
+/// (the scene's clear alpha is 0) and the texture is laid over the 3D view
+/// as the first 2D layer of the frame.
+fn set_cls_mode(h: &mut Host3D, cam: i32, clear_color: bool) -> Result<(), String> {
+    use fyrox::resource::texture::{TextureResource, TextureResourceExtension};
+    let rt = (!clear_color).then(|| TextureResource::new_render_target(h.world.width.max(1), h.world.height.max(1)));
+    camera_mut(h, cam)?.set_render_target(rt.clone());
+    h.ent_mut(cam)?.overlay = rt;
+    update_clear_alpha(h)
+}
+
+/// The scene background is transparent while any overlay camera exists, so
+/// overlay pictures only cover what they draw (the window itself is opaque).
+fn update_clear_alpha(h: &mut Host3D) -> Result<(), String> {
+    let any = h.entities().any(|(_, e)| e.overlay.is_some());
+    let opts = h.scene()?.rendering_options.get_value_mut_silent();
+    let c = opts.clear_color.unwrap_or(Color::BLACK);
+    opts.clear_color = Some(Color::from_rgba(c.r, c.g, c.b, if any { 0 } else { 255 }));
+    Ok(())
+}
+
+/// Lays the pictures of overlay cameras over the 3D view (start of each 2D frame).
+fn draw_overlays(h: &mut Host3D) -> Result<(), String> {
+    let cams: Vec<(i32, fyrox::resource::texture::TextureResource)> =
+        h.entities().filter_map(|(i, e)| e.overlay.clone().map(|t| (i, t))).collect();
+    let (w, ht) = (h.world.width as f32, h.world.height as f32);
+    for (cam, tex) in cams {
+        let vp = camera_mut(h, cam)?.viewport();
+        // render targets are stored bottom-up: flip V
+        h.world.canvas.items.push(crate::draw2d::DrawOp::Image {
+            x: vp.x() * w,
+            y: vp.y() * ht,
+            w: vp.w() * w,
+            h: vp.h() * ht,
+            uv: Rect::new(0.0, 1.0, 1.0, -1.0),
+            texture: tex,
+        });
+    }
+    Ok(())
+}
+
 fn tile_image(h: &mut Host3D, a: &[Value], masked: bool) -> Result<Value, String> {
     h.scene()?;
     let img = h.image(a[0].int())?;
@@ -1152,6 +1195,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         // the 3D render covers whatever 2D was drawn before it
         h.world.canvas.items.clear();
         h.world.cursor = (0.0, 0.0);
+        draw_overlays(h)?;
         // keep camera aspect in sync with the window
         let cams: Vec<i32> = h.entities().filter(|(_, e)| matches!(e.kind, Kind::Camera { .. })).map(|(i, _)| i).collect();
         for c in cams {
@@ -1589,8 +1633,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("CameraClsMode%camera%cls_color%cls_zbuffer", |h, a, _| {
-        // Fyrox always clears each camera's view; keep the setting for programs that query it
-        camera_mut(h, a[0].int())?;
+        set_cls_mode(h, a[0].int(), a[1].int() != 0)?;
         VOID
     }),
     ("%MeshesIntersect%mesh_a%mesh_b", |h, a, _| {
@@ -1982,6 +2025,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         camera_mut(h, a[0].int())?;
         let c = color(a, 1);
         h.scene()?.rendering_options.get_value_mut_silent().clear_color = Some(srgb_to_linear(c));
+        update_clear_alpha(h)?;
         VOID
     }),
     ("CameraRange%camera#near#far", |h, a, _| {

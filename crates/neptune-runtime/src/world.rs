@@ -85,6 +85,9 @@ pub struct Entity {
     pub fade_base: u8,
     /// `EntityTexture` frame per layer (animated textures).
     pub tex_frames: [i32; crate::classic::MAX_LAYERS],
+    /// `CameraClsMode camera, 0`: the camera draws into this texture with a
+    /// transparent background, shown over the cameras that clear.
+    pub overlay: Option<fyrox::resource::texture::TextureResource>,
     /// Set for mirrors (`CreateMirror`).
     pub mirror: Option<crate::mirror::MirrorState>,
     /// Set for sprites (`CreateSprite`) and terrains (`CreateTerrain`).
@@ -462,6 +465,7 @@ impl<'a> Host3D<'a> {
             model_res: None,
             loader: None,
             phys: None,
+            overlay: None,
             mirror: None,
             sprite: None,
             terrain: None,
