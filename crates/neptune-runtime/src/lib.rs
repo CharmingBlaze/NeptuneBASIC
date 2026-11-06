@@ -24,6 +24,8 @@ pub mod physics;
 pub mod pick;
 pub mod quality;
 pub mod sound;
+pub mod sprite;
+pub mod terrain;
 pub mod texture;
 pub mod transform;
 pub mod world;

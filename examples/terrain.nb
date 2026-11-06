@@ -1,0 +1,61 @@
+; Terrain and sprites: procedural hills, TerrainY, upright sprites, fog.
+; Run from the repository root: neptune run examples/terrain.nb
+; Arrow keys move the ball; it follows the ground with TerrainY.
+
+Graphics3D 1280, 720
+SetWindowTitle "Terrain"
+
+camera = CreateCamera()
+CameraClsColor camera, 150, 190, 230
+CameraFogMode camera, 1
+CameraFogColor camera, 150, 190, 230
+CameraFogRange camera, 20, 90
+
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.6, -1, 0.3
+AmbientLight 80, 80, 90
+
+size = 64
+land = CreateTerrain(size)
+ScaleEntity land, 2, 30, 2
+PositionEntity land, -size, 0, -size
+For x = 0 To size
+    For z = 0 To size
+        h# = 0.4 + 0.3 * Sin(x * 12) * Cos(z * 10) + 0.1 * Sin((x + z) * 25)
+        ModifyTerrain land, x, z, h
+    Next
+Next
+grass = LoadTexture("examples/media/checker.png")
+ScaleTexture grass, 4, 4
+EntityTexture land, grass
+EntityColor land, 120, 200, 110
+
+; upright sprites scattered over the hills
+For i = 1 To 60
+    tree = LoadSprite("examples/media/tree.png", 1 + 4)
+    SpriteViewMode tree, 3
+    ScaleSprite tree, 1, 2
+    tx# = Rnd(-50, 50)
+    tz# = Rnd(-50, 50)
+    PositionEntity tree, tx, TerrainY(land, tx, 0, tz) + 1.8, tz
+Next
+
+ball = CreateSphere(16)
+EntityColor ball, 230, 80, 60
+bx# = 0
+bz# = 0
+
+While Not KeyDown(KEY_ESCAPE)
+    If KeyDown(KEY_LEFT) Then bx = bx - 0.2
+    If KeyDown(KEY_RIGHT) Then bx = bx + 0.2
+    If KeyDown(KEY_UP) Then bz = bz + 0.2
+    If KeyDown(KEY_DOWN) Then bz = bz - 0.2
+    gy# = TerrainY(land, bx, 0, bz)
+    PositionEntity ball, bx, gy + 1, bz
+    PositionEntity camera, bx, gy + 8, bz - 16
+    PointEntity camera, ball
+    RenderWorld
+    Text 10, 10, $"ground height under the ball: {gy}"
+    Flip
+Wend
+End

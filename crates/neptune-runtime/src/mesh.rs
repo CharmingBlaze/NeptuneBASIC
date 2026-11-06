@@ -318,6 +318,7 @@ impl Host3D<'_> {
         if self.scene_opt().is_none() {
             return Ok(());
         }
+        self.rebuild_terrains()?;
         let dirty: Vec<usize> =
             self.world.surfaces.iter().enumerate().filter(|(_, s)| s.as_ref().is_some_and(|s| s.dirty)).map(|(i, _)| i).collect();
         for i in dirty {

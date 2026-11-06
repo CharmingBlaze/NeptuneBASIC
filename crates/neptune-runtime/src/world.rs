@@ -80,6 +80,9 @@ pub struct Entity {
     /// A node inside a loaded model registered by `FindChild`/`GetChild`;
     /// its transform is read back from the node because animation moves it.
     pub adopted: bool,
+    /// Set for sprites (`CreateSprite`) and terrains (`CreateTerrain`).
+    pub sprite: Option<crate::sprite::SpriteState>,
+    pub terrain: Option<crate::terrain::TerrainState>,
     /// Rigid body nodes when `EntityPhysics` was used.
     pub phys: Option<crate::physics::PhysState>,
     /// The model a `LoadMesh` entity was made from (for `CopyEntity`).
@@ -387,6 +390,8 @@ impl<'a> Host3D<'a> {
             adopted: false,
             model_res: None,
             phys: None,
+            sprite: None,
+            terrain: None,
             own_materials: true,
             col_type: 0,
             radius: (1.0, 1.0),

@@ -605,6 +605,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("RenderWorld#tween=1", |h, _, ctx| {
         h.scene()?;
         h.flush_meshes()?;
+        h.face_sprites()?;
         // A program that renders repeatedly without Flip still needs frames shown.
         if h.world.renders > h.world.renders_at_flip {
             h.world.canvas.flip();
@@ -888,6 +889,83 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let brush = crate::mesh::Brush { color: e.color, shininess: e.shininess, textures: e.textures, blend: e.blend, fx: e.fx };
         h.world.brushes.push(Some(brush));
         int(h.world.brushes.len() as i32)
+    }),
+    // ---- sprites
+    ("%CreateSprite%parent=0", |h, a, _| int(h.create_sprite(a[0].int())?)),
+    ("%LoadSprite$file%texture_flags=1%parent=0", |h, a, _| {
+        h.scene()?;
+        match crate::texture::load(&a[0].str(), a[1].int()) {
+            Ok(t) => {
+                h.world.textures.push(Some(t));
+                let tex = h.world.textures.len() as i32;
+                let s = h.create_sprite(a[2].int())?;
+                h.ent_mut(s)?.textures[0] = tex;
+                h.refresh_material(s)?;
+                int(s)
+            }
+            Err(e) => {
+                eprintln!("LoadSprite: {e}");
+                int(0)
+            }
+        }
+    }),
+    ("SpriteViewMode%sprite%view_mode", |h, a, _| {
+        let m = a[1].int();
+        if !(1..=4).contains(&m) {
+            return Err(format!("SpriteViewMode mode must be 1-4, got {m}"));
+        }
+        h.sprite_mut(a[0].int())?.mode = m;
+        if m == 2 {
+            // free sprites use the entity rotation again
+            h.sync(a[0].int())?;
+        }
+        VOID
+    }),
+    ("RotateSprite%sprite#angle", |h, a, _| {
+        h.sprite_mut(a[0].int())?.angle = a[1].float();
+        VOID
+    }),
+    ("ScaleSprite%sprite#x_scale#y_scale", |h, a, _| {
+        let e = a[0].int();
+        h.sprite_mut(e)?.scale = (a[1].float(), a[2].float());
+        h.update_sprite(e)?;
+        VOID
+    }),
+    ("HandleSprite%sprite#x_handle#y_handle", |h, a, _| {
+        let e = a[0].int();
+        h.sprite_mut(e)?.handle = (a[1].float(), a[2].float());
+        h.update_sprite(e)?;
+        VOID
+    }),
+    // ---- terrains
+    ("%CreateTerrain%grid_size%parent=0", |h, a, _| int(h.create_terrain(a[0].int(), a[1].int())?)),
+    ("%LoadTerrain$file%parent=0", |h, a, _| {
+        h.scene()?;
+        int(h.load_terrain(&a[0].str(), a[1].int())?)
+    }),
+    ("%TerrainSize%terrain", |h, a, _| int(h.terrain(a[0].int())?.size as i32)),
+    ("#TerrainHeight%terrain%grid_x%grid_z", |h, a, _| float(h.terrain(a[0].int())?.height(a[1].int(), a[2].int()))),
+    ("ModifyTerrain%terrain%grid_x%grid_z#height%realtime=0", |h, a, _| {
+        h.terrain_mut(a[0].int())?.set_height(a[1].int(), a[2].int(), a[3].float())?;
+        VOID
+    }),
+    ("#TerrainY%terrain#x#y#z", |h, a, _| float(h.terrain_y(a[0].int(), v3(a, 1))?)),
+    ("#TerrainX%terrain#x#y#z", |h, a, _| {
+        h.terrain(a[0].int())?;
+        float(a[1].float())
+    }),
+    ("#TerrainZ%terrain#x#y#z", |h, a, _| {
+        h.terrain(a[0].int())?;
+        float(a[3].float())
+    }),
+    // level of detail and shading are handled by the GPU; accepted for compatibility
+    ("TerrainDetail%terrain%detail_level%vertex_morph=0", |h, a, _| {
+        h.terrain(a[0].int())?;
+        VOID
+    }),
+    ("TerrainShading%terrain%enable", |h, a, _| {
+        h.terrain(a[0].int())?;
+        VOID
     }),
     // ---- entity creation
     ("%CreatePivot%parent=0", |h, a, _| {
