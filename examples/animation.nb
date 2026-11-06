@@ -1,6 +1,7 @@
 ; Animated models: sequences, Animate modes, FindChild.
 ; Run from the repository root: neptune run examples/animation.nb
-; Keys 1-3 switch the fox animation, P toggles ping-pong, Space pauses.
+; Keys 1-3 switch the fox animation (blending over 20 frames), P toggles
+; ping-pong, Space pauses. The fox starts walking after two seconds.
 
 Graphics3D 1280, 720
 SetWindowTitle "Animation"
@@ -31,10 +32,13 @@ Animate man, 1, 1
 
 head = FindChild(fox, "b_Head_05")
 mode = 1
+frame = 0
 
 While Not KeyDown(KEY_ESCAPE)
+    frame = frame + 1
+    If frame = 120 Then Animate fox, 1, 1, 1, 30
     For k = 1 To 3
-        If KeyHit(KEY_1 + k - 1) And k <= CountAnimSeqs(fox) Then Animate fox, mode, 1, k - 1
+        If KeyHit(KEY_1 + k - 1) And k <= CountAnimSeqs(fox) Then Animate fox, mode, 1, k - 1, 20
     Next
     If KeyHit(KEY_P) Then
         mode = IIf(mode = 1, 2, 1)

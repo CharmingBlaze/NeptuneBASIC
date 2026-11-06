@@ -7,16 +7,22 @@
 //! plays in real time when `UpdateWorld` runs at 60 Hz; like Blitz, the
 //! animation only advances in `UpdateWorld`.
 //!
-//! Fyrox's animation player runs with speed 0: NeptuneBASIC sets the time
-//! position itself and Fyrox only computes and applies the pose.
+//! Fyrox's animation player runs with speed 0 and without applying poses by
+//! itself: NeptuneBASIC sets the time position, asks Fyrox for the pose and
+//! applies it. That is what makes `Animate`'s `transition` work: for that
+//! many frames the new sequence's pose is blended from the last pose shown.
 
 use fyrox::{
     core::{
         algebra::{Matrix3, Vector3},
         pool::Handle,
     },
-    generic_animation::Animation,
-    scene::{animation::AnimationPlayer, graph::Graph, node::Node},
+    generic_animation::{Animation, AnimationPose},
+    scene::{
+        animation::{AnimationPlayer, AnimationPoseExt},
+        graph::Graph,
+        node::Node,
+    },
 };
 
 use crate::transform::Xform;
@@ -41,8 +47,40 @@ pub struct AnimState {
     pub time: f32,
     /// Ping-pong direction.
     pub dir: f32,
-    /// Blend from the previous pose (`transition` frames), remaining frames.
+    /// Transition frames still to blend, out of `blend_total`.
     pub transition: f32,
+    pub blend_total: f32,
+    /// Pose shown when the transition started.
+    pub from_pose: Option<AnimationPose<Handle<Node>>>,
+    /// Pose shown last (the start of the next transition).
+    pub last_pose: Option<AnimationPose<Handle<Node>>>,
+}
+
+impl AnimState {
+    pub fn new(player: Handle<Node>, seqs: Vec<AnimHandle>) -> Self {
+        AnimState {
+            player,
+            seqs,
+            mode: 0,
+            speed: 1.0,
+            seq: 0,
+            time: 0.0,
+            dir: 1.0,
+            transition: 0.0,
+            blend_total: 0.0,
+            from_pose: None,
+            last_pose: None,
+        }
+    }
+
+    /// Weight of the old pose during a transition (1 at the start, 0 at the end).
+    pub fn blend_weight(&self) -> f32 {
+        if self.from_pose.is_some() && self.blend_total > 0.0 {
+            (self.transition / self.blend_total).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
 }
 
 /// Finds the first animation player in a subtree.
@@ -60,6 +98,7 @@ pub fn find_player(graph: &Graph, root: Handle<Node>) -> Option<Handle<Node>> {
 /// Prepares a player for manual control and lists its animations.
 pub fn take_control(graph: &mut Graph, player: Handle<Node>) -> Vec<AnimHandle> {
     let Some(p) = graph[player].cast_mut::<AnimationPlayer>() else { return Vec::new() };
+    p.set_auto_apply(false);
     let anims = p.animations_mut().get_value_mut_silent();
     let handles: Vec<AnimHandle> = anims.pair_iter().map(|(h, _)| h).collect();
     for a in anims.iter_mut() {
@@ -94,24 +133,33 @@ impl Host3D<'_> {
 
     /// Length of a sequence in frames.
     pub fn seq_length(&mut self, e: i32, seq: usize) -> Result<f32, String> {
-        let st = self.anim_mut(e)?.clone();
-        let a = *st.seqs.get(seq).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
-        self.with_animation(st.player, a, |anim| anim.length() * FPS)
+        let st = self.anim_mut(e)?;
+        let (player, a) = (st.player, *st.seqs.get(seq).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?);
+        self.with_animation(player, a, |anim| anim.length() * FPS)
     }
 
-    /// Shows sequence `seq` at `time` frames.
+    /// Shows sequence `seq` at `time` frames, blended with the transition's
+    /// starting pose while a transition is running.
     fn pose(&mut self, e: i32, seq: usize, time: f32) -> Result<(), String> {
-        let st = self.anim_mut(e)?.clone();
-        for (i, &a) in st.seqs.iter().enumerate() {
-            let on = i == seq;
-            self.with_animation(st.player, a, |anim| {
-                anim.set_enabled(on);
-                if on {
-                    let start = anim.time_slice().start;
-                    anim.set_time_position(start + time / FPS);
-                }
-            })?;
+        let (player, a, weight, from) = {
+            let st = self.anim_mut(e)?;
+            let a = *st.seqs.get(seq).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
+            let w = st.blend_weight();
+            (st.player, a, w, if w > 0.0 { st.from_pose.clone() } else { None })
+        };
+        let mut pose = self.with_animation(player, a, |anim| {
+            let start = anim.time_slice().start;
+            anim.set_time_position(start + time / FPS);
+            // speed is 0, so this only computes the pose for the current time
+            anim.tick(0.0);
+            anim.pose().clone()
+        })?;
+        if let Some(from) = from {
+            // lerp each bone from the new pose towards the old one by `weight`
+            pose.blend_with(&from, weight);
         }
+        pose.apply(self.graph()?);
+        self.anim_mut(e)?.last_pose = Some(pose);
         Ok(())
     }
 
@@ -123,8 +171,15 @@ impl Host3D<'_> {
         let restart = st.seq != seq || st.mode == 0;
         st.mode = mode.clamp(0, 3);
         st.speed = speed;
+        if restart && transition > 0.0 && st.last_pose.is_some() {
+            st.from_pose = st.last_pose.clone();
+            st.transition = transition;
+            st.blend_total = transition;
+        } else if restart {
+            st.from_pose = None;
+            st.transition = 0.0;
+        }
         st.seq = seq;
-        st.transition = transition.max(0.0);
         if restart {
             st.time = if speed < 0.0 { f32::MAX } else { 0.0 };
             st.dir = 1.0;
@@ -144,6 +199,8 @@ impl Host3D<'_> {
         st.mode = 0;
         st.seq = seq;
         st.time = time.max(0.0);
+        st.from_pose = None;
+        st.transition = 0.0;
         self.pose(e, seq, time.max(0.0))
     }
 
@@ -178,6 +235,12 @@ impl Host3D<'_> {
                 let a = self.anim_mut(e)?;
                 a.time = time;
                 a.dir = dir;
+                if a.transition > 0.0 {
+                    a.transition = (a.transition - frames.abs()).max(0.0);
+                    if a.transition == 0.0 {
+                        a.from_pose = None;
+                    }
+                }
                 if stop {
                     a.mode = 0;
                 }
@@ -278,5 +341,24 @@ impl Host3D<'_> {
             out.push(self.adopt_node(k)?);
         }
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transition_weight_fades_out() {
+        let mut st = AnimState::new(Handle::NONE, Vec::new());
+        assert_eq!(st.blend_weight(), 0.0, "no transition without a start pose");
+        st.from_pose = Some(AnimationPose::default());
+        st.blend_total = 20.0;
+        st.transition = 20.0;
+        assert_eq!(st.blend_weight(), 1.0);
+        st.transition = 5.0;
+        assert_eq!(st.blend_weight(), 0.25);
+        st.transition = 0.0;
+        assert_eq!(st.blend_weight(), 0.0);
     }
 }

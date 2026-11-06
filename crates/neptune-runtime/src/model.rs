@@ -47,16 +47,7 @@ pub fn instantiate(h: &mut Host3D, model: &fyrox::resource::model::ModelResource
     let anim = match crate::anim::find_player(h.graph()?, instance) {
         Some(player) => {
             let seqs = crate::anim::take_control(h.graph()?, player);
-            (!seqs.is_empty()).then_some(crate::anim::AnimState {
-                player,
-                seqs,
-                mode: 0,
-                speed: 1.0,
-                seq: 0,
-                time: 0.0,
-                dir: 1.0,
-                transition: 0.0,
-            })
+            (!seqs.is_empty()).then(|| crate::anim::AnimState::new(player, seqs))
         }
         None => None,
     };
