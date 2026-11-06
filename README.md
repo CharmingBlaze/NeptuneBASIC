@@ -95,7 +95,9 @@ neptune run examples/games/orbrun.nb
 
 ## Documentation
 
+* [Command reference](docs/COMMANDS.md): every command explained
 * [Language reference](docs/LANGUAGE.md)
+* [Changelog](CHANGELOG.md): what changed, commit by commit
 * [Architecture](docs/ARCHITECTURE.md)
 * [Implementation status](docs/STATUS.md)
 * [Plugins](docs/PLUGINS.md)

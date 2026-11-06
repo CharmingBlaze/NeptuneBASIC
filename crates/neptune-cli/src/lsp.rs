@@ -212,6 +212,21 @@ struct Server {
     docs: HashMap<String, String>,
 }
 
+/// Descriptions of every command (`docs/commands.txt`, also the source of
+/// `docs/COMMANDS.md`): `# Category` lines and `Name: description` lines.
+const HELP: &str = include_str!("../../../docs/commands.txt");
+
+/// The description of a command; modern names use their command's.
+fn help(name: &str) -> Option<&'static str> {
+    let find = |n: &str| {
+        HELP.lines().filter(|l| !l.starts_with('#') && !l.starts_with(';')).find_map(|l| {
+            let (k, text) = l.split_once(':')?;
+            k.trim().eq_ignore_ascii_case(n).then(|| text.trim())
+        })
+    };
+    find(name).or_else(|| neptune_runtime::commands::ALIASES.iter().find(|(a, _)| a.eq_ignore_ascii_case(name)).and_then(|(_, target)| find(target)))
+}
+
 impl Server {
     fn diagnostics(&self, uri: &str) -> Json {
         let text = self.docs.get(uri).cloned().unwrap_or_default();
@@ -260,7 +275,8 @@ impl Server {
             items.push(obj([("label", s(*k)), ("kind", n(14))]));
         }
         for c in &self.env.commands {
-            items.push(obj([("label", s(c.display.clone())), ("kind", n(3)), ("detail", s(signature(c)))]));
+            let doc = help(&c.display).unwrap_or("");
+            items.push(obj([("label", s(c.display.clone())), ("kind", n(3)), ("detail", s(signature(c))), ("documentation", s(doc))]));
         }
         for (name, v) in &self.env.constants {
             items.push(obj([("label", s(name.clone())), ("kind", n(21)), ("detail", s(format!("= {}", const_text(v))))]));
@@ -286,7 +302,8 @@ impl Server {
         let Some(word) = word_at(&line, col) else { return Json::Null };
         let uri = params.at("textDocument.uri").str().unwrap_or("");
         let text = if let Some(c) = self.command(&word) {
-            format!("```neptunebasic\n{}\n```", signature(c))
+            // the signature, then what the command does (docs/commands.txt)
+            format!("```neptunebasic\n{}\n```\n{}", signature(c), help(&c.display).unwrap_or(""))
         } else if let Some((name, v)) = self.env.constants.iter().find(|(k, _)| k.eq_ignore_ascii_case(&word)) {
             format!("```neptunebasic\nConst {name} = {}\n```", const_text(v))
         } else if let Some(d) = self.docs.get(uri).and_then(|t| declarations(t).into_iter().find(|d| d.name.eq_ignore_ascii_case(&word))) {
@@ -311,7 +328,7 @@ impl Server {
             }))]))
             .collect();
         obj([
-            ("signatures", Json::Arr(vec![obj([("label", s(label)), ("parameters", Json::Arr(params))])])),
+            ("signatures", Json::Arr(vec![obj([("label", s(label)), ("documentation", s(help(&c.display).unwrap_or(""))), ("parameters", Json::Arr(params))])])),
             ("activeSignature", n(0)),
             ("activeParameter", n(arg.min(c.params.len().saturating_sub(1)) as u32)),
         ])
@@ -449,6 +466,15 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every command has a description in docs/commands.txt (modern names
+    /// use their command's), so the reference and hover help are complete.
+    #[test]
+    fn every_command_is_documented() {
+        let env = neptune_runtime::env();
+        let missing: Vec<&str> = env.commands.iter().map(|c| c.display.as_str()).filter(|n| help(n).is_none()).collect();
+        assert!(missing.is_empty(), "add these to docs/commands.txt: {missing:?}");
+    }
 
     #[test]
     fn finds_declarations() {

@@ -25,6 +25,8 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | VS Code extension | `editors/vscode` (regenerate grammar with `python tools/gen_grammar.py`) |
 | Language tests | `crates/neptune-vm/tests/language.rs` |
 | What's done / to do | `docs/STATUS.md` |
+| Command reference (generated) | `docs/COMMANDS.md` from `docs/commands.txt` (`tools/gen_reference.py`) |
+| What changed, commit by commit | `CHANGELOG.md` |
 | Design | `docs/ARCHITECTURE.md`, `docs/LANGUAGE.md` |
 
 ## Saving context
@@ -43,6 +45,8 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 - Don't reformat or rewrite unrelated code. Errors are `Result<Value, String>` with short messages like `"Entity does not exist"`.
 - Ask before adding a crate dependency.
 - When a feature is finished, update `docs/STATUS.md` (and `docs/LANGUAGE.md` if users see new syntax).
+- Every command is documented: add a `Name: description` line to `docs/commands.txt` (in the right `# Category`, starting with `(ext)` for extensions), then run `python tools/gen_reference.py` to regenerate `docs/COMMANDS.md`. The test `every_command_is_documented` (neptune-cli) fails otherwise. Hover help in editors uses the same text.
+- Add a plain-language entry for each commit's change to the top of `CHANGELOG.md`.
 
 ## Runtime commands
 

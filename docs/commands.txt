@@ -1,0 +1,819 @@
+; NeptuneBASIC command descriptions: the source of docs/COMMANDS.md and of
+; the editor hover help. "# Category" starts a group; each command is one
+; "Name: description" line; "(ext)" marks commands Blitz3D did not have.
+; After adding a command, describe it here and run python tools/gen_reference.py.
+
+# Program and system
+RuntimeError: Stops the program with a runtime error showing message.
+CommandLine: Returns the arguments passed to the program after the source or program name, joined by spaces.
+GetEnv: Returns the value of the environment variable name, or an empty string if it is not set.
+SetEnv: Sets the environment variable name to value for this program and any programs it starts.
+SystemProperty: Returns a system property as a string: "appdir", "tempdir", "currentdir", "homedir", "windowsdir" and "systemdir" give folders ending in a path separator, "os" the operating system name and "cpucount" the number of CPU cores. Unknown properties return an empty string.
+ExecFile: Opens file with the program the operating system associates with it (a document, web address or program); does not wait for it to finish.
+
+# Console input and output
+Print: Writes value (any type, default an empty string) to the console followed by a new line.
+Write: Writes value (any type) to the console without a new line.
+Input: Shows prompt on the console, waits for the user to type a line and returns it as a string without the line ending.
+DebugLog: Writes message to the debug log (standard error), followed by a new line.
+
+# Maths
+Sqr: Returns the square root of value.
+Sin: Returns the sine of an angle in degrees.
+Cos: Returns the cosine of an angle in degrees.
+Tan: Returns the tangent of an angle in degrees.
+ASin: Returns the arc sine of value, in degrees.
+ACos: Returns the arc cosine of value, in degrees.
+ATan: Returns the arc tangent of value, in degrees.
+ATan2: Returns the angle in degrees of the point (x, y) from the origin, from -180 to 180; note the y parameter comes first.
+Exp: Returns e raised to the power value.
+Log: Returns the natural logarithm of value.
+Log10: Returns the base-10 logarithm of value.
+Floor: Returns value rounded down to the nearest whole number, as a float.
+Ceil: Returns value rounded up to the nearest whole number, as a float.
+Min: (ext) Returns the smaller of a and b.
+Max: (ext) Returns the larger of a and b.
+Clamp: (ext) Returns value limited to the range low to high.
+Lerp: (ext) Returns the value a fraction t of the way from a to b (t = 0 gives a, t = 1 gives b).
+
+# Random numbers
+SeedRnd: Seeds the random number generator with seed so the same sequence of numbers is produced each run; MilliSecs() is a common seed.
+Rnd: Returns a random float between from and to; with only one parameter it returns a float between 0 and from.
+Rand: Returns a random integer between from and to inclusive; with only one parameter it returns an integer between 1 and from.
+RndSeed: Returns the seed last set with SeedRnd.
+
+# Strings
+Left: Returns the first count characters of string.
+Right: Returns the last count characters of string.
+Mid: Returns count characters of string starting at character offset (1 is the first character); with count left at -1 it returns the rest of the string.
+Len: Returns the number of characters in string.
+Upper: Returns string in upper case.
+Lower: Returns string in lower case.
+Trim: Returns string with spaces and other white space removed from both ends.
+LSet: Returns string padded with spaces on the right, or cut, to exactly size characters.
+RSet: Returns string padded with spaces on the left, or cut from the left, to exactly size characters.
+Instr: Returns the position of find in string, searching from character from (default 1), or 0 if it is not found.
+Replace: Returns string with every occurrence of from replaced by to.
+String: Returns string repeated count times.
+Chr: Returns the one-character string for the character code code.
+Asc: Returns the character code of the first character of string, or -1 for an empty string.
+Hex: Returns value as an 8-digit hexadecimal string.
+Bin: Returns value as a 32-digit binary string.
+TypeOf: (ext) Returns the name of the type of value as a string, such as "Int", "Float" or "String".
+FormatFloat: (ext) Returns value as a string with decimals digits after the decimal point (0 to 9).
+
+# Files and folders
+FileType: Returns 1 if path is a file, 2 if it is a folder, or 0 if it does not exist.
+FileSize: Returns the size of the file at path in bytes, or 0 if it does not exist.
+DeleteFile: Deletes the file at path.
+CopyFile: Copies the file from to the path to.
+CreateDir: Creates the folder path.
+DeleteDir: Deletes the folder path; it must be empty.
+CurrentDir: Returns the current folder, ending in a path separator.
+ChangeDir: Makes path the current folder.
+ReadDir: Opens the folder dirname for listing and returns a handle, or 0 if it cannot be opened.
+NextFile: Returns the next name in the folder listing dir ("." and ".." come first), or an empty string when there are no more; use FileType to tell files from folders.
+CloseDir: Closes the folder listing dir.
+
+# Streams
+ReadFile: Opens the file at path for reading and returns a stream handle, or 0 if it cannot be opened.
+WriteFile: Creates (or empties) the file at path for writing and returns a stream handle, or 0 on failure.
+OpenFile: Opens an existing file at path for reading and writing and returns a stream handle, or 0 on failure.
+CloseFile: Closes the file stream.
+Eof: Returns true once stream has no more data to read (for a TCP stream, when the connection has closed).
+ReadLine: Reads a line of text from stream and returns it without the line ending.
+WriteLine: Writes text to stream followed by a line ending.
+ReadByte: Reads one byte (0-255) from stream and returns it.
+ReadShort: Reads a 2-byte unsigned integer (0-65535) from stream and returns it.
+ReadInt: Reads a 4-byte integer from stream and returns it.
+ReadFloat: Reads a 4-byte float from stream and returns it.
+ReadString: Reads a string stored as a 4-byte length followed by its characters (as written by WriteString) from stream.
+WriteByte: Writes value to stream as one byte.
+WriteShort: Writes value to stream as a 2-byte integer.
+WriteInt: Writes value to stream as a 4-byte integer.
+WriteFloat: Writes value to stream as a 4-byte float.
+WriteString: Writes value to stream as a 4-byte length followed by its characters.
+ReadAvail: Returns how many bytes can be read from stream without waiting.
+FilePos: Returns the current read/write position in the file stream, in bytes from the start.
+SeekFile: Moves the read/write position of the file stream to pos bytes from the start and returns the new position.
+CopyStream: Copies all remaining data from src_stream to dest_stream, buffer_size bytes at a time.
+
+# Banks
+CreateBank: Creates a bank (a block of memory) of size bytes, filled with zeros, and returns its handle.
+FreeBank: Deletes bank.
+BankSize: Returns the size of bank in bytes.
+ResizeBank: Changes the size of bank to size bytes, keeping its contents; new bytes are zero.
+CopyBank: Copies count bytes from src_bank at src_offset to dest_bank at dest_offset.
+PeekByte: Returns the byte (0-255) at offset in bank.
+PeekShort: Returns the 2-byte unsigned integer at offset in bank.
+PeekInt: Returns the 4-byte integer at offset in bank.
+PeekFloat: Returns the 4-byte float at offset in bank.
+PokeByte: Writes value as one byte at offset in bank.
+PokeShort: Writes value as a 2-byte integer at offset in bank.
+PokeInt: Writes value as a 4-byte integer at offset in bank.
+PokeFloat: Writes value as a 4-byte float at offset in bank.
+ReadBytes: Reads up to count bytes from stream into bank starting at offset and returns the number of bytes read.
+WriteBytes: Writes count bytes from bank starting at offset to stream and returns the number written.
+
+# Time and timers
+MilliSecs: Returns the number of milliseconds since the program started.
+Delay: Pauses the program for millisecs milliseconds.
+CurrentDate: Returns today's date as a string in the form "dd Mon yyyy".
+CurrentTime: Returns the current time as a string in the form "hh:mm:ss".
+CreateTimer: Creates a timer that ticks hertz times per second and returns its handle; use it with WaitTimer to run a program at a steady frame rate.
+WaitTimer: Waits until timer next ticks and returns the number of ticks that have passed since the last call (at least 1).
+FreeTimer: Deletes timer.
+
+# Networking
+OpenTCPStream: Connects to server (a host name or IP address) on port and returns a TCP stream handle, or 0 if the connection fails. Use the stream commands to send and receive.
+CloseTCPStream: Closes the TCP stream.
+CreateTCPServer: Starts a TCP server listening on port and returns its handle, or 0 on failure.
+CloseTCPServer: Stops the TCP server.
+AcceptTCPStream: Returns a stream for the next client that has connected to server, or 0 if none is waiting.
+TCPStreamIP: Returns the integer IP address of the other end of the TCP stream; use DottedIP to show it.
+TCPStreamPort: Returns the port of the other end of the TCP stream.
+TCPTimeouts: Sets how long TCP reads wait for data (read_millis) and how long AcceptTCPStream waits for a client (accept_millis), in milliseconds.
+CreateUDPStream: Opens a UDP stream on port (0 picks a free port) and returns its handle, or 0 on failure.
+CloseUDPStream: Closes the UDP stream.
+SendUDPMsg: Sends the data written to the UDP stream as one message to the integer IP address dest_ip and dest_port (0 uses the stream's own port).
+RecvUDPMsg: Receives the next UDP message on stream so it can be read with the stream commands, and returns the sender's integer IP address, or 0 if there is none.
+UDPStreamIP: Returns the local integer IP address of the UDP stream.
+UDPStreamPort: Returns the local port of the UDP stream.
+UDPMsgIP: Returns the integer IP address of the sender of the last message received on the UDP stream.
+UDPMsgPort: Returns the port of the sender of the last message received on the UDP stream.
+UDPTimeouts: Sets how long RecvUDPMsg waits for a message, in milliseconds (recv_millis).
+
+# Multiplayer games
+StartNetGame: Joins a game found on the local network, or hosts a new one if there is none. Returns 1 if it joined, 2 if it is hosting, or 0 on failure. Uses TCP instead of Blitz3D's DirectPlay dialog.
+HostNetGame: Hosts a multiplayer game called game_name that others can join, and returns 2 on success or 0 on failure.
+JoinNetGame: Joins the game game_name at server_ip (an empty address searches the local network) and returns 1 on success or 0 on failure.
+StopNetGame: Leaves or stops the current multiplayer game.
+CreateNetPlayer: Creates a local player called name in the current game and returns its player id.
+DeleteNetPlayer: Removes the local player from the game.
+NetPlayerName: Returns the name of player.
+NetPlayerLocal: Returns true if player was created on this computer.
+SendNetMsg: Sends a message of type (1-99) with the text data from from_player to to_player (0 sends to all players). Returns true on success; messages are always sent reliably.
+RecvNetMsg: Fetches the next received message and returns true, or false if there is none; read it with NetMsgType, NetMsgFrom, NetMsgTo and NetMsgData.
+NetMsgType: Returns the type of the last received message: 1-99 for player messages, 100 for a player joining, 101 for a player leaving and 200 when the session is lost.
+NetMsgFrom: Returns the player id that sent the last received message (for type 100, the new player).
+NetMsgTo: Returns the player id the last received message was sent to, or 0 if it was sent to everyone.
+NetMsgData: Returns the text of the last received message.
+DottedIP: Returns the integer IP address ip as a dotted string such as "192.168.0.1".
+CountHostIPs: Looks up the IP addresses of host_name (an empty string for this computer) and returns how many were found.
+HostIP: Returns address number index (from 1) found by the last CountHostIPs, as an integer IP address.
+
+# Plugins and libraries
+CallDLL: Calls the function proc_name in the shared library dll_name, passing the contents of in_bank and out_bank (0 for none); the function can write results into out_bank. Returns the function's integer result. The library stays loaded.
+
+# Graphics and display
+Graphics3D: Opens a window of width by height pixels for 3D and 2D graphics. mode 0 or 2 gives a window, 1 fullscreen, 3 a scaled window; depth is accepted for compatibility.
+Graphics: Opens a window of width by height pixels for 2D graphics; mode 0 or 2 gives a window, 1 fullscreen, 3 a scaled window.
+EndGraphics: Accepted for compatibility; does nothing.
+AppTitle: Sets the window title to title. close_prompt is accepted for compatibility.
+SetFullscreen: (ext) Switches between a window (enable = 0) and borderless fullscreen (enable = 1) at any time.
+IsFullscreen: (ext) Returns true if the program is running fullscreen.
+GfxMode3D: Returns true if graphics mode number mode exists and supports 3D.
+GfxDriver3D: Returns true if graphics driver number driver supports 3D (only driver 1 exists).
+WBuffer: Accepted for compatibility; depth precision is handled by the renderer.
+ActiveTextures: Returns the number of different textures currently applied to entities.
+GraphicsDepth: Returns the colour depth of the display in bits (always 32).
+CountGfxModes: Returns the number of listed graphics modes (screen sizes).
+CountGfxModes3D: Returns the number of listed 3D graphics modes.
+GfxModeWidth: Returns the width in pixels of graphics mode number mode, or 0 if it does not exist.
+GfxModeHeight: Returns the height in pixels of graphics mode number mode, or 0 if it does not exist.
+GfxModeDepth: Returns the colour depth of graphics mode number mode (32), or 0 if it does not exist.
+GfxModeExists: Returns true if width by height is one of the listed graphics modes; any size works in a window.
+GfxMode3DExists: Returns true if width by height is one of the listed 3D graphics modes; any size works in a window.
+CountGfxDrivers: Returns the number of graphics drivers (always 1).
+GfxDriverName: Returns the name of graphics driver number driver, or an empty string if it does not exist.
+SetGfxDriver: Accepted for compatibility; there is only one graphics driver.
+Windowed3D: Returns true if 3D graphics can run in a window (always true).
+GfxDriverCaps3D: Returns the 3D capability level of the graphics driver (always 110).
+HWTexUnits: Returns the number of texture layers an entity can use at once.
+HWMultiTex: Accepted for compatibility; does nothing.
+Dither: Accepted for compatibility; does nothing.
+TotalVidMem: Returns the total video memory in bytes; a fixed figure of 1 GB, since it cannot be read.
+AvailVidMem: Returns the free video memory in bytes; a fixed figure of 1 GB, since it cannot be read.
+VWait: Accepted for compatibility; Flip already waits for the display.
+ScanLine: Returns the display scan line; always 0.
+TrisRendered: Returns the number of triangles drawn by the last RenderWorld.
+GraphicsWidth: Returns the width of the graphics window in pixels.
+GraphicsHeight: Returns the height of the graphics window in pixels.
+UpdateWorld: Updates animations, collisions and physics for one frame; elapsed_time scales how far animations advance (default 1).
+RenderWorld: Renders the 3D world from every active camera, covering any 2D drawn before it. tween (0 to 1) blends each entity between its CaptureWorld position and its current one, for smooth fixed-rate loops; 1 draws the current positions.
+Flip: Shows the finished frame on screen and ends the frame; vwait (default 1) waits for the vertical blank.
+WireFrame: Draws all 3D geometry as wireframe when enable is 1, solid when 0.
+
+# Gamma and quality
+GraphicsQuality: (ext) Sets the renderer quality preset: level 0 low, 1 medium, 2 high, 3 ultra (QUALITY_LOW to QUALITY_ULTRA). Use a low level for old graphics cards.
+GetGraphicsQuality: (ext) Returns the current quality level set with GraphicsQuality (0-3).
+PostEffect: (ext) Turns a rendering effect on (enable = 1) or off (enable = 0): EFFECT_BLOOM, EFFECT_SSAO, EFFECT_FXAA, EFFECT_SHADOWS or EFFECT_LIGHT_SCATTER.
+AntiAlias: Turns anti-aliasing (smoothing of jagged edges) on or off.
+SetGamma: Sets the gamma ramp so that the colour levels src_red, src_green, src_blue (0-255) are shown as dest_red, dest_green, dest_blue. Call UpdateGamma to apply it.
+UpdateGamma: Applies the gamma changes made with SetGamma; calibrate is accepted for compatibility.
+GammaRed: Returns the output level the red level red (0-255) is mapped to by the gamma ramp.
+GammaGreen: Returns the output level the green level green (0-255) is mapped to by the gamma ramp.
+GammaBlue: Returns the output level the blue level blue (0-255) is mapped to by the gamma ramp.
+
+# 2D drawing and text
+Locate: Moves the text cursor used by Print and Write to x, y in pixels.
+Viewport: Restricts 2D drawing to the rectangle at x, y with size width by height in pixels.
+Text: Draws string at x, y in the current font and colour; center_x and center_y set to 1 centre it horizontally or vertically on that point.
+Color: Sets the drawing colour for 2D commands, with red, green, blue from 0 to 255.
+ColorRed: Returns the red part (0-255) of the current drawing colour.
+ColorGreen: Returns the green part (0-255) of the current drawing colour.
+ColorBlue: Returns the blue part (0-255) of the current drawing colour.
+ClsColor: Sets the colour Cls clears to, with red, green, blue from 0 to 255.
+Cls: Clears the current buffer to the ClsColor colour.
+Origin: Sets the point x, y (pixels) that 2D drawing commands are measured from.
+Rect: Draws a rectangle at x, y of width by height pixels, filled when solid is 1 (default) or as an outline when 0.
+Oval: Draws an ellipse inside the box x, y, width, height (pixels), filled when solid is 1 (default) or as an outline when 0.
+Line: Draws a line from x1, y1 to x2, y2 in pixels.
+Plot: Draws a single pixel at x, y.
+
+# Fonts
+LoadFont: Loads a font fontname at height pixels, optionally bold, italic or underlined (1 = on). Returns the font handle, or 0 if it cannot be loaded.
+SetFont: Makes font the font for Text and Print. Font 0 selects the built-in font (ext).
+FreeFont: Frees font.
+FontWidth: Returns the width of the widest character in the current font, in pixels.
+FontHeight: Returns the height of the current font in pixels.
+StringWidth: Returns the width of string in pixels in the current font.
+StringHeight: Returns the height of string in pixels in the current font.
+
+# 2D images
+SaveImage: Saves frame of image to an image file; returns 1 on success, 0 on failure.
+LoadImage: Loads an image file for 2D drawing. Returns the image handle, or 0 on failure.
+LoadAnimImage: Loads an image strip of frames, each width by height pixels, starting at frame first and loading count frames. Returns the image handle, or 0 on failure.
+FreeImage: Frees image.
+DrawImageEx: (ext) Draws frame of image at x,y rotated by rotation degrees clockwise and scaled by scale_x and scale_y about its handle, with alpha from 0 (invisible) to 1 (solid).
+DrawImage: Draws frame of image at x,y in pixels, with its mask colour transparent.
+DrawBlock: Draws frame of image at x,y in pixels without transparency.
+DrawImageRect: Draws the part of image starting at rect_x,rect_y and rect_width by rect_height pixels at x,y, with its mask colour transparent.
+DrawBlockRect: Draws the part of image starting at rect_x,rect_y and rect_width by rect_height pixels at x,y, without transparency.
+CreateImage: Creates a blank image width by height pixels with frames frames. Returns the image handle.
+CopyImage: Returns a new image that is a copy of image.
+GrabImage: Copies the area of the current buffer at x,y (minus the image handle) into frame of image.
+RotateImage: Rotates image by angle degrees.
+TFormImage: Transforms image by the 2x2 matrix a,b,c,d (for skewing, scaling and rotating).
+TFormFilter: Turns smoothing on (1) or off (0) for RotateImage, ScaleImage, ResizeImage and TFormImage.
+TileImage: Fills the whole current buffer with frame of image, offset by x,y, with its mask colour transparent.
+TileBlock: Fills the whole current buffer with frame of image, offset by x,y, without transparency.
+ImageRectCollide: Returns 1 if any solid (non-mask) pixel of frame of image drawn at x,y lies inside the rectangle at rect_x,rect_y of size rect_width by rect_height (pixel-accurate).
+ImageWidth: Returns the width of image in pixels.
+ImageHeight: Returns the height of image in pixels.
+ImageXHandle: Returns the X offset of image's handle in pixels.
+ImageYHandle: Returns the Y offset of image's handle in pixels.
+ImageFrames: Returns the number of frames in image.
+HandleImage: Sets the handle (drawing origin) of image to x,y pixels from its top-left corner.
+MidHandle: Sets the handle of image to its centre.
+AutoMidHandle: When enable is 1, images loaded or created afterwards get their handle at their centre; 0 puts it at the top-left corner.
+MaskImage: Sets the colour of image (red, green, blue 0-255) that is drawn as transparent. The default is black.
+ScaleImage: Scales image by x_scale and y_scale.
+ResizeImage: Resizes image to width by height pixels.
+RectsOverlap: Returns 1 if the rectangle x1,y1,width1,height1 overlaps the rectangle x2,y2,width2,height2.
+ImagesOverlap: Returns 1 if the bounding rectangles of image1 at x1,y1 and image2 at x2,y2 overlap (fast, not pixel-accurate).
+ImagesCollide: Returns 1 if frame1 of image1 at x1,y1 and frame2 of image2 at x2,y2 overlap, ignoring transparent pixels.
+ImageRectOverlap: Returns 1 if the bounding rectangle of image at x,y overlaps the rectangle at rect_x,rect_y of size rect_width by rect_height.
+
+# Buffers and pixels
+GetColor: Sets the current drawing colour to the colour of the pixel at x, y in the current buffer. Pixels are read from image and texture buffers, not the screen.
+CopyPixel: Copies the pixel at src_x, src_y in src_buffer to dest_x, dest_y in dest_buffer (default the current buffer). The source cannot be the screen.
+CopyPixelFast: Same as CopyPixel; copies one pixel from src_buffer to dest_buffer.
+BufferWidth: Returns the width of buffer in pixels.
+BufferHeight: Returns the height of buffer in pixels.
+SaveBuffer: Saves the contents of buffer (the screen too) to an image file; returns 1 on success, 0 on failure.
+LoadBuffer: Loads an image file into buffer, drawn from the top-left corner (stretched over the whole screen when buffer is the screen); returns 1 on success, 0 on failure.
+BackBuffer: Returns the back buffer, the hidden screen that is drawn to and shown by Flip.
+FrontBuffer: Returns the front buffer, the screen that is currently visible.
+GraphicsBuffer: Returns the buffer that drawing commands currently draw to.
+ImageBuffer: Returns the buffer of frame of image, so it can be drawn to or read.
+TextureBuffer: Returns the buffer of frame of texture, so it can be drawn to or read.
+SetBuffer: Makes buffer the one 2D drawing commands draw to.
+LockBuffer: Locks buffer (default the current one) for fast pixel access with ReadPixelFast and WritePixelFast.
+UnlockBuffer: Unlocks a buffer locked with LockBuffer.
+ReadPixel: Returns the colour of the pixel at x, y of buffer as an ARGB value.
+ReadPixelFast: Returns the colour of the pixel at x, y of a locked buffer as an ARGB value.
+WritePixel: Sets the pixel at x, y of buffer to the ARGB colour argb.
+WritePixelFast: Sets the pixel at x, y of a locked buffer to the ARGB colour argb.
+CopyRect: Copies a width by height rectangle at src_x, src_y of src_buffer to dest_x, dest_y of dest_buffer (both default to the current buffer).
+
+# Tile maps
+CreateTileMap: (ext) Creates an empty tile map of width by height tiles, whose tiles are frames of the animation image image, and returns it.
+LoadTileMap: (ext) Loads a tile map saved with SaveTileMap from file and draws it with the animation image image (one frame per tile). Returns the tile map handle, or 0 if the file cannot be read.
+SaveTileMap: (ext) Saves tile map map (its tiles, terrains and autotile rules) to a text file. Returns 1 on success, 0 on failure.
+FreeTileMap: (ext) Frees tile map map.
+SetTile: (ext) Sets the cell at column x, row y of tile map map to frame number tile.
+GetTile: (ext) Returns the frame number in the cell at column x, row y of tile map map.
+TileMapWidth: (ext) Returns the width of tile map map in cells.
+TileMapHeight: (ext) Returns the height of tile map map in cells.
+TileMapImage: (ext) Changes the animation image whose frames tile map map draws.
+TileMapTerrain: (ext) Sets up autotiling for terrain number terrain: its tiles start at frame first_frame of the map's image. mode is 16 (four neighbours, 16 frames) or 47 (eight neighbours, 47 "blob" frames, the default).
+AutoTile: (ext) Paints the cell at column x, row y with terrain number terrain, choosing the frame that matches its neighbours and updating the cells around it.
+GetTileTerrain: (ext) Returns the terrain number painted with AutoTile in the cell at column x, row y of tile map map.
+DrawTileMap: (ext) Draws tile map map with its top-left corner at x,y (pixels, or world coordinates with Camera2D on). Only tiles on screen are drawn.
+TileMapCellX: (ext) Returns the column of tile map map under x, given in pixels from the map's left edge.
+TileMapCellY: (ext) Returns the row of tile map map under y, given in pixels from the map's top edge.
+TileAt: (ext) Returns the frame number of the tile under the point x,y, given in pixels from the map's top-left corner.
+
+# 2D camera
+Camera2D: (ext) Turns on the 2D camera: 2D drawing then uses world coordinates, with world point x,y at the centre of the screen, zoom scaling the view (2 = twice as big) and rotation turning it clockwise in degrees.
+Camera2DEnable: (ext) Turns the 2D camera on (1) or off (0), for example to draw a HUD in screen coordinates on top.
+ScreenToWorld2DX: (ext) Returns the world X coordinate under screen point x,y for the 2D camera.
+ScreenToWorld2DY: (ext) Returns the world Y coordinate under screen point x,y for the 2D camera.
+WorldToScreen2DX: (ext) Returns the screen X coordinate where world point x,y appears with the 2D camera.
+WorldToScreen2DY: (ext) Returns the screen Y coordinate where world point x,y appears with the 2D camera.
+
+# 2D animation
+CreateAnim2D: (ext) Creates an animation that plays frames first to last (-1 = last frame) of the animation image image at fps frames a second. mode is 1 loop, 2 ping-pong, 3 play once. Returns the animation handle.
+Anim2DPlay: (ext) Starts anim playing frames first to last at fps frames a second, with mode 1 loop, 2 ping-pong or 3 play once.
+Anim2DPause: (ext) Pauses anim (pause 1) or resumes it (pause 0).
+Anim2DFrame: (ext) Returns the frame number anim is showing now.
+Anim2DPlaying: (ext) Returns 1 while anim is playing, 0 when paused or finished.
+DrawAnim2D: (ext) Draws the current frame of anim at x,y like DrawImage.
+FreeAnim2D: (ext) Frees anim (the image is not freed).
+
+# 2D physics
+Physics2DGravity: (ext) Sets 2D physics gravity to x,y in pixels per second squared (Y down) and starts the 2D physics world.
+Physics2DScale: (ext) Sets how many pixels make one physics metre (default 50). Set it before creating bodies.
+CreateBody2D: (ext) Creates a 2D physics body at x,y pixels. type is 0 dynamic, 1 static or 2 kinematic. Returns the body handle; give it shapes with Body2DBox and similar commands.
+FreeBody2D: (ext) Frees 2D body body and its shapes.
+Body2DBox: (ext) Adds a box shape width by height pixels to body, centred at offset_x,offset_y from the body.
+Body2DCircle: (ext) Adds a circle shape of radius pixels to body, centred at offset_x,offset_y from the body.
+Body2DCapsule: (ext) Adds an upright capsule (pill) shape width by height pixels to body, centred at offset_x,offset_y; good for characters.
+Body2DPolygon: (ext) Adds a polygon shape to body from points, a string "x1,y1,x2,y2,..." of at least three points in pixels relative to the body.
+Body2DSegment: (ext) Adds a line segment shape from x1,y1 to x2,y2 (pixels, relative to the body) to body.
+TileMapBody2D: (ext) Creates a static body with boxes for the solid (non-empty) tiles of tile map map, with the map's top-left corner at x,y. Returns the body handle.
+Body2DFriction: (ext) Sets the friction of body's shapes (0 = slippery).
+Body2DBounce: (ext) Sets the bounciness (restitution) of body's shapes (0 = no bounce, 1 = full bounce).
+Body2DDensity: (ext) Sets the density of body's shapes, which sets its mass.
+Body2DSensor: (ext) Makes body's shapes sensors (enable 1) that detect overlaps with Body2DTouching but do not collide.
+Body2DFixedRotation: (ext) Stops body from rotating (enable 1) or lets it rotate again (0).
+Body2DGravityScale: (ext) Multiplies the gravity on body by scale (0 = no gravity).
+Body2DDamping: (ext) Sets the linear and angular damping of body, which slow its movement and spin.
+PositionBody2D: (ext) Moves body to x,y in pixels.
+RotateBody2D: (ext) Sets body's angle to angle degrees clockwise.
+Body2DX: (ext) Returns the X position of body in pixels.
+Body2DY: (ext) Returns the Y position of body in pixels.
+Body2DAngle: (ext) Returns the angle of body in degrees clockwise.
+SetVelocity2D: (ext) Sets the velocity of body to x,y pixels per second.
+Body2DVX: (ext) Returns the X velocity of body in pixels per second.
+Body2DVY: (ext) Returns the Y velocity of body in pixels per second.
+SetSpin2D: (ext) Sets the spin of body in degrees per second (clockwise).
+Body2DSpin: (ext) Returns the spin of body in degrees per second.
+ApplyForce2D: (ext) Pushes body with force x,y (pixel units) for this step.
+ApplyImpulse2D: (ext) Gives body an instant kick x,y (pixel units), like a jump.
+ApplyTorque2D: (ext) Applies a turning force torque to body for this step.
+Body2DTouching: (ext) Returns 1 if body is touching or overlapping body other, or any body when other is 0.
+CountContacts2D: (ext) Returns how many bodies are touching body.
+ContactBody2D: (ext) Returns the body touching body with number index (1 to CountContacts2D), or 0.
+RayCast2D: (ext) Casts a ray from x1,y1 to x2,y2 and returns the first body it hits, or 0. Read the hit point and normal with RayCast2DX/Y/NX/NY.
+RayCast2DX: (ext) Returns the X coordinate in pixels of the point hit by the last RayCast2D.
+RayCast2DY: (ext) Returns the Y coordinate in pixels of the point hit by the last RayCast2D.
+RayCast2DNX: (ext) Returns the X component of the surface normal at the point hit by the last RayCast2D.
+RayCast2DNY: (ext) Returns the Y component of the surface normal at the point hit by the last RayCast2D.
+DrawBodies2D: (ext) Draws the outlines of all 2D bodies' shapes in the current colour, for debugging.
+DrawBody2D: (ext) Draws frame of image at body's position and angle.
+
+# UI widgets
+UIButton: (ext) Draws a button at x,y of size width by height with label. Call it every frame; returns 1 in the frame it is clicked.
+UICheckBox: (ext) Draws a check box at x,y with label, ticked when checked is 1. Call it every frame; returns the new checked state (toggled when clicked).
+UISlider: (ext) Draws a horizontal slider at x,y, width pixels wide, showing value between min and max. Call it every frame; returns the new value, changed while the user drags it.
+UITextBox: (ext) Draws an editable text box at x,y, width pixels wide, containing text. Click it to give it keyboard focus; returns the edited text.
+UIPanel: (ext) Draws a panel (background box) at x,y of size width by height, with an optional title.
+UILabel: (ext) Draws text at x,y in the UI style.
+UIHover: (ext) Returns 1 if the mouse was over a UI widget (or one is being dragged), so the game can ignore that click.
+UITheme: (ext) Sets the UI accent colour (red, green, blue 0-255).
+
+# Movies
+OpenMovie: Opens a movie for playback and starts playing it once in real time. Plays animated GIF, Motion-JPEG AVI or a folder of numbered images (30 frames a second); sound tracks are not played. Returns the movie handle, or 0 on failure.
+CloseMovie: Closes movie movie and frees it.
+DrawMovie: Draws the current frame of movie at x,y in pixels, scaled to width by height (-1 keeps the movie's own size). Returns 1 while the movie is still playing.
+MovieWidth: Returns the width of movie in pixels.
+MovieHeight: Returns the height of movie in pixels.
+MoviePlaying: Returns 1 while movie is still playing, 0 when it has finished.
+
+# Keyboard
+WaitKey: Waits until a key is pressed and returns its key code.
+KeyDown: Returns 1 while key (a scan code) is held down.
+KeyHit: Returns how many times key (a scan code) was pressed since the last call.
+GetKey: Returns the character code of the next key typed, or 0 if none.
+FlushKeys: Clears all keyboard presses and typed characters.
+
+# Mouse
+HidePointer: Hides the mouse pointer over the window.
+ShowPointer: Shows the mouse pointer again after HidePointer.
+MoveMouse: Moves the mouse pointer to x, y in pixels within the window.
+CaptureMouse: (ext) Locks the mouse pointer to the window and hides it when enable is 1, for mouse-look; 0 releases and shows it again. MouseXSpeed and MouseYSpeed keep working while captured.
+MouseZSpeed: Returns how far the mouse wheel has moved since the last call to MouseZSpeed.
+GetMouse: Returns the number of the mouse button clicked since the last check (1 left, 2 right, 3 middle), or 0 if none.
+WaitMouse: Waits until a mouse button is clicked and returns its number (1 left, 2 right, 3 middle).
+MouseX: Returns the mouse X position in pixels.
+MouseY: Returns the mouse Y position in pixels.
+MouseZ: Returns the mouse wheel position.
+MouseDown: Returns 1 while mouse button (1 left, 2 right, 3 middle) is held down.
+MouseHit: Returns how many times mouse button (1 left, 2 right, 3 middle) was clicked since the last call.
+MouseXSpeed: Returns how far the mouse moved horizontally since the last call, in pixels.
+MouseYSpeed: Returns how far the mouse moved vertically since the last call, in pixels.
+FlushMouse: Clears all mouse button presses.
+
+# Joysticks and gamepads
+EnableDirectInput: Accepted for compatibility; enable (1 or 0) is remembered but input always comes straight from the operating system.
+DirectInputEnabled: Returns the last value set with EnableDirectInput (1 or 0).
+JoyType: Returns the type of controller on port: 0 if none is connected, 2 (analog) for a connected gamepad. Port 0 is the first controller.
+CountJoys: (ext) Returns the number of connected joysticks and gamepads.
+JoyDown: Returns 1 if button is held down on the controller on port, otherwise 0.
+JoyHit: Returns how many times button has been pressed on the controller on port since the last check.
+GetJoy: Returns the number of a button pressed on the controller on port since the last check, or 0 if none.
+WaitJoy: Waits until a button is pressed on the controller on port and returns its number.
+FlushJoy: Forgets all pending joystick button presses.
+JoyX: Returns the left stick's horizontal position from -1 (left) to 1 (right) on the controller on port.
+JoyY: Returns the left stick's vertical position from -1 to 1 on the controller on port.
+JoyZ: Returns the trigger axis from -1 to 1 (right trigger minus left trigger) on the controller on port.
+JoyU: Returns the right stick's horizontal position from -1 to 1 on the controller on port.
+JoyV: Returns the right stick's vertical position from -1 to 1 on the controller on port.
+JoyPitch: Returns the pitch axis in degrees from -180 to 180 (taken from the right stick's vertical position) on the controller on port.
+JoyYaw: Returns the yaw axis in degrees from -180 to 180 (taken from the right stick's horizontal position) on the controller on port.
+JoyRoll: Returns the roll axis in degrees from -180 to 180 (taken from the triggers) on the controller on port.
+JoyHat: Returns the direction of the d-pad (hat) in degrees, 0 for up going clockwise in steps of 45, or -1 if it is not pressed.
+JoyXDir: Returns the direction of the joystick's X axis as -1, 0 or 1.
+JoyYDir: Returns the direction of the joystick's Y axis as -1, 0 or 1.
+JoyZDir: Returns the direction of the joystick's Z axis as -1, 0 or 1.
+JoyUDir: Returns the direction of the joystick's U axis as -1, 0 or 1.
+JoyVDir: Returns the direction of the joystick's V axis as -1, 0 or 1.
+
+# Sound
+LoadSound: Loads a sound from file (WAV, OGG, MP3 or FLAC) and returns it, or 0 if it cannot be loaded.
+Load3DSound: Loads a sound from file for 3D positional playback with EmitSound and returns it.
+FreeSound: Frees sound.
+LoopSound: Makes sound loop when it is played.
+SoundVolume: Sets sound's volume, from 0 (silent) to 1 (full).
+SoundPan: Sets sound's pan, from -1 (left) to 1 (right).
+SoundPitch: Sets the playback rate of sound, in Hz (samples per second).
+PlaySound: Plays sound and returns the channel it plays on.
+PlayCDTrack: Plays a CD audio track in Blitz3D; CD audio is not supported, so it does nothing and returns 0.
+PlayMusic: Plays a music file (streamed), looping when mode is 1, and returns its channel, or 0 if it cannot be loaded.
+StopChannel: Stops the sound playing on channel.
+PauseChannel: Pauses the sound playing on channel.
+ResumeChannel: Resumes a channel paused with PauseChannel.
+ChannelVolume: Sets the volume of channel, from 0 (silent) to 1 (full).
+ChannelPan: Sets the pan of channel, from -1 (left) to 1 (right).
+ChannelPitch: Sets the playback rate of channel, in Hz.
+ChannelPlaying: Returns 1 if channel is playing, otherwise 0.
+CreateListener: Creates the 3D sound listener as an entity (usually parented to the camera) and returns it; rolloff_factor and distance_scale control how sound fades with distance.
+EmitSound: Plays a 3D sound from the position of entity and returns its channel.
+
+# Entities
+EntityClass: Returns the kind of entity as a string, such as "Pivot", "Camera", "Light" or "Mesh".
+EntityAutoFade: Makes entity fade out as the camera gets between near and far units away; far 0 or less turns fading off.
+ClearWorld: Frees all entities, brushes and/or textures, as chosen by entities, brushes and textures (all default 1).
+CreatePivot: Creates an invisible pivot entity, useful as a parent or marker, and returns its handle; parent is optional.
+CreateCube: Creates a cube from -1 to 1 on each axis and returns its handle; parent is optional.
+CreateSphere: Creates a sphere of radius 1 with segments detail (default 8) and returns its handle; parent is optional.
+CreateCylinder: Creates a cylinder of radius 1 and height 2 with segments detail and returns its handle; solid 0 leaves the ends open. parent is optional.
+CreateCone: Creates a cone of radius 1 and height 2 with segments detail and returns its handle; solid 0 leaves the base open. parent is optional.
+CreatePlane: Creates an infinite flat plane at Y 0 facing up, with segments detail, and returns its handle; parent is optional.
+EntityScaleX: (ext) Returns the X scale of entity; global 1 gives the world scale including its parents.
+EntityScaleY: (ext) Returns the Y scale of entity; global 1 gives the world scale including its parents.
+EntityScaleZ: (ext) Returns the Z scale of entity; global 1 gives the world scale including its parents.
+CopyEntity: Makes a copy of entity (and its children), optionally attached to parent, and returns the new entity.
+FreeEntity: Deletes entity and all its children.
+EntityParent: Attaches entity to parent (0 detaches it). With global 1 (default) the entity keeps its world position and rotation; with 0 it keeps its local ones.
+GetParent: Returns the parent of entity, or 0 if it has none.
+CountChildren: Returns the number of direct children of entity.
+GetChild: Returns child number index (counting from 1) of entity, or 0 if there is none.
+FindChild: Searches entity's children and their descendants for an entity called name and returns it, or 0 if not found.
+NameEntity: Sets the name of entity.
+EntityName: Returns the name of entity.
+HideEntity: Hides entity and its children so they are not drawn and take no part in collisions or picking.
+ShowEntity: Shows an entity hidden with HideEntity.
+EntityHidden: (ext) Returns 1 if entity has been hidden with HideEntity, otherwise 0.
+
+# Transforms
+PositionEntity: Places entity at x, y, z, relative to its parent unless global is 1.
+MoveEntity: Moves entity by x, y, z along its own axes (so z moves it forward the way it faces).
+TranslateEntity: Moves entity by x, y, z along the world axes (or its parent's axes when global is 0), ignoring its own rotation.
+RotateEntity: Sets entity's rotation to pitch, yaw, roll in degrees, relative to its parent unless global is 1.
+TurnEntity: Turns entity by pitch, yaw, roll degrees from its current rotation.
+ScaleEntity: Sets entity's scale on each axis to x_scale, y_scale, z_scale (1 is normal size).
+PointEntity: Rotates entity to face target entity, with roll degrees of roll.
+LookAt: (ext) Rotates entity to face the world position x, y, z, with roll degrees of roll.
+CameraLookAt: (ext) Rotates camera to face the world position x, y, z, with roll degrees of roll; the same as LookAt.
+EntityX: Returns entity's X position, relative to its parent or in world space when global is 1.
+EntityY: Returns entity's Y position, relative to its parent or in world space when global is 1.
+EntityZ: Returns entity's Z position, relative to its parent or in world space when global is 1.
+EntityPitch: Returns entity's pitch in degrees, relative to its parent or in world space when global is 1.
+EntityYaw: Returns entity's yaw in degrees, relative to its parent or in world space when global is 1.
+EntityRoll: Returns entity's roll in degrees, relative to its parent or in world space when global is 1.
+
+# Vectors and maths on entities
+TFormPoint: Transforms the point x, y, z from the space of source_entity to the space of dest_entity (0 means world space); read the result with TFormedX, TFormedY, TFormedZ.
+TFormVector: Transforms the direction x, y, z from the space of source_entity to the space of dest_entity (0 means world space), ignoring position; read the result with TFormedX, TFormedY, TFormedZ.
+TFormNormal: Like TFormVector but the result is normalised to length 1; read it with TFormedX, TFormedY, TFormedZ.
+TFormedX: Returns the X of the result of the last TFormPoint, TFormVector or TFormNormal.
+TFormedY: Returns the Y of the result of the last TFormPoint, TFormVector or TFormNormal.
+TFormedZ: Returns the Z of the result of the last TFormPoint, TFormVector or TFormNormal.
+VectorYaw: Returns the yaw in degrees of the direction x, y, z.
+VectorPitch: Returns the pitch in degrees of the direction x, y, z.
+DeltaYaw: Returns the yaw in degrees src_entity would need to turn to face dest_entity.
+DeltaPitch: Returns the pitch in degrees src_entity would need to turn to face dest_entity.
+AlignToVector: Turns entity so its axis (1 X, 2 Y, 3 Z) points along vector_x, vector_y, vector_z; rate from 0 to 1 sets how far it turns (1 aligns fully).
+GetMatElement: Returns the element at row and column (0 to 2) of entity's world rotation and scale matrix.
+EntityDistance: Returns the distance in world units between source_entity and destination_entity.
+
+# Cameras
+CameraClsMode: Sets whether camera clears the colour buffer (cls_color) and depth buffer (cls_zbuffer) before rendering; 1 clears, 0 keeps what was there.
+CreateCamera: Creates a camera and returns its handle; parent is optional.
+CameraClsColor: Sets the colour camera clears the background to, with red, green, blue from 0 to 255.
+CameraRange: Sets the nearest and farthest distances camera can see (defaults 1 and 1000).
+CameraZoom: Sets camera's zoom factor; 1 is the default, higher values zoom in.
+CameraViewport: Sets the area of the screen camera draws into, as x, y, width, height in pixels.
+CameraProjMode: Sets camera's projection: 0 off (draws nothing), 1 perspective (default), 2 orthographic.
+CameraFogMode: Sets camera's fog: 0 off, 1 linear fog.
+CameraFogColor: Sets camera's fog colour, with red, green, blue from 0 to 255.
+CameraFogRange: Sets the distances where camera's fog starts (near) and becomes solid (far).
+
+# Lights
+AmbientLight: Sets the colour of the ambient light that lights every surface equally, using red, green and blue values 0-255.
+CreateLight: Creates a light and returns its handle; type is 1 directional (default), 2 point or 3 spot. parent is an optional parent entity.
+LightMesh: Lights a mesh by adding colour to its vertex colours, using red, green, blue 0-255; with range above 0 the light is a point at light_x, light_y, light_z that fades with distance, otherwise the whole mesh is lit evenly.
+LightColor: Sets light's colour, with red, green, blue from 0 to 255 (higher values make it brighter).
+LightRange: Sets how far light reaches, in world units.
+LightConeAngles: Sets a spot light's inner (full brightness) and outer cone angles, in degrees.
+SetLightDirection: (ext) Turns light so it shines along the direction x, y, z.
+SetEntityDirection: (ext) Turns entity so it faces along the direction x, y, z.
+LightShadows: (ext) Turns real-time shadows on (enable 1) or off (0) for light.
+
+# Materials and textures
+LoadAnimTexture: Loads an image file holding several animation frames of frame_width by frame_height pixels as one texture, using frame_count frames starting at first_frame; returns its handle or 0 on failure.
+TextureFilter: Applies texture flags automatically to every texture loaded later whose file name contains match_text.
+ClearTextureFilters: Removes all texture filters set with TextureFilter.
+EntityColor: Sets entity's colour, with red, green, blue from 0 to 255.
+EntityAlpha: Sets entity's transparency, from 0 (invisible) to 1 (solid).
+LoadTextureAsync: (ext) Starts loading a texture from file in the background and returns it at once; it is plain white until the image has loaded. Check progress with TextureLoaded.
+TextureLoaded: (ext) Returns 1 when texture has finished loading, 0 while it is still loading and -1 if loading failed.
+LoadTexture: Loads a texture from file with the given flags (1 colour, 2 alpha, 4 masked, 8 mipmapped, 16/32 clamp U/V, 64 sphere map, 128 cube map...) and returns it, or 0 if the file cannot be loaded.
+CreateTexture: Creates a blank texture of width by height pixels with the given flags and number of animation frames, and returns it.
+FreeTexture: Frees texture; entities that use it keep it until they no longer need it.
+TextureWidth: Returns the width of texture in pixels.
+SetCubeFace: Chooses which face of a cube map texture (0 left, 1 front, 2 right, 3 back, 4 up, 5 down) its texture buffer draws to.
+SetCubeMode: Sets how a cube map texture is used: 1 reflection (default), 2 diffuse lighting, 3 specular lighting.
+TextureHeight: Returns the height of texture in pixels.
+TextureName: Returns the file name texture was loaded from.
+ScaleTexture: Scales texture's coordinates by u_scale and v_scale (values above 1 make the texture smaller and repeat more).
+PositionTexture: Offsets texture's coordinates by u_position and v_position.
+RotateTexture: Rotates texture by angle degrees.
+TextureBlend: Sets how texture combines with the layers below it: 0 none, 1 alpha, 2 multiply (default), 3 add, 4 dot3, 5 multiply by 2.
+TextureCoords: Chooses which UV set texture uses: 0 the first (default) or 1 the second.
+EntityTexture: Applies texture to entity, using animation frame frame, in texture layer index.
+EntityNormalMap: (ext) Gives entity a normal map texture for per-pixel lighting detail; 0 removes it.
+EntityShininess: Sets entity's specular shininess, from 0 (none) to 1 (very shiny).
+EntityBlend: Sets how entity is blended with what is behind it: 1 alpha, 2 multiply, 3 add.
+EntityFX: Sets special effects flags for entity: 1 full bright, 2 use vertex colours, 4 flat shading, 8 no fog, 16 no back-face culling, 32 force alpha blending.
+EntityOrder: Sets the drawing order of entity: non-zero values are drawn after the main scene with depth buffering off, lower values in front.
+
+# PBR materials
+EntityMetallic: (ext) Sets how metallic entity's material is, from 0 (not metal) to 1 (metal).
+EntityRoughness: (ext) Sets the roughness of entity's material, from 0 (smooth and glossy) to 1 (rough and matte).
+EntityEmissive: (ext) Makes entity glow with the colour red, green, blue (0-255) times intensity; all zero turns the glow off. Glow shows strongly with the bloom post effect.
+EntityMetallicMap: (ext) Gives entity a texture controlling how metallic each part of it is; 0 removes it.
+EntityRoughnessMap: (ext) Gives entity a texture controlling the roughness of each part of it; 0 removes it.
+EntityEmissiveMap: (ext) Gives entity a texture controlling which parts of it glow; 0 removes it.
+EntityAOMap: (ext) Gives entity an ambient occlusion texture that darkens creases and corners; 0 removes it.
+EntityLightmap: (ext) Gives entity a lightmap texture, read with the mesh's second UV set; 0 removes it.
+EntityHeightMap: (ext) Gives entity a height map texture (white is high) for parallax mapping, with depth scale (default 0.08); 0 removes it.
+
+# Brushes
+CreateBrush: Creates a brush with colour red, green, blue (0-255, default white) and returns its handle.
+LoadBrush: Creates a brush with the texture in file and returns its handle; flags are texture flags and u_scale, v_scale scale the texture.
+FreeBrush: Frees brush. Things already painted with it keep their look.
+BrushColor: Sets the colour of brush to red, green, blue (0-255).
+BrushAlpha: Sets the alpha of brush from 0 (invisible) to 1 (solid).
+BrushShininess: Sets the specular shininess of brush from 0 to 1.
+BrushTexture: Puts frame of texture on brush in texture layer index (default 0).
+BrushBlend: Sets the blend mode of brush: 1 alpha, 2 multiply, 3 add.
+BrushFX: Sets the effect flags of brush (1 full bright, 2 vertex colours, 4 flat shaded, 8 no fog, 16 no back-face culling, 32 force alpha blending).
+PaintSurface: Paints surface with brush.
+PaintEntity: Paints a whole entity with brush.
+PaintMesh: Paints every surface of mesh with brush.
+GetSurfaceBrush: Returns a new brush with the look of surface. Free it with FreeBrush when done.
+GetEntityBrush: Returns a new brush with the look of entity. Free it with FreeBrush when done.
+GetBrushTexture: Returns the texture in layer index (default 0) of brush, or 0 if there is none.
+
+# Custom meshes
+CreateMesh: Creates an empty mesh and returns its handle; brush and parent are optional.
+CreateSurface: Adds a new empty surface to mesh, optionally painted with brush, and returns its handle.
+CountSurfaces: Returns the number of surfaces in mesh.
+GetSurface: Returns the handle of surface number index (starting at 1) of mesh.
+AddVertex: Adds a vertex at x, y, z with texture coordinates u, v, w to surface and returns its index (starting at 0).
+AddTriangle: Adds a triangle joining vertices v0, v1 and v2 to surface and returns its index.
+ClearSurface: Removes the vertices and/or triangles from surface, as chosen by clear_vertices and clear_triangles (both default 1).
+CountVertices: Returns the number of vertices in surface.
+CountTriangles: Returns the number of triangles in surface.
+TriangleVertex: Returns the index of the vertex at corner (0, 1 or 2) of triangle in surface.
+VertexCoords: Moves vertex index of surface to x, y, z.
+VertexNormal: Sets the normal of vertex index of surface to nx, ny, nz.
+VertexColor: Sets the colour of vertex index of surface to red, green, blue (0-255) and alpha (0 to 1, default 1). Shown when the entity uses vertex colours (EntityFX 2).
+VertexData: (ext) Stores up to four extra values x, y, z, w in data slot (0 to 3) of vertex index of surface, for use by custom shaders.
+VertexDataValue: (ext) Returns one component (0 to 3) of data slot (0 to 3) of vertex index of surface, as set with VertexData.
+VertexTexCoords: Sets the texture coordinates u, v, w of vertex index of surface in coordinate set coord_set (0 or 1).
+VertexX: Returns the X position of vertex index of surface.
+VertexY: Returns the Y position of vertex index of surface.
+VertexZ: Returns the Z position of vertex index of surface.
+VertexNX: Returns the X part of the normal of vertex index of surface.
+VertexNY: Returns the Y part of the normal of vertex index of surface.
+VertexNZ: Returns the Z part of the normal of vertex index of surface.
+VertexRed: Returns the red component (0-255) of the colour of vertex index of surface.
+VertexGreen: Returns the green component (0-255) of the colour of vertex index of surface.
+VertexBlue: Returns the blue component (0-255) of the colour of vertex index of surface.
+VertexAlpha: Returns the alpha (0 to 1) of vertex index of surface.
+VertexU: Returns the U texture coordinate of vertex index of surface in coordinate set coord_set.
+VertexV: Returns the V texture coordinate of vertex index of surface in coordinate set coord_set.
+VertexW: Returns the W texture coordinate of vertex index of surface in coordinate set coord_set.
+UpdateNormals: Recalculates the normals of every vertex in mesh for smooth lighting.
+FlipMesh: Reverses the triangles of mesh so it faces the other way.
+ScaleMesh: Scales the vertices of mesh by x_scale, y_scale, z_scale, changing the geometry itself.
+PositionMesh: Moves the vertices of mesh by x, y, z, changing the geometry itself.
+RotateMesh: Rotates the vertices of mesh by pitch, yaw and roll in degrees, changing the geometry itself.
+FitMesh: Scales and moves the vertices of mesh to fit the box at x, y, z of size width, height, depth; uniform 1 keeps the mesh's proportions.
+AddMesh: Copies the surfaces of source_mesh into dest_mesh.
+CopyMesh: Creates a new mesh with a copy of the geometry of mesh and returns its handle; parent is optional.
+MeshCullBox: Accepted for compatibility; meshes are culled by their real bounds.
+FindSurface: Returns the surface of mesh painted with brush, or 0 if there is none.
+MeshesIntersect: Returns 1 if any triangle of mesh_a intersects a triangle of mesh_b, otherwise 0.
+MeshWidth: Returns the width (size along X) of mesh, in world units.
+MeshHeight: Returns the height (size along Y) of mesh, in world units.
+MeshDepth: Returns the depth (size along Z) of mesh, in world units.
+CountMeshTriangles: (ext) Returns the total number of triangles in all surfaces of mesh.
+
+# Models and animation
+CaptureWorld: Records the position, rotation and scale of every entity, for RenderWorld tweening.
+AddAnimSeq: Adds an empty keyframe animation sequence of length frames to entity and returns its number; fill it with SetAnimKey.
+SetAnimKey: Stores entity's current position, rotation and/or scale (chosen by pos_key, rot_key, scale_key) as a key at frame of its last added sequence.
+LoaderMatrix: Sets the matrix applied to models loaded from files with file_extension; the three rows xx,xy,xz / yx,yy,yz / zx,zy,zz are the new X, Y and Z axes.
+LoadAnimSeq: Loads the animations from another model file and adds them to the animated model entity (retargeted to its skeleton); returns the number of the first new sequence, or -1 on failure.
+LoadMesh: Loads a glTF (.gltf/.glb), FBX or saved scene file as a single entity and returns its handle, or 0 on failure; parent is optional. Old Blitz formats (.b3d, .x, .3ds) are not supported.
+LoadMeshAsync: (ext) Starts loading a model file in the background and returns its entity at once; the model appears in it when loaded. parent is optional.
+EntityLoaded: (ext) Returns 1 if the model of entity has finished loading (always for other entities), 0 while it is still loading, -1 if loading failed.
+PendingLoads: (ext) Returns the number of background model and texture loads still in progress.
+LoadAnimMesh: Loads an animated model (with its bone hierarchy and animations) from file and returns it as an entity, optionally attached to parent. Returns 0 if the file cannot be loaded.
+Animate: Starts animating entity: mode 0 stops, 1 loops, 2 ping-pongs, 3 plays once; speed scales playback, sequence picks the animation sequence and transition is the number of frames to blend from the current pose.
+SetAnimTime: Jumps entity's animation to time (in frames) in the given sequence.
+Animating: Returns 1 if entity is currently animating, otherwise 0.
+AnimTime: Returns the current time (frame) of entity's animation.
+AnimSeq: Returns the animation sequence entity is currently playing.
+AnimLength: Returns the length in frames of entity's current animation sequence.
+ExtractAnimSeq: Creates a new animation sequence from frames first_frame to last_frame of sequence anim_seq and returns the new sequence's number.
+CountAnimSeqs: (ext) Returns how many animation sequences entity has (0 if it is not animated).
+
+# Sprites
+CreateSprite: Creates a flat sprite that faces the camera and returns its handle; parent is optional.
+LoadSprite: Creates a sprite with the texture in file (texture_flags default 1) and returns its handle; parent is optional.
+SpriteViewMode: Sets how sprite faces the camera: 1 always faces it, 2 fixed (does not turn), 3 turns only around its Y axis, 4 upright but turns to face the camera.
+RotateSprite: Rotates sprite by angle degrees around the view direction.
+ScaleSprite: Sets the size of sprite to x_scale by y_scale (a scale of 1 is 2 units wide).
+HandleSprite: Sets the handle of sprite, the point it is centred on, as x_handle, y_handle from -1 to 1 (0, 0 is the middle).
+
+# Terrain
+CreateTerrain: Creates a flat terrain of grid_size by grid_size squares (a power of 2) and returns its handle; parent is optional.
+LoadTerrain: Creates a terrain from a heightmap image file (brightness is height) and returns its handle; parent is optional.
+TerrainSize: Returns the grid size of terrain.
+TerrainHeight: Returns the height of terrain at grid point grid_x, grid_z, from 0 to 1.
+ModifyTerrain: Sets the height of terrain at grid point grid_x, grid_z to height (0 to 1); realtime is accepted for compatibility.
+TerrainY: Returns the world Y height of terrain at world position x, y, z.
+TerrainX: Returns the world X of the terrain point under world position x, y, z.
+TerrainZ: Returns the world Z of the terrain point under world position x, y, z.
+TerrainDetail: Accepted for compatibility; terrain level of detail is handled by the GPU.
+TerrainShading: Accepted for compatibility; terrain shading is handled by the GPU.
+
+# Mirrors and sky
+SkyBox: (ext) Shows a cube map texture (loaded with flag 128, six square faces side by side) as the sky; 0 removes the sky.
+CreateMirror: Creates a mirror entity that reflects the world below a flat plane and returns its handle; parent is an optional parent entity.
+
+# Collisions
+CollisionSurface: Returns 1 if collision number index (from 1 to CountCollisions) of entity hit a mesh triangle, otherwise 0.
+CollisionTriangle: Returns the index of the triangle hit in collision number index (from 1 to CountCollisions) of entity.
+EntityType: Sets the collision type number of entity, and of its children too when recursive is 1. Type 0 means no collisions.
+GetEntityType: Returns the collision type number of entity.
+EntityRadius: Sets the collision radius of entity; give y_radius for an ellipsoid with a different vertical radius.
+EntityBox: Sets the collision box of entity: corner x,y,z and size width,height,depth, for box collisions.
+Collisions: Enables collisions from entities of type src_type to type dest_type. method is 1 ellipsoid-ellipsoid, 2 ellipsoid-polygon, 3 ellipsoid-box; response is 1 stop, 2 slide, 3 slide without sliding down slopes.
+ClearCollisions: Removes all collision rules set with Collisions.
+ResetEntity: Forgets entity's previous position so the next UpdateWorld does not collide it along the way, for teleporting.
+EntityCollided: Returns the entity of collision type type that entity collided with in the last UpdateWorld, or 0.
+CountCollisions: Returns how many collisions entity had in the last UpdateWorld.
+CollisionX: Returns the world X coordinate of collision index (1 to CountCollisions) of entity.
+CollisionY: Returns the world Y coordinate of collision index of entity.
+CollisionZ: Returns the world Z coordinate of collision index of entity.
+CollisionNX: Returns the X component of the surface normal of collision index of entity.
+CollisionNY: Returns the Y component of the surface normal of collision index of entity.
+CollisionNZ: Returns the Z component of the surface normal of collision index of entity.
+CollisionTime: Returns the time (0 to 1 along the movement) at which collision index of entity happened.
+CollisionEntity: Returns the entity hit in collision index of entity.
+
+# Picking
+EntityPickMode: Makes entity pickable: pick_geometry 0 none, 1 sphere, 2 polygon, 3 box. With obscurer 1 it also blocks EntityVisible checks.
+LinePick: Picks along a line from x,y,z in direction and length dx,dy,dz, optionally with a thickness of radius. Returns the picked entity, or 0.
+EntityPick: Picks from entity straight ahead up to range units. Returns the picked entity, or 0.
+CameraPick: Picks the entity under screen point viewport_x,viewport_y of camera. Returns the picked entity, or 0.
+PickedX: Returns the world X coordinate of the last pick.
+PickedY: Returns the world Y coordinate of the last pick.
+PickedZ: Returns the world Z coordinate of the last pick.
+PickedNX: Returns the X component of the surface normal at the last pick.
+PickedNY: Returns the Y component of the surface normal at the last pick.
+PickedNZ: Returns the Z component of the surface normal at the last pick.
+PickedTime: Returns the time (0 to 1 along the line) of the last pick.
+PickedEntity: Returns the entity hit by the last pick, or 0.
+PickedTriangle: Returns the index of the triangle hit by the last pick.
+PickedSurface: Returns the surface hit by the last pick.
+CameraProject: Projects world point x,y,z through camera to the screen; read the result with ProjectedX/Y/Z.
+ProjectedX: Returns the screen X coordinate from the last CameraProject.
+ProjectedY: Returns the screen Y coordinate from the last CameraProject.
+ProjectedZ: Returns the depth from the last CameraProject; 0 means the point is behind the camera.
+EntityInView: Returns 1 if entity is inside camera's view.
+EntityVisible: Returns 1 if nothing pickable as an obscurer blocks the line between src_entity and dest_entity.
+
+# 3D physics
+EntityPhysics: (ext) Makes entity a rigid body: body_type 1 dynamic, 2 static, 3 kinematic; shape 0 automatic, 1 box, 2 sphere, 3 capsule, 4 cylinder, 5 mesh, 6 convex hull; mass in kilograms.
+PhysicsGravity: (ext) Sets the world's gravity vector x, y, z, in units per second squared.
+EntityMass: (ext) Sets the mass of entity's physics body.
+EntityFriction: (ext) Sets the friction of entity's physics body (0 is slippery).
+EntityBounce: (ext) Sets how bouncy entity's physics body is, from 0 (no bounce) to 1.
+EntityDamping: (ext) Sets the linear and angular damping of entity's physics body, which slows its movement and spin.
+EntityGravityScale: (ext) Scales how much gravity affects entity's physics body (0 none, 1 normal).
+LockRotation: (ext) Stops entity's physics body rotating about each axis whose flag x, y, z is 1.
+ApplyForce: (ext) Applies a continuous force x, y, z to entity's physics body.
+ApplyImpulse: (ext) Gives entity's physics body an instant push x, y, z.
+ApplyImpulseAt: (ext) Gives entity's physics body an instant push x, y, z at the world point point_x, point_y, point_z, which can also make it spin.
+ApplyTorque: (ext) Applies a continuous turning force x, y, z to entity's physics body.
+ApplyTorqueImpulse: (ext) Gives entity's physics body an instant spin x, y, z.
+SetVelocity: (ext) Sets the velocity of entity's physics body, in units per second.
+SetAngularVelocity: (ext) Sets the angular velocity of entity's physics body.
+VelocityX: (ext) Returns the X velocity of entity's physics body, in units per second.
+VelocityY: (ext) Returns the Y velocity of entity's physics body, in units per second.
+VelocityZ: (ext) Returns the Z velocity of entity's physics body, in units per second.
+AngularVelocityX: (ext) Returns the angular velocity of entity's physics body about the X axis.
+AngularVelocityY: (ext) Returns the angular velocity of entity's physics body about the Y axis.
+AngularVelocityZ: (ext) Returns the angular velocity of entity's physics body about the Z axis.
+EntityTouching: (ext) Returns 1 if entity's physics body is touching other, otherwise 0.
+CountContacts: (ext) Returns how many physics bodies entity is touching.
+ContactEntity: (ext) Returns contact number index (counting from 1) of entity, or 0 if there is none.
+PhysicsRayCast: (ext) Casts a ray from x, y, z along dx, dy, dz against physics bodies and returns the first entity hit, or 0; PickedX and the other picked commands give the hit details.
+
+# Joints and ragdolls
+CreateBallJoint: (ext) Joins the physics bodies of entity1 and entity2 with a ball joint at world point x, y, z and returns the joint.
+CreateHingeJoint: (ext) Joins entity1 and entity2 with a hinge at world point x, y, z turning about axis axis_x, axis_y, axis_z, and returns the joint.
+CreateFixedJoint: (ext) Locks the physics bodies of entity1 and entity2 together and returns the joint.
+FreeJoint: (ext) Removes joint.
+CreateSliderJoint: (ext) Joins entity1 and entity2 with a slider at world point x, y, z that moves along axis axis_x, axis_y, axis_z, and returns the joint.
+JointMotor: (ext) Drives a hinge or slider joint at speed (degrees or units per second), pushing with at most max_force.
+JointTarget: (ext) Pulls a hinge or slider joint towards target (an angle in degrees or a position in units) like a spring with the given stiffness, pushing with at most max_force.
+JointMotorOff: (ext) Turns off the motor or target of joint.
+JointLimits: (ext) Limits a hinge's angle (degrees) or a slider's position (units) to between min and max; enable 0 removes the limits.
+JointAngle: (ext) Returns how far a hinge joint has turned since it was made, in degrees.
+JointPosition: (ext) Returns how far a slider joint has moved since it was made, in units.
+CreateRagdoll: (ext) Builds a ragdoll of physics bodies and joints for the skeleton of an animated model; thickness scales the limbs. It starts off, following the animation.
+RagdollEnable: (ext) Turns entity's ragdoll on (enable 1), so the animation stops and the body goes limp, or off (0), giving the bones back to the animation.
+RagdollActive: (ext) Returns 1 if entity's ragdoll is turned on, otherwise 0.
+RagdollImpulse: (ext) Gives every body in entity's ragdoll an instant push x, y, z.
+FreeRagdoll: (ext) Removes entity's ragdoll.
+CreateHingeJoint2D: (ext) Joins 2D bodies body1 and body2 with a hinge (pin) at x,y pixels that lets them turn. Returns the joint handle.
+CreateFixedJoint2D: (ext) Locks 2D bodies body1 and body2 together at x,y pixels. Returns the joint handle.
+CreateSliderJoint2D: (ext) Joins 2D bodies body1 and body2 with a slider at x,y that lets them slide along a line at angle degrees. Returns the joint handle.
+FreeJoint2D: (ext) Removes 2D joint joint.
+JointMotor2D: (ext) Drives a 2D hinge or slider joint at speed (degrees or pixels per second), pushing with at most max_force.
+JointTarget2D: (ext) Pulls a 2D hinge or slider joint like a spring to target (degrees or pixels) with stiffness, pushing with at most max_force.
+JointMotorOff2D: (ext) Turns off the motor or target of 2D joint joint.
+JointLimits2D: (ext) Limits a 2D hinge (degrees) or slider (pixels) joint to between min and max; enable 0 removes the limits.
+JointAngle2D: (ext) Returns how far a 2D hinge joint has turned since it was made, in degrees clockwise.
+JointPosition2D: (ext) Returns how far a 2D slider joint has slid since it was made, in pixels.
+
+# Rendering effects
+CreateDecal: (ext) Creates a decal that projects texture onto the scene inside its box (size it with ScaleEntity) and returns its handle; parent is optional.
+CreateEmitter: (ext) Creates a particle emitter using texture for the particles and returns its handle; parent is optional.
+EmitterRate: (ext) Sets how many particles emitter makes per_second.
+EmitterMax: (ext) Limits emitter to count particles alive at once; 0 means no limit.
+EmitterLife: (ext) Sets the lifetime of each particle of emitter to a random value between min and max seconds.
+EmitterVelocity: (ext) Sets the starting velocity x, y, z of particles of emitter in units per second, randomised by up to spread on each axis.
+EmitterSize: (ext) Sets the starting size of particles of emitter, and grow, how much they grow per second.
+EmitterSpin: (ext) Sets the spin speed of particles of emitter to a random value between min and max.
+EmitterColor: (ext) Sets the colour particles of emitter start with, as red, green, blue and alpha (0-255, alpha default 255).
+EmitterFadeColor: (ext) Sets the colour particles of emitter fade to by the end of their life, as red, green, blue and alpha (0-255, alpha default 0).
+EmitterGravity: (ext) Sets the acceleration x, y, z applied to particles of emitter, in units per second squared.
+EmitterShape: (ext) Sets where particles of emitter are born: shape 0 is a sphere of radius width, 1 is a box of width, height, depth.
+EmitterSoftness: (ext) Sets how softly particles of emitter fade where they meet scene geometry; 0 turns soft particles off.
+EmitterLocal: (ext) With enable 1, particles of emitter move with it; with 0 (default) they stay where they were born, leaving trails.
+EmitterEnable: (ext) Starts (enable 1) or stops (0) emitter making new particles.
+EmitterClear: (ext) Removes all particles of emitter at once.
+EntityLOD: (ext) Makes the level entity (a level of detail of entity) show only while the camera is between near and far units from entity; far 0 means no upper limit.
+CameraExposure: (ext) Sets the exposure of camera: mode 0 uses a fixed exposure, 1 adjusts it automatically between min_luminance and max_luminance.
+CameraColorGrading: (ext) Applies a colour grading table to camera, from a 256x16 image file; an empty file name removes it.
+CameraToTexture: (ext) Makes camera render into texture instead of the screen; texture 0 renders to the screen again.
+LoadShader: (ext) Loads a custom Fyrox shader file (.shader) and returns it, or 0 if it cannot be loaded.
+EntityShader: (ext) Draws entity with a shader loaded by LoadShader.
+ShaderFloat: (ext) Sets the float property called name of entity's custom shader to value.
+ShaderVector: (ext) Sets the vector property called name of entity's custom shader to x, y, z, w.
+ShaderTexture: (ext) Sets the texture property called name of entity's custom shader to texture.
+
+# Loading and saving scenes
+SaveScene: (ext) Saves every top-level entity as a Fyrox scene file (.rgs) that LoadMesh can load back as one entity; cameras, collision, pick and physics settings and sounds are not saved. Returns 1 on success.
+SaveEntity: (ext) Saves entity and its children as a Fyrox scene file (.rgs) named file, to be loaded back with LoadMesh. Returns 1 on success.
