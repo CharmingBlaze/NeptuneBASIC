@@ -50,6 +50,9 @@ pub struct PhysState {
     pub body: Handle<Node>,
     pub collider: Handle<Node>,
     pub body_type: i32,
+    /// Shape and mass as given to `EntityPhysics` (for `CopyEntity`).
+    pub shape: i32,
+    pub mass: f32,
 }
 
 /// Blitz → Fyrox for direction vectors.
@@ -83,7 +86,8 @@ impl Host3D<'_> {
             return Err(format!("Entity {e} already has physics"));
         }
         if self.ent(e)?.parent != 0 {
-            return Err("EntityPhysics: the entity must not have a parent (use EntityParent entity, 0 first)".into());
+            // bodies move in world space: detach, keeping where the entity is
+            self.set_parent(e, 0, true)?;
         }
         if !(1..=3).contains(&body_type) {
             return Err(format!("EntityPhysics type must be 1 (dynamic), 2 (static) or 3 (kinematic), got {body_type}"));
@@ -165,7 +169,35 @@ impl Host3D<'_> {
         t.set_rotation(UnitQuaternion::identity());
         t.set_scale(xf.scale);
         // mesh colliders read their geometry relative to the body
-        self.ent_mut(e)?.phys = Some(PhysState { body, collider, body_type });
+        self.ent_mut(e)?.phys = Some(PhysState { body, collider, body_type, shape, mass });
+        Ok(())
+    }
+
+    /// Gives a copied entity its own body with the original's settings.
+    pub fn copy_physics(&mut self, src: i32, dst: i32, p: PhysState) -> Result<(), String> {
+        // the copied subtree is the visual node only; physics needs a fresh body
+        if self.ent(dst)?.parent != 0 {
+            self.set_parent(dst, 0, true)?;
+        }
+        self.enable_physics(dst, p.body_type, p.shape, p.mass)?;
+        let (friction, bounce) = {
+            let c = self.collider_mut(src)?;
+            (c.friction(), c.restitution())
+        };
+        let (lin, ang, gscale, lx, ly, lz) = {
+            let b = self.body_mut(src)?;
+            (b.lin_damping(), b.ang_damping(), b.gravity_scale(), b.is_x_rotation_locked(), b.is_y_rotation_locked(), b.is_z_rotation_locked())
+        };
+        let c = self.collider_mut(dst)?;
+        c.set_friction(friction);
+        c.set_restitution(bounce);
+        let b = self.body_mut(dst)?;
+        b.set_lin_damping(lin);
+        b.set_ang_damping(ang);
+        b.set_gravity_scale(gscale);
+        b.lock_x_rotations(lx);
+        b.lock_y_rotations(ly);
+        b.lock_z_rotations(lz);
         Ok(())
     }
 

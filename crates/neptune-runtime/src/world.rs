@@ -454,6 +454,9 @@ impl<'a> Host3D<'a> {
 
     /// Re-parents an entity. With `global`, its world transform is preserved.
     pub fn set_parent(&mut self, id: i32, parent: i32, global: bool) -> Result<(), String> {
+        if parent != 0 && self.ent(id)?.phys.is_some() {
+            return Err(format!("Entity {id} has physics; physics bodies move in world space and cannot have a parent"));
+        }
         if parent != 0 {
             // reject cycles
             let mut cur = parent;
@@ -551,7 +554,11 @@ impl<'a> Host3D<'a> {
         }
         let (node, kind, xf, name, color, hidden, children) = {
             let e = self.ent(id)?;
-            (e.node, e.kind, e.xf, e.name.clone(), e.color, e.hidden, e.children.clone())
+            (e.node, e.kind, self.live_xf(e), e.name.clone(), e.color, e.hidden, e.children.clone())
+        };
+        let (sprite, terrain, phys) = {
+            let e = self.ent(id)?;
+            (e.sprite, e.terrain.clone(), e.phys)
         };
         let look = {
             let e = self.ent(id)?;
@@ -591,8 +598,20 @@ impl<'a> Host3D<'a> {
         // the copy shares materials with the original, so neither owns them now
         self.ent_mut(id)?.own_materials = false;
         self.sync(new)?;
+        // sprites and terrains edit their own surface, not the original's
+        if let Some(mut s) = sprite {
+            s.surface = self.surface_handle(new, 0)?;
+            self.ent_mut(new)?.sprite = Some(s);
+        }
+        if let Some(mut t) = terrain {
+            t.surface = self.surface_handle(new, 0)?;
+            self.ent_mut(new)?.terrain = Some(t);
+        }
         for c in children {
             self.copy_entity(c as i32, new)?;
+        }
+        if let Some(p) = phys {
+            self.copy_physics(id, new, p)?;
         }
         Ok(new)
     }

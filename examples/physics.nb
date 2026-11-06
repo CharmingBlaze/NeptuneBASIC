@@ -20,16 +20,29 @@ PositionEntity ground, 0, -0.5, 0
 EntityColor ground, 90, 140, 90
 EntityPhysics ground, PHYS_STATIC
 
-; a pyramid of boxes
+; a pyramid of boxes, copied from one physics box (copies get their own body)
+template = CreateCube()
+ScaleEntity template, 0.5, 0.5, 0.5
+PositionEntity template, 0, -50, 0
+EntityPhysics template, PHYS_DYNAMIC, SHAPE_BOX, 1
+EntityFriction template, 0.8
 For row = 0 To 4
     For col = 0 To 4 - row
-        box = CreateCube()
-        ScaleEntity box, 0.5, 0.5, 0.5
+        box = CopyEntity(template)
         PositionEntity box, -2 + col + row * 0.5, 0.5 + row * 1.0, 3
         EntityColor box, 200, 120 + row * 25, 60
-        EntityPhysics box, PHYS_DYNAMIC, SHAPE_BOX, 1
     Next
 Next
+FreeEntity template
+
+; a ball that starts as a child of a pivot: physics detaches it in place
+holder = CreatePivot()
+PositionEntity holder, -6, 6, 2
+bouncer = CreateSphere(12)
+EntityParent bouncer, holder, False
+EntityColor bouncer, 240, 240, 80
+EntityPhysics bouncer, PHYS_DYNAMIC, SHAPE_SPHERE, 1
+EntityBounce bouncer, 0.9
 
 ; a door on a vertical hinge
 post = CreateCylinder(12)
