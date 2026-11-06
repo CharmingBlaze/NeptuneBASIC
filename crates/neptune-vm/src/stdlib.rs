@@ -1,5 +1,5 @@
 //! Engine-independent standard library: console, math, strings, files,
-//! time and random numbers. Names and signatures follow Blitz3D's
+//! directories, banks, timers, networking, time and random numbers. Names and signatures follow Blitz3D's
 //! `basic.cpp`, `bbmath.cpp`, `bbstring.cpp`, `bbfilesystem.cpp` and
 //! `bbstream.cpp`; NeptuneBASIC additions are marked in [`COMMANDS`].
 
@@ -20,12 +20,23 @@ pub enum Output {
     Stdout,
     /// Captured output (tests, embedding, IDE consoles).
     Buffer(String),
+    /// Shared with a host, which draws it (the graphics runtime puts
+    /// `Print` text on the screen like Blitz3D).
+    Shared(Rc<std::cell::RefCell<String>>),
 }
 
 enum Stream {
     Read(BufReader<File>),
     Write(BufWriter<File>),
     ReadWrite(File),
+    Tcp(crate::net::Tcp),
+    Udp(crate::net::Udp),
+}
+
+/// A `CreateTimer` timer.
+struct Timer {
+    period: std::time::Duration,
+    next: Instant,
 }
 
 /// State used by standard library commands.
@@ -35,6 +46,18 @@ pub struct Core {
     rng: u64,
     files: HashMap<i32, Stream>,
     next_file: i32,
+    seed: i32,
+    banks: HashMap<i32, Vec<u8>>,
+    timers: HashMap<i32, Timer>,
+    dirs: HashMap<i32, std::collections::VecDeque<String>>,
+    servers: HashMap<i32, crate::net::Server>,
+    next_handle: i32,
+    /// `TCPTimeouts` (read, accept) and `UDPTimeouts`, milliseconds.
+    tcp_read_ms: u32,
+    tcp_accept_ms: u32,
+    udp_ms: u32,
+    /// Results of the last `CountHostIPs`.
+    host_ips: Vec<i32>,
     /// Lines returned by `Input` when set (tests/embedding); otherwise stdin.
     pub input_lines: Option<std::collections::VecDeque<String>>,
 }
@@ -53,6 +76,16 @@ impl Core {
             rng: 0x2545_F491_4F6C_DD1D,
             files: HashMap::new(),
             next_file: 1,
+            seed: 0,
+            banks: HashMap::new(),
+            timers: HashMap::new(),
+            dirs: HashMap::new(),
+            servers: HashMap::new(),
+            next_handle: 1,
+            tcp_read_ms: 10_000,
+            tcp_accept_ms: 0,
+            udp_ms: 0,
+            host_ips: Vec::new(),
             input_lines: None,
         }
     }
@@ -65,6 +98,7 @@ impl Core {
                 let _ = o.flush();
             }
             Output::Buffer(b) => b.push_str(s),
+            Output::Shared(b) => b.borrow_mut().push_str(s),
         }
     }
 
@@ -72,6 +106,7 @@ impl Core {
     pub fn take_output(&mut self) -> String {
         match &mut self.output {
             Output::Buffer(b) => std::mem::take(b),
+            Output::Shared(b) => std::mem::take(&mut *b.borrow_mut()),
             Output::Stdout => String::new(),
         }
     }
@@ -91,6 +126,14 @@ impl Core {
 
     fn file(&mut self, h: i32) -> Result<&mut Stream, String> {
         self.files.get_mut(&h).ok_or_else(|| format!("stream {h} does not exist"))
+    }
+    fn handle(&mut self) -> i32 {
+        let h = self.next_handle;
+        self.next_handle += 1;
+        h
+    }
+    fn bank(&mut self, b: i32) -> Result<&mut Vec<u8>, String> {
+        self.banks.get_mut(&b).ok_or_else(|| format!("Bank {b} does not exist"))
     }
     fn add_stream(&mut self, s: Stream) -> i32 {
         let h = self.next_file;
@@ -126,6 +169,8 @@ fn stream_read(s: &mut Stream, buf: &mut [u8]) -> std::io::Result<usize> {
         Stream::Read(r) => r.read(buf),
         Stream::ReadWrite(f) => f.read(buf),
         Stream::Write(_) => Ok(0),
+        Stream::Tcp(t) => t.read(buf),
+        Stream::Udp(u) => Ok(u.read(buf)),
     }
 }
 fn stream_write(s: &mut Stream, buf: &[u8]) -> Result<(), String> {
@@ -133,8 +178,61 @@ fn stream_write(s: &mut Stream, buf: &[u8]) -> Result<(), String> {
         Stream::Write(w) => w.write_all(buf),
         Stream::ReadWrite(f) => f.write_all(buf),
         Stream::Read(_) => return Err("stream is not writable".into()),
+        Stream::Tcp(t) => t.write(buf),
+        Stream::Udp(u) => {
+            u.wbuf.extend_from_slice(buf);
+            Ok(())
+        }
     };
     r.map_err(|e| e.to_string())
+}
+/// Bytes that can be read without waiting (`ReadAvail`).
+fn stream_avail(s: &mut Stream) -> i32 {
+    match s {
+        Stream::Read(r) => {
+            let buffered = r.buffer().len() as u64;
+            let f = r.get_mut();
+            let pos = f.stream_position().unwrap_or(0);
+            let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+            (len.saturating_sub(pos) + buffered).min(i32::MAX as u64) as i32
+        }
+        Stream::ReadWrite(f) => {
+            let pos = f.stream_position().unwrap_or(0);
+            let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+            len.saturating_sub(pos).min(i32::MAX as u64) as i32
+        }
+        Stream::Write(_) => 0,
+        Stream::Tcp(t) => t.available(),
+        Stream::Udp(u) => u.available(),
+    }
+}
+fn bank_range(bank: &[u8], offset: i32, len: usize) -> Result<std::ops::Range<usize>, String> {
+    let o = usize::try_from(offset).map_err(|_| format!("bank offset {offset} is negative"))?;
+    if o + len > bank.len() {
+        return Err(format!("bank offset {offset} out of range (bank size {})", bank.len()));
+    }
+    Ok(o..o + len)
+}
+fn peek<const N: usize>(c: &mut Core, a: &[Value]) -> Result<[u8; N], String> {
+    let b = c.bank(a[0].int())?;
+    let r = bank_range(b, a[1].int(), N)?;
+    Ok(b[r].try_into().expect("range has N bytes"))
+}
+fn poke(c: &mut Core, a: &[Value], bytes: &[u8]) -> Result<Value, String> {
+    let b = c.bank(a[0].int())?;
+    let r = bank_range(b, a[1].int(), bytes.len())?;
+    b[r].copy_from_slice(bytes);
+    VOID
+}
+/// Opens a file or folder with the program the system associates with it.
+fn exec_file(target: &str) -> bool {
+    #[cfg(windows)]
+    let r = std::process::Command::new("cmd").args(["/C", "start", "", target]).spawn();
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(target).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let r = std::process::Command::new("xdg-open").arg(target).spawn();
+    r.is_ok()
 }
 fn read_n<const N: usize>(c: &mut Core, h: i32) -> Result<[u8; N], String> {
     let s = c.file(h)?;
@@ -193,6 +291,7 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
     ("$CurrentTime", |_, _, _| ok_s(civil_now().1)),
     // ---- random (bbmath.cpp)
     ("SeedRnd%seed", |a, c, _| {
+        c.seed = a[0].int();
         c.rng = (a[0].int() as u32 as u64) ^ 0x9E37_79B9_7F4A_7C15;
         if c.rng == 0 {
             c.rng = 1;
@@ -367,6 +466,8 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
                 (pos >= len) as i32
             }
             Stream::Write(_) => 1,
+            Stream::Tcp(t) => t.eof(),
+            Stream::Udp(u) => (u.available() == 0) as i32,
         })
     }),
     ("$ReadLine%stream", |a, c, _| {
@@ -428,6 +529,275 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
         stream_write(st, &(s.len() as i32).to_le_bytes())?;
         stream_write(st, s.as_bytes())?;
         VOID
+    }),
+    // ---- more streams and files
+    ("%ReadAvail%stream", |a, c, _| ok_int(stream_avail(c.file(a[0].int())?))),
+    ("%FilePos%stream", |a, c, _| {
+        let pos = match c.file(a[0].int())? {
+            Stream::Read(r) => r.stream_position().unwrap_or(0),
+            Stream::Write(w) => w.stream_position().unwrap_or(0),
+            Stream::ReadWrite(f) => f.stream_position().unwrap_or(0),
+            _ => return Err("FilePos needs a file stream".into()),
+        };
+        ok_int(pos as i32)
+    }),
+    ("%SeekFile%stream%pos", |a, c, _| {
+        let to = std::io::SeekFrom::Start(a[1].int().max(0) as u64);
+        let pos = match c.file(a[0].int())? {
+            Stream::Read(r) => r.seek(to),
+            Stream::Write(w) => w.seek(to),
+            Stream::ReadWrite(f) => f.seek(to),
+            _ => return Err("SeekFile needs a file stream".into()),
+        };
+        ok_int(pos.map_or(-1, |p| p as i32))
+    }),
+    ("CopyStream%src_stream%dest_stream%buffer_size=16384", |a, c, _| {
+        let mut buf = vec![0u8; a[2].int().clamp(1, 1 << 24) as usize];
+        loop {
+            let n = stream_read(c.file(a[0].int())?, &mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            stream_write(c.file(a[1].int())?, &buf[..n])?;
+        }
+        VOID
+    }),
+    ("%ReadDir$dirname", |a, c, _| {
+        let Ok(rd) = std::fs::read_dir(&*a[0].str()) else { return ok_int(0) };
+        let mut names: std::collections::VecDeque<String> = [".".to_string(), "..".to_string()].into();
+        let mut rest: Vec<String> = rd.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned())).collect();
+        rest.sort_by_key(|n| n.to_lowercase());
+        names.extend(rest);
+        let h = c.handle();
+        c.dirs.insert(h, names);
+        ok_int(h)
+    }),
+    ("$NextFile%dir", |a, c, _| {
+        let d = c.dirs.get_mut(&a[0].int()).ok_or_else(|| format!("directory {} is not open", a[0].int()))?;
+        ok_s(d.pop_front().unwrap_or_default())
+    }),
+    ("CloseDir%dir", |a, c, _| {
+        c.dirs.remove(&a[0].int());
+        VOID
+    }),
+    // ---- banks (bbbank.cpp)
+    ("%CreateBank%size=0", |a, c, _| {
+        let h = c.handle();
+        c.banks.insert(h, vec![0; a[0].int().clamp(0, 1 << 30) as usize]);
+        ok_int(h)
+    }),
+    ("FreeBank%bank", |a, c, _| {
+        c.banks.remove(&a[0].int());
+        VOID
+    }),
+    ("%BankSize%bank", |a, c, _| ok_int(c.bank(a[0].int())?.len() as i32)),
+    ("ResizeBank%bank%size", |a, c, _| {
+        let n = a[1].int().clamp(0, 1 << 30) as usize;
+        c.bank(a[0].int())?.resize(n, 0);
+        VOID
+    }),
+    ("CopyBank%src_bank%src_offset%dest_bank%dest_offset%count", |a, c, _| {
+        let n = a[4].int().max(0) as usize;
+        let src = c.bank(a[0].int())?;
+        let r = bank_range(src, a[1].int(), n)?;
+        let data = src[r].to_vec();
+        let dst = c.bank(a[2].int())?;
+        let r = bank_range(dst, a[3].int(), n)?;
+        dst[r].copy_from_slice(&data);
+        VOID
+    }),
+    ("%PeekByte%bank%offset", |a, c, _| ok_int(peek::<1>(c, a)?[0] as i32)),
+    ("%PeekShort%bank%offset", |a, c, _| ok_int(u16::from_le_bytes(peek::<2>(c, a)?) as i32)),
+    ("%PeekInt%bank%offset", |a, c, _| ok_int(i32::from_le_bytes(peek::<4>(c, a)?))),
+    ("#PeekFloat%bank%offset", |a, c, _| ok_f(f32::from_le_bytes(peek::<4>(c, a)?))),
+    ("PokeByte%bank%offset%value", |a, c, _| poke(c, a, &[a[2].int() as u8])),
+    ("PokeShort%bank%offset%value", |a, c, _| poke(c, a, &(a[2].int() as u16).to_le_bytes())),
+    ("PokeInt%bank%offset%value", |a, c, _| poke(c, a, &a[2].int().to_le_bytes())),
+    ("PokeFloat%bank%offset#value", |a, c, _| poke(c, a, &a[2].float().to_le_bytes())),
+    ("%ReadBytes%bank%stream%offset%count", |a, c, _| {
+        let n = a[3].int().max(0) as usize;
+        let mut buf = vec![0u8; n];
+        let mut got = 0;
+        while got < n {
+            match stream_read(c.file(a[1].int())?, &mut buf[got..]) {
+                Ok(0) | Err(_) => break,
+                Ok(k) => got += k,
+            }
+        }
+        let b = c.bank(a[0].int())?;
+        let r = bank_range(b, a[2].int(), got)?;
+        b[r].copy_from_slice(&buf[..got]);
+        ok_int(got as i32)
+    }),
+    ("%WriteBytes%bank%stream%offset%count", |a, c, _| {
+        let n = a[3].int().max(0) as usize;
+        let b = c.bank(a[0].int())?;
+        let r = bank_range(b, a[2].int(), n)?;
+        let data = b[r].to_vec();
+        stream_write(c.file(a[1].int())?, &data)?;
+        ok_int(n as i32)
+    }),
+    // ---- timers (bbsys.cpp)
+    ("%CreateTimer%hertz", |a, c, _| {
+        let hz = a[0].int().max(1) as f64;
+        let period = std::time::Duration::from_secs_f64(1.0 / hz);
+        let h = c.handle();
+        c.timers.insert(h, Timer { period, next: Instant::now() + period });
+        ok_int(h)
+    }),
+    ("%WaitTimer%timer", |a, c, _| {
+        let t = c.timers.get_mut(&a[0].int()).ok_or_else(|| format!("Timer {} does not exist", a[0].int()))?;
+        let now = Instant::now();
+        if now < t.next {
+            std::thread::sleep(t.next - now);
+        }
+        // ticks that have passed, at least one; catch up without bursts
+        let now = Instant::now();
+        let mut ticks = 0;
+        while t.next <= now && ticks < 1000 {
+            t.next += t.period;
+            ticks += 1;
+        }
+        if ticks >= 1000 {
+            t.next = now + t.period;
+        }
+        ok_int(ticks.max(1))
+    }),
+    ("FreeTimer%timer", |a, c, _| {
+        c.timers.remove(&a[0].int());
+        VOID
+    }),
+    // ---- system
+    ("%RndSeed", |_, c, _| ok_int(c.seed)),
+    ("SetEnv$name$value", |a, _, _| {
+        // SAFETY: programs are single-threaded; nothing reads the environment concurrently
+        unsafe { std::env::set_var(&*a[0].str(), &*a[1].str()) };
+        VOID
+    }),
+    ("$SystemProperty$property", |a, _, _| {
+        let p = a[0].str().to_lowercase();
+        let dir = |p: Option<std::path::PathBuf>| p.map(|d| format!("{}{}", d.display(), std::path::MAIN_SEPARATOR)).unwrap_or_default();
+        ok_s(match p.as_str() {
+            "appdir" => dir(std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf()))),
+            "tempdir" => dir(Some(std::env::temp_dir())),
+            "currentdir" => dir(std::env::current_dir().ok()),
+            "windowsdir" => dir(std::env::var_os("WINDIR").map(Into::into)),
+            "systemdir" => dir(std::env::var_os("WINDIR").map(|w| std::path::Path::new(&w).join("System32"))),
+            "homedir" => dir(std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(Into::into)),
+            "os" => std::env::consts::OS.to_string(),
+            "cpucount" => std::thread::available_parallelism().map_or(1, |n| n.get()).to_string(),
+            _ => String::new(),
+        })
+    }),
+    ("ExecFile$file", |a, _, _| {
+        exec_file(&a[0].str());
+        VOID
+    }),
+    // ---- networking (bbsockets.cpp)
+    ("%OpenTCPStream$server%port", |a, c, _| {
+        let tcp = crate::net::Tcp::connect(&a[0].str(), a[1].int().clamp(0, 65535) as u16, c.tcp_read_ms.max(2000));
+        ok_int(match tcp {
+            Some(t) => c.add_stream(Stream::Tcp(t)),
+            None => 0,
+        })
+    }),
+    ("CloseTCPStream%stream", |a, c, _| {
+        c.files.remove(&a[0].int());
+        VOID
+    }),
+    ("%CreateTCPServer%port", |a, c, _| {
+        ok_int(match crate::net::Server::bind(a[0].int().clamp(0, 65535) as u16) {
+            Some(s) => {
+                let h = c.handle();
+                c.servers.insert(h, s);
+                h
+            }
+            None => 0,
+        })
+    }),
+    ("CloseTCPServer%server", |a, c, _| {
+        c.servers.remove(&a[0].int());
+        VOID
+    }),
+    ("%AcceptTCPStream%server", |a, c, _| {
+        let (accept, read) = (c.tcp_accept_ms, c.tcp_read_ms);
+        let s = c.servers.get(&a[0].int()).ok_or_else(|| format!("TCP server {} does not exist", a[0].int()))?;
+        ok_int(match s.accept(accept, read) {
+            Some(t) => c.add_stream(Stream::Tcp(t)),
+            None => 0,
+        })
+    }),
+    ("%TCPStreamIP%stream", |a, c, _| match c.file(a[0].int())? {
+        Stream::Tcp(t) => ok_int(crate::net::ip_to_int(t.peer.ip())),
+        _ => Err("not a TCP stream".into()),
+    }),
+    ("%TCPStreamPort%stream", |a, c, _| match c.file(a[0].int())? {
+        Stream::Tcp(t) => ok_int(t.peer.port() as i32),
+        _ => Err("not a TCP stream".into()),
+    }),
+    ("TCPTimeouts%read_millis%accept_millis", |a, c, _| {
+        c.tcp_read_ms = a[0].int().max(0) as u32;
+        c.tcp_accept_ms = a[1].int().max(0) as u32;
+        VOID
+    }),
+    ("%CreateUDPStream%port=0", |a, c, _| {
+        let ms = c.udp_ms;
+        ok_int(match crate::net::Udp::bind(a[0].int().clamp(0, 65535) as u16, ms) {
+            Some(u) => c.add_stream(Stream::Udp(u)),
+            None => 0,
+        })
+    }),
+    ("CloseUDPStream%stream", |a, c, _| {
+        c.files.remove(&a[0].int());
+        VOID
+    }),
+    ("SendUDPMsg%stream%dest_ip%dest_port=0", |a, c, _| match c.file(a[0].int())? {
+        Stream::Udp(u) => {
+            u.send(a[1].int(), a[2].int().clamp(0, 65535) as u16);
+            VOID
+        }
+        _ => Err("not a UDP stream".into()),
+    }),
+    ("%RecvUDPMsg%stream", |a, c, _| match c.file(a[0].int())? {
+        Stream::Udp(u) => ok_int(u.recv()),
+        _ => Err("not a UDP stream".into()),
+    }),
+    ("%UDPStreamIP%stream", |a, c, _| match c.file(a[0].int())? {
+        Stream::Udp(u) => ok_int(u.sock.local_addr().map_or(0, |a| crate::net::ip_to_int(a.ip()))),
+        _ => Err("not a UDP stream".into()),
+    }),
+    ("%UDPStreamPort%stream", |a, c, _| match c.file(a[0].int())? {
+        Stream::Udp(u) => ok_int(u.sock.local_addr().map_or(0, |a| a.port() as i32)),
+        _ => Err("not a UDP stream".into()),
+    }),
+    ("%UDPMsgIP%stream", |a, c, _| match c.file(a[0].int())? {
+        Stream::Udp(u) => ok_int(u.msg_from.map_or(0, |a| crate::net::ip_to_int(a.ip()))),
+        _ => Err("not a UDP stream".into()),
+    }),
+    ("%UDPMsgPort%stream", |a, c, _| match c.file(a[0].int())? {
+        Stream::Udp(u) => ok_int(u.msg_from.map_or(0, |a| a.port() as i32)),
+        _ => Err("not a UDP stream".into()),
+    }),
+    ("UDPTimeouts%recv_millis", |a, c, _| {
+        c.udp_ms = a[0].int().max(0) as u32;
+        let ms = c.udp_ms;
+        for s in c.files.values_mut() {
+            if let Stream::Udp(u) = s {
+                let _ = u.sock.set_read_timeout(Some(std::time::Duration::from_millis(ms.max(1) as u64)));
+            }
+        }
+        VOID
+    }),
+    ("$DottedIP%ip", |a, _, _| ok_s(crate::net::dotted(a[0].int()))),
+    ("%CountHostIPs$host_name", |a, c, _| {
+        let ips = crate::net::host_ips(&a[0].str());
+        let n = ips.len() as i32;
+        c.host_ips = ips;
+        ok_int(n)
+    }),
+    ("%HostIP%index", |a, c, _| {
+        let i = a[0].int();
+        ok_int(usize::try_from(i - 1).ok().and_then(|i| c.host_ips.get(i)).copied().unwrap_or(0))
     }),
 ];
 

@@ -9,6 +9,7 @@
 //! assert_eq!(out, "3.0\n");
 //! ```
 
+pub mod net;
 pub mod stdlib;
 pub mod value;
 pub mod vm;

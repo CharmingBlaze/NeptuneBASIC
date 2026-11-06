@@ -459,3 +459,130 @@ fn example_modern_tour() {
          Battle over: Ember was defeated\nloot is Int 25\nloot is String: a golden key\n2 monsters still standing\nTotal damage: 25.0\n"
     );
 }
+
+#[test]
+fn banks() {
+    let src = r#"
+b = CreateBank(8)
+PokeInt b, 0, 123456
+PokeFloat b, 4, 2.5
+Print PeekInt(b, 0)
+Print PeekFloat(b, 4)
+PokeByte b, 1, 255
+Print PeekByte(b, 1)
+ResizeBank b, 12
+Print BankSize(b)
+c = CreateBank(12)
+CopyBank b, 0, c, 4, 8
+Print PeekFloat(c, 8)
+Try
+    PeekInt b, 10
+Catch e$
+    Print "caught"
+End Try
+FreeBank b
+"#;
+    assert_eq!(ok(src), "123456\n2.5\n255\n12\n2.5\ncaught\n");
+}
+
+#[test]
+fn file_seek_dirs_and_bytes() {
+    let dir = std::env::temp_dir().join(format!("neptune-lang-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let d = dir.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/");
+    let src = format!(
+        r#"
+f = WriteFile("{d}/a.bin")
+b = CreateBank(4)
+PokeInt b, 0, 77
+WriteBytes b, f, 0, 4
+WriteInt f, 99
+CloseFile f
+f = ReadFile("{d}/a.bin")
+Print ReadAvail(f)
+SeekFile f, 4
+Print FilePos(f)
+Print ReadInt(f)
+SeekFile f, 0
+Print ReadBytes(b, f, 0, 4)
+Print PeekInt(b, 0)
+CloseFile f
+WriteFile("{d}/b.txt")
+dir = ReadDir("{d}")
+n = 0
+Repeat
+    name$ = NextFile(dir)
+    If name <> "" Then n = n + 1 : Print name
+Until name = ""
+CloseDir dir
+"#
+    );
+    assert_eq!(ok(&src), "8\n4\n99\n4\n77\n.\n..\na.bin\nb.txt\n");
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn timers_and_system() {
+    let src = r#"
+t = CreateTimer(100)
+start = MilliSecs()
+ticks = 0
+For i = 1 To 5
+    ticks = ticks + WaitTimer(t)
+Next
+FreeTimer t
+elapsed = MilliSecs() - start
+Print ticks >= 5
+Print elapsed >= 35
+SeedRnd 1234
+Print RndSeed()
+SetEnv "NEPTUNE_TEST_VAR", "hello"
+Print GetEnv("NEPTUNE_TEST_VAR")
+Print SystemProperty("tempdir") <> ""
+"#;
+    assert_eq!(ok(src), "1\n1\n1234\nhello\n1\n");
+}
+
+#[test]
+fn tcp_and_udp_loopback() {
+    // a fixed high port keeps the BASIC simple; retry a few in case one is taken
+    for port in [47811, 47823, 47837, 47851] {
+        let src = format!(
+            r#"
+TCPTimeouts 2000, 2000
+server = CreateTCPServer({port})
+If server = 0 Then RuntimeError "port in use"
+client = OpenTCPStream("127.0.0.1", {port})
+conn = AcceptTCPStream(server)
+WriteLine client, "ping"
+WriteInt client, 42
+Print ReadLine(conn)
+Print ReadInt(conn)
+Print DottedIP(TCPStreamIP(conn))
+CloseTCPStream client
+CloseTCPStream conn
+CloseTCPServer server
+
+UDPTimeouts 2000
+a = CreateUDPStream()
+b = CreateUDPStream({udp})
+WriteString a, "hello udp"
+SendUDPMsg a, $7F000001, {udp}
+from = RecvUDPMsg(b)
+Print DottedIP(from)
+Print ReadString(b)
+Print CountHostIPs("127.0.0.1") >= 1
+"#,
+            udp = port + 1
+        );
+        match run(&src) {
+            Ok(out) => {
+                assert_eq!(out, "ping\n42\n127.0.0.1\n127.0.0.1\nhello udp\n1\n");
+                return;
+            }
+            Err(e) if e.contains("port in use") => continue,
+            Err(e) => panic!("{e}"),
+        }
+    }
+    panic!("no free port for the network test");
+}
