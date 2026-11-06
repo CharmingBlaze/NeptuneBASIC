@@ -2912,7 +2912,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "neptune-hello-plugin"
+version = "0.1.0"
+dependencies = [
+ "neptune-plugin",
+]
+
+[[package]]
 name = "neptune-lang"
+version = "0.1.0"
+
+[[package]]
+name = "neptune-plugin"
 version = "0.1.0"
 
 [[package]]
@@ -2921,6 +2932,7 @@ version = "0.1.0"
 dependencies = [
  "fyrox",
  "gilrs",
+ "glow",
  "image",
  "neptune-lang",
  "neptune-vm",
