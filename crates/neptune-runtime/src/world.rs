@@ -131,6 +131,12 @@ pub struct World {
     /// Surfaces opened with `CreateSurface`/`GetSurface` and their CPU geometry.
     pub surfaces: Vec<Option<crate::mesh::SurfaceInfo>>,
     pub brushes: Vec<Option<crate::mesh::Brush>>,
+    pub sounds: Vec<Option<crate::sound::SoundInfo>>,
+    /// Channel number → sound node (stale handles mean the channel ended).
+    pub channels: Vec<Handle<Node>>,
+    pub listener: Option<Handle<Node>>,
+    pub listener_rolloff: f32,
+    pub listener_distance: f32,
     /// Fog and other settings shared by every classic material.
     pub classic: crate::classic::Globals,
     /// `Collisions` rules: (source type, destination type, method, response).
@@ -161,6 +167,11 @@ impl Default for World {
             classic: Default::default(),
             surfaces: Vec::new(),
             brushes: Vec::new(),
+            sounds: Vec::new(),
+            channels: Vec::new(),
+            listener: None,
+            listener_rolloff: 1.0,
+            listener_distance: 1.0,
         }
     }
 }
@@ -397,6 +408,7 @@ impl<'a> Host3D<'a> {
         }
         self.graph()?.remove_node(node);
         self.prune_surfaces();
+        self.forget_channels();
         Ok(())
     }
 

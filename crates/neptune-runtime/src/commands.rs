@@ -379,6 +379,26 @@ fn append_surfaces(h: &mut Host3D, src: i32, dst: i32) -> Result<(), String> {
     Ok(())
 }
 
+fn load_sound(h: &mut Host3D, path: &str, spatial: bool) -> Result<Value, String> {
+    match crate::sound::load(path, false) {
+        Ok((buffer, rate)) => {
+            let info = crate::sound::SoundInfo { buffer, looping: false, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial };
+            int(h.add_sound(info))
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            int(0) // Blitz returns 0 when a sound can't be loaded
+        }
+    }
+}
+
+fn with_channel(h: &mut Host3D, c: i32, f: impl FnOnce(&mut fyrox::scene::sound::Sound)) -> Result<Value, String> {
+    if let Some(ch) = h.channel(c)? {
+        f(ch);
+    }
+    VOID
+}
+
 fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
     usize::try_from(f - 1)
         .ok()
@@ -1226,6 +1246,97 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let (light, _) = light_of(h, a[0].int())?;
         h.graph()?[light].set_cast_shadows(a[1].int() != 0);
         VOID
+    }),
+    // ---- sound (bbaudio.cpp)
+    ("%LoadSound$file", |h, a, _| {
+        h.scene()?;
+        load_sound(h, &a[0].str(), false)
+    }),
+    ("%Load3DSound$file", |h, a, _| {
+        h.scene()?;
+        load_sound(h, &a[0].str(), true)
+    }),
+    ("FreeSound%sound", |h, a, _| {
+        h.sound(a[0].int())?;
+        h.world.sounds[a[0].int() as usize - 1] = None;
+        VOID
+    }),
+    ("LoopSound%sound", |h, a, _| {
+        h.sound_mut(a[0].int())?.looping = true;
+        VOID
+    }),
+    ("SoundVolume%sound#volume", |h, a, _| {
+        h.sound_mut(a[0].int())?.volume = a[1].float().max(0.0);
+        VOID
+    }),
+    ("SoundPan%sound#pan", |h, a, _| {
+        h.sound_mut(a[0].int())?.pan = a[1].float().clamp(-1.0, 1.0);
+        VOID
+    }),
+    ("SoundPitch%sound%pitch", |h, a, _| {
+        let s = h.sound_mut(a[0].int())?;
+        s.pitch = crate::sound::pitch_from_hz(a[1].float(), s.rate);
+        VOID
+    }),
+    ("%PlaySound%sound", |h, a, _| {
+        let info = h.sound(a[0].int())?.clone();
+        int(h.play(&info, 0)?)
+    }),
+    ("%PlayMusic$file%mode=0", |h, a, _| {
+        h.scene()?;
+        match crate::sound::load(&a[0].str(), true) {
+            Ok((buffer, rate)) => {
+                let info = crate::sound::SoundInfo { buffer, looping: a[1].int() != 0, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial: false };
+                int(h.play(&info, 0)?)
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                int(0)
+            }
+        }
+    }),
+    ("StopChannel%channel", |h, a, _| {
+        h.stop_channel(a[0].int())?;
+        VOID
+    }),
+    ("PauseChannel%channel", |h, a, _| with_channel(h, a[0].int(), |c| c.pause())),
+    ("ResumeChannel%channel", |h, a, _| with_channel(h, a[0].int(), |c| c.play())),
+    ("ChannelVolume%channel#volume", |h, a, _| {
+        let v = a[1].float().max(0.0);
+        with_channel(h, a[0].int(), |c| {
+            c.set_gain(v);
+        })
+    }),
+    ("ChannelPan%channel#pan", |h, a, _| {
+        let p = a[1].float().clamp(-1.0, 1.0);
+        with_channel(h, a[0].int(), |c| {
+            c.set_panning(p);
+        })
+    }),
+    ("ChannelPitch%channel%pitch", |h, a, _| {
+        let hz = a[1].float();
+        with_channel(h, a[0].int(), |c| {
+            let rate = c.buffer().map_or(44100.0, |b| match &*b.data_ref() {
+                fyrox::scene::sound::SoundBuffer::Generic(g) => g.sample_rate() as f64,
+                fyrox::scene::sound::SoundBuffer::Streaming(s) => s.sample_rate() as f64,
+            });
+            c.set_pitch(crate::sound::pitch_from_hz(hz, rate));
+        })
+    }),
+    ("%ChannelPlaying%channel", |h, a, _| {
+        let playing = h.channel(a[0].int())?.is_some_and(|c| c.status() == fyrox::scene::sound::Status::Playing);
+        int(playing as i32)
+    }),
+    ("%CreateListener%parent#rolloff_factor=1#doppler_scale=1#distance_scale=1", |h, a, _| {
+        h.scene()?;
+        // the listener is a pivot entity so programs can move it like Blitz
+        let p = h.add_entity(pivot_node(), Kind::Pivot, a[0].int())?;
+        h.create_listener(p, a[1].float(), a[3].float())?;
+        int(p)
+    }),
+    ("%EmitSound%sound%entity", |h, a, _| {
+        let info = h.sound(a[0].int())?.clone();
+        int(h.play(&info, a[1].int())?)
     }),
     // ---- 2D (bbgraphics.cpp)
     ("Text%x%y$string%center_x=0%center_y=0", |h, a, _| {

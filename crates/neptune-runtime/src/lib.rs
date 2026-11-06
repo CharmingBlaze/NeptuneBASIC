@@ -21,6 +21,7 @@ pub mod material;
 pub mod mesh;
 pub mod model;
 pub mod pick;
+pub mod sound;
 pub mod texture;
 pub mod transform;
 pub mod world;

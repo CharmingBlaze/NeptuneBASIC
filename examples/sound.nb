@@ -1,0 +1,44 @@
+; Sound: 2D sounds, channels, and a 3D sound that follows an entity.
+; Run from the repository root: neptune run examples/sound.nb
+; Space plays a blip (Left/Right pans it); the orbiting sphere hums in 3D.
+
+Graphics3D 1280, 720
+SetWindowTitle "Sound"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 4, -10
+CameraLookAt camera, 0, 0, 0
+CreateListener camera
+
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.3, -1, 0.5
+
+blip = LoadSound("examples/media/blip.wav")
+hum = Load3DSound("examples/media/hum.wav")
+If blip = 0 Or hum = 0 Then RuntimeError "could not load the sounds"
+LoopSound hum
+
+ball = CreateSphere(16)
+EntityColor ball, 255, 120, 40
+humming = EmitSound(hum, ball)
+
+pan# = 0
+angle# = 0
+blipChannel = 0
+While Not KeyDown(KEY_ESCAPE)
+    If KeyDown(KEY_LEFT) Then pan = pan - 0.02
+    If KeyDown(KEY_RIGHT) Then pan = pan + 0.02
+    If pan < -1 Then pan = -1
+    If pan > 1 Then pan = 1
+    If KeyHit(KEY_SPACE) Then
+        blipChannel = PlaySound(blip)
+        ChannelPan blipChannel, pan
+    EndIf
+    angle = angle + 1
+    PositionEntity ball, Sin(angle) * 6, 0, Cos(angle) * 6
+    RenderWorld
+    Text 10, 10, $"Space: blip   Left/Right: pan {pan}"
+    Text 10, 30, $"hum channel playing: {ChannelPlaying(humming)}   last blip playing: {ChannelPlaying(blipChannel)}"
+    Flip
+Wend
+End
