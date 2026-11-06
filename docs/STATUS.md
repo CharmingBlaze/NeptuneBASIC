@@ -34,7 +34,7 @@ time of writing, including the modern alias names).
 | Textures | done | `LoadTexture` (colour, alpha, masked, clamp, sphere map flags), `CreateTexture`, `EntityTexture` layers 0-3, `TextureBlend`, `ScaleTexture`, `PositionTexture`, `RotateTexture`, `TextureCoords`, `TextureWidth/Height/Name`, `FreeTexture` |
 | Custom meshes | done | `CreateMesh`, `CreateSurface`, `GetSurface`, `CountSurfaces`, `AddVertex`, `AddTriangle`, `VertexCoords/Normal/Color/TexCoords` and getters, `UpdateNormals`, `FlipMesh`, `ScaleMesh`, `PositionMesh`, `RotateMesh`, `FitMesh`, `AddMesh`, `CopyMesh`, `ClearSurface` |
 | Brushes | done | `CreateBrush`, `LoadBrush`, `BrushColor/Alpha/Shininess/Texture/Blend/FX`, `PaintSurface/Entity/Mesh`, `GetSurfaceBrush`, `GetEntityBrush`, `FreeBrush` |
-| Models | partial | `LoadMesh`/`LoadAnimMesh` for glTF and FBX, `CopyEntity` (animated copies are independent), `FindChild`, `CountChildren`/`GetChild` into models, `MeshWidth/Height/Depth`. Blitz `.b3d`/`.x`/`.3ds` files are not supported |
+| Models | done | `LoadMesh`/`LoadAnimMesh` for glTF (`.gltf`/`.glb`) and FBX, `CopyEntity` (animated copies are independent), `FindChild`, `CountChildren`/`GetChild` into models, `MeshWidth/Height/Depth`. Old Blitz formats (`.b3d`, `.x`, `.3ds`) are deliberately not supported: export to glTF from Blender or any modern tool |
 | Animation | done | `Animate` (loop, ping-pong, one-shot), `SetAnimTime`, `Animating`, `AnimTime`, `AnimSeq`, `AnimLength`, `ExtractAnimSeq`, `CountAnimSeqs` (ext). The `transition` blend argument is accepted but sequences switch instantly |
 | Collisions | done | `EntityType`, `EntityRadius`, `EntityBox`, `Collisions` (methods 1–3, responses 1–3), `ResetEntity`, `EntityCollided`, `CountCollisions`, `CollisionX/Y/Z/NX/NY/NZ/Time/Entity`, `ClearCollisions` |
 | Picking | done | `EntityPickMode`, `LinePick`, `CameraPick`, `EntityPick`, `Picked*`, `CameraProject`, `Projected*`, `EntityVisible`, `EntityInView` |
@@ -79,7 +79,6 @@ for older integrated GPUs; `ultra` turns everything up.
 
 ## Not done yet
 
-* Blitz `.b3d`, `.x` and `.3ds` model files (glTF and FBX work).
 * Blending between animation sequences (`Animate` transition argument).
 * `Text` into image and texture buffers; reading pixels from the screen.
 * Physics on parented entities, and `CopyEntity` of physics entities
