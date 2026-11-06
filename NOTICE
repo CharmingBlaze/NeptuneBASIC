@@ -13,3 +13,11 @@ Fyrox (https://github.com/FyroxEngine/Fyrox)
 
 Reference checkouts in ./reference are not part of NeptuneBASIC and are
 excluded from version control (.gitignore).
+
+Example models in examples/media (from the Khronos glTF Sample Assets,
+https://github.com/KhronosGroup/glTF-Sample-Assets):
+  Fox.glb - model by PixelMannen (CC0-1.0); rigging and animation by
+    tomkranis (CC-BY-4.0); glTF conversion by AsoboStudio and scurest
+    (CC-BY-4.0).
+  CesiumMan.glb - (c) Cesium, CC-BY-4.0. The Cesium name and logo are
+    trademarks and are not licensed.
