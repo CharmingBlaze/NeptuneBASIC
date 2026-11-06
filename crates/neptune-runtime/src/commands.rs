@@ -865,8 +865,13 @@ pub fn constants() -> Vec<(String, ConstVal)> {
 /// Modern names for classic commands (ext). Each maps a new name onto the
 /// signature of an existing command, so both spellings behave identically.
 /// Only the command name differs; parameters and defaults are the target's.
+static DIRECT_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
 pub static ALIASES: &[(&str, &str)] = &[
     ("SetWindowTitle", "AppTitle"),
+    // Blitz3D's older names
+    ("MouseWait", "WaitMouse"),
+    ("JoyWait", "WaitJoy"),
     ("LoadModel", "LoadMesh"),
     ("LoadAnimModel", "LoadAnimMesh"),
     ("CopyModel", "CopyEntity"),
@@ -1079,6 +1084,13 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         int(k)
     }),
     // ---- joysticks and gamepads (bbinput.cpp), port 0 is the first controller
+    // DirectInput is Windows-only; input always comes from the OS directly, so
+    // the setting is only remembered
+    ("EnableDirectInput%enable", |_, a, _| {
+        DIRECT_INPUT.store(a[0].int() != 0, std::sync::atomic::Ordering::Relaxed);
+        VOID
+    }),
+    ("%DirectInputEnabled", |_, _, _| int(DIRECT_INPUT.load(std::sync::atomic::Ordering::Relaxed) as i32)),
     ("%JoyType%port=0", |h, a, _| int(h.input.joys.kind(a[0].int()))),
     ("%CountJoys", |h, _, _| int((0..16).filter(|&p| h.input.joys.kind(p) != 0).count() as i32)), // (ext)
     ("%JoyDown%button%port=0", |h, a, _| int(h.input.joys.down(a[0].int(), a[1].int()) as i32)),
