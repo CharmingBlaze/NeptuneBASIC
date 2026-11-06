@@ -516,6 +516,95 @@ fn draw_overlays(h: &mut Host3D) -> Result<(), String> {
     Ok(())
 }
 
+fn tilemap<'a>(h: &'a Host3D, m: i32) -> Result<&'a crate::tilemap::TileMap, String> {
+    usize::try_from(m - 1)
+        .ok()
+        .and_then(|i| h.world.tilemaps.get(i))
+        .and_then(Option::as_ref)
+        .ok_or_else(|| format!("Tile map {m} does not exist"))
+}
+
+fn tilemap_mut<'a>(h: &'a mut Host3D, m: i32) -> Result<&'a mut crate::tilemap::TileMap, String> {
+    usize::try_from(m - 1)
+        .ok()
+        .and_then(|i| h.world.tilemaps.get_mut(i))
+        .and_then(Option::as_mut)
+        .ok_or_else(|| format!("Tile map {m} does not exist"))
+}
+
+fn add_tilemap(h: &mut Host3D, map: crate::tilemap::TileMap) -> Result<Value, String> {
+    h.world.tilemaps.push(Some(map));
+    int(h.world.tilemaps.len() as i32)
+}
+
+/// Size of one tile: the size of a frame of the map's image.
+fn tile_size(h: &Host3D, m: i32) -> Result<(f32, f32), String> {
+    let img = h.image(tilemap(h, m)?.image)?;
+    Ok(img.size())
+}
+
+/// `DrawTileMap`: draws the cells that fall inside the screen or buffer, with
+/// the map's top-left corner at x, y.
+fn draw_tilemap(h: &mut Host3D, m: i32, x: f32, y: f32) -> Result<Value, String> {
+    let (tw, th) = tile_size(h, m)?;
+    let map = tilemap(h, m)?;
+    let image = map.image;
+    // tiles ignore the image handle
+    let (hx, hy) = h.image(image)?.top_left(0.0, 0.0);
+    let (vw, vh) = match h.current_buffer()? {
+        crate::buffer::Buffer::Screen => (h.world.width as f32, h.world.height as f32),
+        _ => (f32::MAX / 4.0, f32::MAX / 4.0),
+    };
+    let x0 = (((-x) / tw).floor() as i32).max(0);
+    let y0 = (((-y) / th).floor() as i32).max(0);
+    let x1 = (((vw - x) / tw).ceil() as i32).min(map.width);
+    let y1 = (((vh - y) / th).ceil() as i32).min(map.height);
+    let mut cells = Vec::new();
+    for cy in y0..y1 {
+        for cx in x0..x1 {
+            let t = map.get(cx, cy);
+            if t >= 0 {
+                cells.push((cx, cy, t));
+            }
+        }
+    }
+    if h.current_buffer()? != crate::buffer::Buffer::Screen {
+        for (cx, cy, t) in cells {
+            let args = [Value::Int(image), Value::Float(x + cx as f32 * tw - hx), Value::Float(y + cy as f32 * th - hy), Value::Int(t)];
+            draw_image(h, &args, true, None)?;
+        }
+        return VOID;
+    }
+    if h.image(image)?.dirty {
+        h.image_mut(image)?.commit();
+    }
+    let img = h.image(image)?;
+    let tex = img.masked.clone();
+    // half a pixel in from the frame's edges, so filtering never picks up
+    // the next frame in the image (no seams between tiles)
+    let inset = Rect::new(0.5, 0.5, img.frame_w as f32 - 1.0, img.frame_h as f32 - 1.0);
+    let mut quads = Vec::with_capacity(cells.len());
+    for (cx, cy, t) in cells {
+        if let Ok(uv) = img.uv(t as u32, Some(inset)) {
+            quads.push((x + cx as f32 * tw - hx, y + cy as f32 * th - hy, uv));
+        }
+    }
+    for (qx, qy, uv) in quads {
+        h.world.canvas.image(qx, qy, tw, th, uv, tex.clone());
+    }
+    VOID
+}
+
+fn save_scene(h: &mut Host3D, entities: &[i32], path: &str) -> Result<Value, String> {
+    match crate::scenefile::save(h, entities, path) {
+        Ok(()) => int(1),
+        Err(e) => {
+            eprintln!("SaveScene: {e}");
+            int(0)
+        }
+    }
+}
+
 fn movie_mut<'a>(h: &'a mut Host3D, m: i32) -> Result<&'a mut crate::movie::Movie, String> {
     usize::try_from(m - 1)
         .ok()
@@ -869,6 +958,8 @@ static DIRECT_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 
 pub static ALIASES: &[(&str, &str)] = &[
     ("SetWindowTitle", "AppTitle"),
+    ("LoadScene", "LoadMesh"),
+    ("LoadSceneAsync", "LoadMeshAsync"),
     // Blitz3D's older names
     ("MouseWait", "WaitMouse"),
     ("JoyWait", "WaitJoy"),
@@ -1759,6 +1850,20 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("#EntityScaleY%entity%global=0", |h, a, _| entity_scale(h, a, 1)),
     ("#EntityScaleZ%entity%global=0", |h, a, _| entity_scale(h, a, 2)),
     ("%LoadMesh$file%parent=0", |h, a, _| int(crate::model::load_mesh(h, &a[0].str(), a[1].int())?)),
+    // (ext) background loading: the entity is returned at once and the model
+    // appears in it when loaded
+    ("%LoadMeshAsync$file%parent=0", |h, a, _| int(crate::loading::load_mesh(h, &a[0].str(), a[1].int())?)),
+    ("%EntityLoaded%entity", |h, a, _| int(crate::loading::entity_state(h, a[0].int())?)),
+    ("%PendingLoads", |h, _, _| int(crate::loading::pending(h)?)),
+    // (ext) save entities as a Fyrox scene file; LoadMesh/LoadScene loads it
+    ("%SaveScene$file", |h, a, _| {
+        let all = crate::scenefile::top_level(h);
+        save_scene(h, &all, &a[0].str())
+    }),
+    ("%SaveEntity%entity$file", |h, a, _| {
+        h.ent(a[0].int())?;
+        save_scene(h, &[a[0].int()], &a[1].str())
+    }),
     ("%LoadAnimMesh$file%parent=0", |h, a, _| int(crate::model::load_mesh(h, &a[0].str(), a[1].int())?)),
     ("%CopyEntity%entity%parent=0", |h, a, _| int(h.copy_entity(a[0].int(), a[1].int())?)),
     ("#MeshWidth%mesh", |h, a, _| mesh_extent(h, a[0].int(), 0)),
@@ -1920,6 +2025,12 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     // ---- textures
+    // (ext) background loading: a white texture at once, the image when decoded
+    ("%LoadTextureAsync$file%flags=1", |h, a, _| {
+        let flags = texture_flags(h, &a[0].str(), a[1].int());
+        int(crate::loading::load_texture(h, &a[0].str(), flags)?)
+    }),
+    ("%TextureLoaded%texture", |h, a, _| int(crate::loading::texture_state(h, a[0].int())?)),
     ("%LoadTexture$file%flags=1", |h, a, _| {
         let flags = texture_flags(h, &a[0].str(), a[1].int());
         match crate::texture::load(&a[0].str(), flags) {
@@ -2511,6 +2622,64 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     // ---- images (bbgraphics.cpp)
+    // ---- tile maps (ext): a grid of frames of an animation image, with autotiling
+    ("%CreateTileMap%image%width%height", |h, a, _| {
+        h.image(a[0].int())?;
+        add_tilemap(h, crate::tilemap::TileMap::new(a[0].int(), a[1].int(), a[2].int())?)
+    }),
+    ("%LoadTileMap$file%image", |h, a, _| {
+        h.image(a[1].int())?;
+        let path = a[0].str();
+        let map = match std::fs::read_to_string(&*path) {
+            Ok(text) => crate::tilemap::TileMap::load(&text, a[1].int()),
+            Err(e) => Err(format!("cannot read '{path}': {e}")),
+        };
+        match map {
+            Ok(m) => add_tilemap(h, m),
+            Err(e) => {
+                eprintln!("LoadTileMap: {e}");
+                int(0)
+            }
+        }
+    }),
+    ("%SaveTileMap%map$file", |h, a, _| {
+        let text = tilemap(h, a[0].int())?.save();
+        int(std::fs::write(&*a[1].str(), text).is_ok() as i32)
+    }),
+    ("FreeTileMap%map", |h, a, _| {
+        tilemap(h, a[0].int())?;
+        h.world.tilemaps[a[0].int() as usize - 1] = None;
+        VOID
+    }),
+    ("SetTile%map%x%y%tile", |h, a, _| {
+        tilemap_mut(h, a[0].int())?.set(a[1].int(), a[2].int(), a[3].int());
+        VOID
+    }),
+    ("%GetTile%map%x%y", |h, a, _| int(tilemap(h, a[0].int())?.get(a[1].int(), a[2].int()))),
+    ("%TileMapWidth%map", |h, a, _| int(tilemap(h, a[0].int())?.width)),
+    ("%TileMapHeight%map", |h, a, _| int(tilemap(h, a[0].int())?.height)),
+    ("TileMapImage%map%image", |h, a, _| {
+        h.image(a[1].int())?;
+        tilemap_mut(h, a[0].int())?.image = a[1].int();
+        VOID
+    }),
+    ("TileMapTerrain%map%terrain%first_frame%mode=47", |h, a, _| {
+        tilemap_mut(h, a[0].int())?.set_rule(a[1].int(), a[2].int(), a[3].int())?;
+        VOID
+    }),
+    ("AutoTile%map%x%y%terrain", |h, a, _| {
+        tilemap_mut(h, a[0].int())?.paint(a[1].int(), a[2].int(), a[3].int());
+        VOID
+    }),
+    ("%GetTileTerrain%map%x%y", |h, a, _| int(tilemap(h, a[0].int())?.terrain_at(a[1].int(), a[2].int()))),
+    ("DrawTileMap%map%x=0%y=0", |h, a, _| draw_tilemap(h, a[0].int(), a[1].float(), a[2].float())),
+    // cell under a point given in pixels from the map's top-left corner
+    ("%TileMapCellX%map#x", |h, a, _| int((a[1].float() / tile_size(h, a[0].int())?.0).floor() as i32)),
+    ("%TileMapCellY%map#y", |h, a, _| int((a[1].float() / tile_size(h, a[0].int())?.1).floor() as i32)),
+    ("%TileAt%map#x#y", |h, a, _| {
+        let (tw, th) = tile_size(h, a[0].int())?;
+        int(tilemap(h, a[0].int())?.get((a[1].float() / tw).floor() as i32, (a[2].float() / th).floor() as i32))
+    }),
     // ---- movies (bbgraphics.cpp): GIF, Motion-JPEG AVI or a folder of images
     ("%OpenMovie$file", |h, a, _| match crate::movie::Movie::open(&a[0].str()) {
         Ok(m) => {

@@ -177,6 +177,14 @@ pub struct World {
     pub tformed: Vector3<f32>,
     /// `OpenMovie` movies.
     pub movies: Vec<Option<crate::movie::Movie>>,
+    /// Background loads (`LoadMeshAsync`, `LoadTextureAsync`) and the ones
+    /// that failed.
+    pub loading_meshes: Vec<crate::loading::PendingMesh>,
+    pub loading_textures: Vec<crate::loading::PendingTexture>,
+    pub failed_meshes: std::collections::HashSet<Handle<Node>>,
+    pub failed_textures: std::collections::HashSet<i32>,
+    /// `CreateTileMap` tile maps.
+    pub tilemaps: Vec<Option<crate::tilemap::TileMap>>,
     /// Unused mirror cameras made at start-up (see [`MIRROR_POOL`]).
     pub mirror_pool: Vec<Handle<Node>>,
     /// `SetGamma` ramps; `gamma_dirty` asks the engine to apply them (`UpdateGamma`).
@@ -234,6 +242,11 @@ impl Default for World {
             texture_filters: vec![(String::new(), 1 | 8)],
             mirror_pool: Vec::new(),
             movies: Vec::new(),
+            loading_meshes: Vec::new(),
+            loading_textures: Vec::new(),
+            failed_meshes: Default::default(),
+            failed_textures: Default::default(),
+            tilemaps: Vec::new(),
             gamma: Default::default(),
             gamma_dirty: false,
             loader_matrices: Vec::new(),

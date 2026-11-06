@@ -327,6 +327,32 @@ impl Host3D<'_> {
         }
         let parent = self.adopt_node(parent_node)?;
         let id = self.register_child_node(node, parent)?;
+        // a model inside a loaded scene file can be animated like a LoadMesh model
+        // (the model itself, or the pivot holding it as LoadMesh makes)
+        let graph = self.graph()?;
+        let model = std::iter::once(node).chain(graph[node].children().iter().copied()).find(|&n| graph[n].is_resource_instance_root());
+        if let Some(model) = model {
+            let res = graph[model].resource();
+            // only a player of this model, not of a model inside it (a scene file)
+            let own = |p: Handle<Node>| {
+                let mut n = graph[p].parent();
+                while n.is_some() && n != model && !graph[n].is_resource_instance_root() {
+                    n = graph[n].parent();
+                }
+                n == model
+            };
+            if let Some(player) = find_player(graph, model).filter(|&p| own(p)) {
+                if !self.entities().any(|(_, e)| e.anim.as_ref().is_some_and(|a| a.player == player)) {
+                    let seqs = take_control(self.graph()?, player);
+                    if !seqs.is_empty() {
+                        let e = self.ent_mut(id)?;
+                        e.anim = Some(AnimState::new(player, seqs));
+                        e.model = true;
+                        e.model_res = res;
+                    }
+                }
+            }
+        }
         Ok(id)
     }
 

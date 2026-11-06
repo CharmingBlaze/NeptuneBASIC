@@ -23,11 +23,8 @@ use crate::world::{pivot_node, Host3D, Kind};
 /// matching Blitz3D).
 pub fn load_mesh(h: &mut Host3D, path: &str, parent: i32) -> Result<i32, String> {
     let rm = h.resources().ok_or("Graphics3D must be called before LoadMesh")?;
-    if !std::path::Path::new(path).is_file() {
-        eprintln!("LoadMesh: file not found: {path}");
-        return Ok(0);
-    }
-    let resource = rm.request::<Model>(path);
+    let Some(file) = resource_path("LoadMesh", path) else { return Ok(0) };
+    let resource = rm.request::<Model>(file);
     let model = match block_on(resource) {
         Ok(m) => m,
         Err(e) => {
@@ -35,9 +32,36 @@ pub fn load_mesh(h: &mut Host3D, path: &str, parent: i32) -> Result<i32, String>
             return Ok(0);
         }
     };
-    let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-    let loader = h.world.loader_matrices.iter().rev().find(|(e, _)| *e == ext).map(|(_, m)| *m);
+    let loader = loader_matrix(h, path);
     instantiate(h, &model, parent, loader)
+}
+
+/// The path Fyrox's resource manager needs for a file: relative to the
+/// working directory, which Fyrox requires (it cannot load files outside
+/// it). `None`, after printing why, if the file is missing or outside.
+pub fn resource_path(command: &str, path: &str) -> Option<std::path::PathBuf> {
+    let file = match std::fs::canonicalize(path) {
+        Ok(f) if f.is_file() => f,
+        _ => {
+            eprintln!("{command}: file not found: {path}");
+            return None;
+        }
+    };
+    let cwd = std::env::current_dir().and_then(std::fs::canonicalize).ok()?;
+    match file.strip_prefix(&cwd) {
+        Ok(rel) => Some(rel.to_path_buf()),
+        Err(_) => {
+            let shown = std::env::current_dir().map(|d| d.display().to_string()).unwrap_or_default();
+            eprintln!("{command}: '{path}' is outside the game folder ({shown}); models must be inside it");
+            None
+        }
+    }
+}
+
+/// The `LoaderMatrix` set for a file's extension, if any.
+pub fn loader_matrix(h: &Host3D, path: &str) -> Option<fyrox::core::algebra::Matrix3<f32>> {
+    let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    h.world.loader_matrices.iter().rev().find(|(e, _)| *e == ext).map(|(_, m)| *m)
 }
 
 /// Splits a matrix into rotation and per-axis scale (a negative scale keeps
@@ -60,7 +84,22 @@ pub fn instantiate(
     parent: i32,
     loader: Option<fyrox::core::algebra::Matrix3<f32>>,
 ) -> Result<i32, String> {
+    let id = h.add_entity(pivot_node(), Kind::Mesh, parent)?;
+    attach_model(h, id, model, loader)?;
+    Ok(id)
+}
+
+/// Puts a new instance of a loaded model inside an existing (empty) entity.
+pub fn attach_model(
+    h: &mut Host3D,
+    id: i32,
+    model: &fyrox::resource::model::ModelResource,
+    loader: Option<fyrox::core::algebra::Matrix3<f32>>,
+) -> Result<(), String> {
     let instance = model.instantiate(h.scene()?);
+    // models named by a saved scene file; each keeps its own animations
+    // (FindChild gives them to the program)
+    let scene_file = crate::scenefile::restore_models(h, instance)? > 0;
     // LoaderMatrix for this file type: applied to the model inside the entity
     if let Some(m) = loader {
         let (r, s) = rotation_scale(&m);
@@ -70,10 +109,9 @@ pub fn instantiate(
         t.set_rotation(q * **t.rotation());
         t.set_scale(t.scale().component_mul(&s));
     }
-    let id = h.add_entity(pivot_node(), Kind::Mesh, parent)?;
     let pivot = h.ent(id)?.node;
     h.graph()?.link_nodes(instance, pivot);
-    let anim = match crate::anim::find_player(h.graph()?, instance) {
+    let anim = match crate::anim::find_player(h.graph()?, instance).filter(|_| !scene_file) {
         Some(player) => {
             let seqs = crate::anim::take_control(h.graph()?, player);
             (!seqs.is_empty()).then(|| crate::anim::AnimState::new(player, seqs))
@@ -92,7 +130,7 @@ pub fn instantiate(
         // show the first frame of the first sequence, like Blitz
         h.set_anim_time(id, 0.0, 0)?;
     }
-    Ok(id)
+    Ok(())
 }
 
 /// `LoadAnimSeq`: adds the animations of another model file (same skeleton)
@@ -100,11 +138,8 @@ pub fn instantiate(
 pub fn load_anim_seq(h: &mut Host3D, e: i32, path: &str) -> Result<i32, String> {
     let rm = h.resources().ok_or("Graphics3D must be called before LoadAnimSeq")?;
     let player = h.ent(e)?.anim.as_ref().filter(|a| a.keys.is_none()).map(|a| a.player).ok_or_else(|| format!("Entity {e} is not an animated model"))?;
-    if !std::path::Path::new(path).is_file() {
-        eprintln!("LoadAnimSeq: file not found: {path}");
-        return Ok(-1);
-    }
-    let model = match block_on(rm.request::<Model>(path)) {
+    let Some(file) = resource_path("LoadAnimSeq", path) else { return Ok(-1) };
+    let model = match block_on(rm.request::<Model>(file)) {
         Ok(m) => m,
         Err(err) => {
             eprintln!("LoadAnimSeq: cannot load {path}: {err:?}");

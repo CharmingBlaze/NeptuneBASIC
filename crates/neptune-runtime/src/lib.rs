@@ -26,6 +26,9 @@ pub mod mesh;
 pub mod mirror;
 pub mod model;
 pub mod movie;
+pub mod loading;
+pub mod scenefile;
+pub mod tilemap;
 pub mod physics;
 pub mod pick;
 pub mod primitive;
@@ -255,6 +258,10 @@ impl Plugin for NeptunePlugin {
         };
         let result = {
             let mut host = Host3D::graphics(&mut st.world, &mut st.input, scene, context.resource_manager.clone());
+            // models and textures loading in the background
+            if let Err(e) = loading::poll(&mut host) {
+                eprintln!("{e}");
+            }
             vm.run(&mut host)
         };
         // show the 2D frame published by Flip

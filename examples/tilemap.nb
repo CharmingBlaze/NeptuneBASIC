@@ -1,0 +1,84 @@
+; Tile maps with autotiling (ext).
+; Left mouse paints grass, right mouse paints water, middle mouse erases.
+; Arrow keys scroll, S saves the map, L loads it again, Esc quits.
+; Each terrain uses 16 frames: the frame is picked from which neighbours
+; (north 1, east 2, south 4, west 8) are the same terrain.
+
+Graphics 800, 600, 0, 2
+AppTitle "Tile maps"
+SetBuffer BackBuffer()
+
+Const TILE = 32
+
+; ---- build a tile set: 16 grass frames, then 16 water frames
+tiles = CreateImage(TILE, TILE, 32)
+For t = 0 To 1
+    For mask = 0 To 15
+        SetBuffer ImageBuffer(tiles, t * 16 + mask)
+        If t = 0 Then Color 70, 160, 60 Else Color 40, 90, 200
+        Rect 0, 0, TILE, TILE
+        ; a darker edge on every side without the same terrain next to it
+        If t = 0 Then Color 120, 80, 40 Else Color 220, 230, 255
+        If (mask And 1) = 0 Then Rect 0, 0, TILE, 4
+        If (mask And 2) = 0 Then Rect TILE - 4, 0, 4, TILE
+        If (mask And 4) = 0 Then Rect 0, TILE - 4, TILE, 4
+        If (mask And 8) = 0 Then Rect 0, 0, 4, TILE
+    Next
+Next
+SetBuffer BackBuffer()
+
+GRASS = 1 : WATER = 2
+map = CreateTileMap(tiles, 60, 40)
+TileMapTerrain map, GRASS, 0, 16
+TileMapTerrain map, WATER, 16, 16
+
+; a starting island in a lake
+For y = 8 To 22
+    For x = 6 To 30
+        AutoTile map, x, y, WATER
+    Next
+Next
+For y = 11 To 18
+    For x = 10 To 24
+        AutoTile map, x, y, GRASS
+    Next
+Next
+
+scrollx# = 0 : scrolly# = 0
+message$ = ""
+While Not KeyHit(1)
+    If KeyDown(203) Then scrollx = scrollx + 6
+    If KeyDown(205) Then scrollx = scrollx - 6
+    If KeyDown(200) Then scrolly = scrolly + 6
+    If KeyDown(208) Then scrolly = scrolly - 6
+
+    ; the cell under the mouse
+    cx = TileMapCellX(map, MouseX() - scrollx)
+    cy = TileMapCellY(map, MouseY() - scrolly)
+    If MouseDown(1) Then AutoTile map, cx, cy, GRASS
+    If MouseDown(2) Then AutoTile map, cx, cy, WATER
+    If MouseDown(3) Then AutoTile map, cx, cy, 0
+
+    If KeyHit(31) Then
+        If SaveTileMap(map, "tilemap_saved.txt") Then message = "Saved" Else message = "Could not save"
+    EndIf
+    If KeyHit(38) Then
+        loaded = LoadTileMap("tilemap_saved.txt", tiles)
+        If loaded Then
+            FreeTileMap map
+            map = loaded
+            message = "Loaded"
+        Else
+            message = "Nothing saved yet"
+        EndIf
+    EndIf
+
+    ClsColor 20, 20, 30 : Cls
+    DrawTileMap map, scrollx, scrolly
+    Color 255, 255, 255
+    Rect scrollx + cx * TILE, scrolly + cy * TILE, TILE, TILE, False
+    Text 10, 10, "Cell " + cx + "," + cy + "  frame " + GetTile(map, cx, cy) + "  terrain " + GetTileTerrain(map, cx, cy)
+    Text 10, 30, "Left: grass  Right: water  Middle: erase  Arrows: scroll  S/L: save/load  " + message
+    Flip
+Wend
+End

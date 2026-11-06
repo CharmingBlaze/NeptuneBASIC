@@ -230,22 +230,29 @@ impl Host3D<'_> {
             let replaced = self.texture_mut(t)?.commit();
             if replaced {
                 // a loaded texture became editable: its users need the new resource
-                let users: Vec<i32> = self.entities().filter(|(_, e)| e.textures.contains(&t) || e.normal_map == t).map(|(i, _)| i).collect();
-                for e in users {
-                    self.refresh_material(e)?;
-                }
-                let brush_users: Vec<i32> = self
-                    .world
-                    .brushes
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, b)| b.as_ref().is_some_and(|b| b.textures.contains(&t)))
-                    .flat_map(|(i, _)| self.brush_users(i as i32 + 1))
-                    .collect();
-                for e in brush_users {
-                    self.refresh_material(e)?;
-                }
+                self.refresh_texture_users(t)?;
             }
+        }
+        Ok(())
+    }
+
+    /// Gives every entity using texture `t` (directly or through a brush) its
+    /// current GPU resource.
+    pub fn refresh_texture_users(&mut self, t: i32) -> Result<(), String> {
+        let users: Vec<i32> = self.entities().filter(|(_, e)| e.textures.contains(&t) || e.normal_map == t).map(|(i, _)| i).collect();
+        for e in users {
+            self.refresh_material(e)?;
+        }
+        let brush_users: Vec<i32> = self
+            .world
+            .brushes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.as_ref().is_some_and(|b| b.textures.contains(&t)))
+            .flat_map(|(i, _)| self.brush_users(i as i32 + 1))
+            .collect();
+        for e in brush_users {
+            self.refresh_material(e)?;
         }
         Ok(())
     }

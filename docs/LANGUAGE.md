@@ -249,6 +249,50 @@ Wend
 SendNetMsg 1, "hello", me
 ```
 
+## Background loading and saved scenes (ext)
+
+`LoadMeshAsync` and `LoadTextureAsync` return at once, so a loading screen
+can show progress. The entity can be placed straight away; its model appears
+when it has loaded.
+
+```basic
+fox = LoadMeshAsync("media/Fox.glb")
+total = PendingLoads()
+While PendingLoads() > 0
+    Cls : Rect 100, 100, 300 * (total - PendingLoads()) / total, 20 : Flip
+Wend
+If EntityLoaded(fox) = -1 Then RuntimeError "Could not load the fox"
+```
+
+`SaveScene` writes every top-level entity (except cameras) to a scene file,
+and `SaveEntity` writes one entity with its children. `LoadScene` (the same
+as `LoadMesh`) loads the file as one entity; `FindChild` finds the named
+entities in it.
+
+```basic
+NameEntity door, "door"
+SaveScene "levels/level1.rgs"
+; later
+level = LoadScene("levels/level1.rgs")
+door = FindChild(level, "door")
+```
+
+## Tile maps (ext)
+
+A tile map is a grid of frames of an animation image. `AutoTile` paints a
+terrain and picks each cell's frame from its neighbours (see
+`TileMapTerrain` for the 16- and 47-frame layouts).
+
+```basic
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 48)
+map = CreateTileMap(tiles, 100, 50)
+TileMapTerrain map, 1, 0, 16      ; terrain 1 uses frames 0-15
+AutoTile map, 5, 5, 1
+SetTile map, 0, 0, 40             ; or set frames directly
+DrawTileMap map, -scrollx, -scrolly
+solid = TileAt(map, px + scrollx, py + scrolly) >= 0   ; -1 is an empty cell
+```
+
 ## Movies
 
 `OpenMovie` plays animated GIFs, Motion-JPEG AVI files and folders of

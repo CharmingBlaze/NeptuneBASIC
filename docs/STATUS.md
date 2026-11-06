@@ -65,6 +65,8 @@ gamepad constants, modern command names, ...).
 | Mirrors | done | `CreateMirror` (the reflection is rendered from a reflected camera each frame, before the main view) |
 | Custom meshes | done | `CreateMesh`, `CreateSurface`, `GetSurface`, `CountSurfaces`, `AddVertex`, `AddTriangle`, `VertexCoords/Normal/Color/TexCoords` and getters, `UpdateNormals`, `FlipMesh`, `ScaleMesh`, `PositionMesh`, `RotateMesh`, `FitMesh`, `AddMesh`, `CopyMesh`, `ClearSurface`, `FindSurface`, `MeshesIntersect`, `LightMesh`, `MeshCullBox` |
 | Brushes | done | `CreateBrush`, `LoadBrush`, `BrushColor/Alpha/Shininess/Texture/Blend/FX`, `PaintSurface/Entity/Mesh`, `GetSurfaceBrush`, `GetEntityBrush`, `GetBrushTexture`, `FreeBrush` |
+| Background loading (ext) | done | `LoadMeshAsync` (also `LoadSceneAsync`) returns the entity at once and the model appears in it when loaded; `LoadTextureAsync` returns a white texture that gets its image when decoded; `EntityLoaded`, `TextureLoaded` (1 loaded, 0 loading, -1 failed), `PendingLoads` for loading screens |
+| Saved scenes (ext) | done | `SaveScene` (all top-level entities except cameras) and `SaveEntity` write a Fyrox scene file (`.rgs`); `LoadMesh`/`LoadScene` load it back as one entity, `FindChild` finds named entities and loaded models can be animated again. Models are saved by file name and loaded again from their files. Scenes made in the Fyrox editor load the same way |
 | Models | done | `LoadMesh`/`LoadAnimMesh` for glTF (`.gltf`/`.glb`) and FBX, `LoaderMatrix`, `CopyEntity` (animated copies are independent), `FindChild`, `CountChildren`/`GetChild` into models, `MeshWidth/Height/Depth`. Old Blitz formats (`.b3d`, `.x`, `.3ds`) are deliberately not supported: export to glTF from Blender or any modern tool |
 | Animation | done | `Animate` (loop, ping-pong, one-shot, with `transition` blending between sequences), `SetAnimTime`, `Animating`, `AnimTime`, `AnimSeq`, `AnimLength`, `ExtractAnimSeq`, `LoadAnimSeq` (animations from another file, retargeted), `CountAnimSeqs` (ext); keyframe animation of any entity with `AddAnimSeq`/`SetAnimKey` |
 | Collisions | done | `EntityType`, `EntityRadius`, `EntityBox`, `Collisions` (methods 1–3, responses 1–3), `ResetEntity`, `EntityCollided`, `CountCollisions`, `CollisionX/Y/Z/NX/NY/NZ/Time/Entity/Surface/Triangle`, `ClearCollisions` |
@@ -76,6 +78,7 @@ gamepad constants, modern command names, ...).
 | 2D text | done | `Text`, `Print`/`Write` on the screen in graphics mode, `Locate`, `Color`, `GetColor`, `ClsColor`, `Cls`, `LoadFont`, `SetFont`, `FreeFont`, `FontWidth/Height`, `StringWidth/Height` |
 | 2D drawing | done | `Rect`, `Oval`, `Line`, `Plot`, `Origin`, `Viewport`, on the screen or into image and texture buffers |
 | Movies | done | `OpenMovie`, `DrawMovie`, `MovieWidth`, `MovieHeight`, `MoviePlaying`, `CloseMovie` for animated GIFs, Motion-JPEG AVI files and folders of numbered images (30 fps); no sound track |
+| Tile maps (ext) | done | `CreateTileMap` (frames of an animation image), `SetTile`, `GetTile`, `DrawTileMap` (draws only what is on screen), `TileAt`, `TileMapCellX/Y`, `TileMapWidth/Height`, `TileMapImage`, `FreeTileMap`; autotiling with `TileMapTerrain` (16-frame or 47-frame "blob" layouts), `AutoTile`, `GetTileTerrain`; `SaveTileMap`/`LoadTileMap` (also reads CSV exported from the Tiled editor) |
 | 2D images | done | `LoadImage`, `LoadAnimImage`, `CreateImage`, `CopyImage`, `GrabImage`, `DrawImage`, `DrawBlock`, `DrawImageRect`, `DrawBlockRect`, `TileImage`, `TileBlock`, `MidHandle`, `HandleImage`, `AutoMidHandle`, `MaskImage`, `ScaleImage`, `ResizeImage`, `RotateImage`, `TFormImage`, `TFormFilter`, `SaveImage`, `ImagesCollide`, `ImagesOverlap`, `ImageRectCollide`, `ImageRectOverlap`, `RectsOverlap` |
 | Buffers and pixels | done | `SetBuffer`, `BackBuffer`, `FrontBuffer`, `ImageBuffer`, `TextureBuffer`, `GraphicsBuffer`, `LockBuffer`, `UnlockBuffer`, `ReadPixel(Fast)`, `WritePixel(Fast)`, `CopyPixel(Fast)`, `CopyRect`, `BufferWidth/Height`, `SaveBuffer` (the screen too), `LoadBuffer`; `Text` and every 2D drawing command work in image and texture buffers. Pixel reads come from image and texture buffers, not the screen |
 | Keyboard and mouse | done | `KeyDown/Hit`, `GetKey`, `WaitKey`, `FlushKeys`, `MouseX/Y/Z`, `MouseXSpeed/YSpeed/ZSpeed` (raw motion, so mouse-look works with a hidden pointer), `MouseDown/Hit`, `GetMouse`, `WaitMouse`/`MouseWait`, `MoveMouse`, `HidePointer`, `ShowPointer`, `FlushMouse`, `CaptureMouse` (ext) |
@@ -155,6 +158,13 @@ and windowing (see the CI workflow for the list).
   program's own, so their reflections are ready in the same frame; more
   mirrors work but lag one frame.
 * Audio CDs (`PlayCDTrack`) are not supported.
+* Models and scene files load through Fyrox's resource manager, which only
+  reads files inside the game's folder (the working directory). A model
+  outside it makes `LoadMesh` return 0 with a message.
+* Saved scenes keep what is part of the scene (meshes, materials,
+  textures, lights, sprites, terrain, names, models). Collision types, pick
+  modes, physics settings and sounds belong to the program and are set
+  again after loading; so are changes made to a model's own parts.
 
 ## Examples
 
@@ -176,6 +186,8 @@ and windowing (see the CI workflow for the list).
 | `examples/draw2d.nb` | 2D shapes, animated sprites, pixel collisions |
 | `examples/buffers.nb` | drawing into textures and images |
 | `examples/picking.nb` | mouse picking, 3D-to-2D labels |
+| `examples/tilemap.nb` | 2D tile map: paint autotiled grass and water with the mouse, scroll, save and load |
+| `examples/scenes.nb` | loading screen with background loading, then saving and loading the scene |
 | `examples/movie.nb` | makes a movie from images, then plays it over a 3D scene |
 | `examples/games/starcourier.nb` | **complete 2D game**: shooter with states, pickups, particles, sound, gamepad, high score, attract mode |
 | `examples/games/orbrun.nb` | **complete 3D game**: animated fox on terrain, orbs, hazards, follow camera, HUD, best time, attract mode |

@@ -3,3 +3,6 @@
 /data
 /dist
 /plugins
+# files written by examples/scenes.nb and examples/tilemap.nb
+/examples/saved_level.rgs
+tilemap_saved.txt
