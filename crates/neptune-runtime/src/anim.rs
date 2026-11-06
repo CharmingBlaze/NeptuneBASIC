@@ -25,6 +25,8 @@ use fyrox::{
     },
 };
 
+use fyrox::graph::SceneGraph;
+
 use crate::transform::Xform;
 use crate::world::{Host3D, Kind};
 
@@ -56,6 +58,8 @@ pub struct AnimState {
     pub last_pose: Option<AnimationPose<Handle<Node>>>,
     /// Keyframe sequences made with `AddAnimSeq`/`SetAnimKey` (no Fyrox player).
     pub keys: Option<crate::keyanim::KeyAnim>,
+    /// (ext) Layers, blend space, state machine and root motion.
+    pub extra: crate::animblend::Extra,
 }
 
 impl AnimState {
@@ -73,6 +77,7 @@ impl AnimState {
             from_pose: None,
             last_pose: None,
             keys: None,
+            extra: Default::default(),
         }
     }
 
@@ -84,6 +89,30 @@ impl AnimState {
             0.0
         }
     }
+}
+
+/// Moves an animation time on by `frames`: mode 1 loops, 2 ping-pongs, 3
+/// stops at the end. Returns the new time and direction, and whether it stopped.
+pub fn advance(time: f32, dir: f32, speed: f32, frames: f32, len: f32, mode: i32) -> (f32, f32, bool) {
+    let (mut time, mut dir) = (time + speed * dir * frames, dir);
+    let mut stop = false;
+    match mode {
+        1 => time = time.rem_euclid(len),
+        2 => {
+            // ping-pong: bounce between the ends
+            while !(0.0..=len).contains(&time) {
+                time = if time > len { 2.0 * len - time } else { -time };
+                dir = -dir;
+            }
+        }
+        _ => {
+            if !(0.0..=len).contains(&time) {
+                time = time.clamp(0.0, len);
+                stop = true;
+            }
+        }
+    }
+    (time, dir, stop)
 }
 
 /// Finds the first animation player in a subtree.
@@ -158,25 +187,123 @@ impl Host3D<'_> {
             seq_data.sample(time, &mut xf);
             return self.set_xf(e, |x| *x = xf);
         }
-        let (player, a, weight, from) = {
+        let (weight, from, blend, layers) = {
             let st = self.anim_mut(e)?;
-            let a = *st.seqs.get(seq).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
             let w = st.blend_weight();
-            (st.player, a, w, if w > 0.0 { st.from_pose.clone() } else { None })
+            (w, if w > 0.0 { st.from_pose.clone() } else { None }, st.extra.blend.clone(), st.extra.layers.clone())
         };
-        let mut pose = self.with_animation(player, a, |anim| {
+        // the base: one sequence, or the mix of a blend space
+        let (mut pose, cycle) = match &blend {
+            Some(bp) => (self.blend_pose(e, bp)?, (usize::MAX, bp.phase)),
+            None => (self.sample(e, seq, time)?, (seq, time)),
+        };
+        if let Some(from) = from {
+            // lerp each bone from the new pose towards the old one by `weight`
+            pose.blend_with(&from, weight);
+        }
+        self.apply_root_motion(e, &mut pose, cycle)?;
+        // layers on top, each by its weight and on its part of the body
+        for layer in layers.iter().flatten().filter(|l| l.weight > 0.0) {
+            let lp = self.sample(e, layer.seq, layer.time)?;
+            crate::animblend::blend_masked(&mut pose, &lp, layer.weight.min(1.0), layer.mask.as_ref());
+        }
+        pose.apply(self.graph()?);
+        self.anim_mut(e)?.last_pose = Some(pose);
+        Ok(())
+    }
+
+    /// The pose of sequence `seq` at `time` frames.
+    pub fn sample(&mut self, e: i32, seq: usize, time: f32) -> Result<crate::animblend::Pose, String> {
+        let st = self.anim_mut(e)?;
+        let (player, a) = (st.player, *st.seqs.get(seq).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?);
+        self.with_animation(player, a, |anim| {
             let start = anim.time_slice().start;
             anim.set_time_position(start + time / FPS);
             // speed is 0, so this only computes the pose for the current time
             anim.tick(0.0);
             anim.pose().clone()
-        })?;
-        if let Some(from) = from {
-            // lerp each bone from the new pose towards the old one by `weight`
-            pose.blend_with(&from, weight);
+        })
+    }
+
+    /// The mix of a blend space's sequences, all at the same point of their cycle.
+    fn blend_pose(&mut self, e: i32, bp: &crate::animblend::BlendPlay) -> Result<crate::animblend::Pose, String> {
+        let points = self.blend_space(bp.space)?.points.clone();
+        let w = crate::animblend::weights(&points, bp.x, bp.y);
+        let mut poses = Vec::new();
+        for (p, weight) in points.iter().zip(w) {
+            if weight > 1e-4 {
+                let len = self.seq_length(e, p.2)?;
+                poses.push((self.sample(e, p.2, bp.phase * len)?, weight));
+            }
         }
-        pose.apply(self.graph()?);
-        self.anim_mut(e)?.last_pose = Some(pose);
+        crate::animblend::mix(poses).ok_or_else(|| format!("Blend space {} has no sequences", bp.space))
+    }
+
+    /// Length of one cycle of a blend space at its parameters (weighted).
+    pub fn blend_length(&mut self, e: i32, bp: &crate::animblend::BlendPlay) -> Result<f32, String> {
+        let points = self.blend_space(bp.space)?.points.clone();
+        let w = crate::animblend::weights(&points, bp.x, bp.y);
+        let mut len = 0.0;
+        for (p, weight) in points.iter().zip(w) {
+            if weight > 0.0 {
+                len += weight * self.seq_length(e, p.2)?;
+            }
+        }
+        Ok(len.max(1e-3))
+    }
+
+    /// Root motion: the root bone's movement since the last pose moves the
+    /// entity, and the bone stays where it started.
+    fn apply_root_motion(&mut self, e: i32, pose: &mut crate::animblend::Pose, cycle: (usize, f32)) -> Result<(), String> {
+        let Some(mut rm) = self.anim_mut(e)?.extra.root.clone() else { return Ok(()) };
+        if rm.bone.is_none() {
+            // the topmost moving bone of the model
+            let root = self.ent(e)?.node;
+            let graph = self.graph()?;
+            let moving: Vec<Handle<Node>> = pose.poses().keys().copied().filter(|n| crate::animblend::pose_position(pose, *n).is_some()).collect();
+            let depth = |mut n: Handle<Node>| {
+                let mut d = 0;
+                while n.is_some() && n != root {
+                    n = graph[n].parent();
+                    d += 1;
+                }
+                d
+            };
+            match moving.into_iter().min_by_key(|n| depth(*n)) {
+                Some(b) => rm.bone = b,
+                None => return Ok(()),
+            }
+        }
+        let Some(p) = crate::animblend::pose_position(pose, rm.bone) else { return Ok(()) };
+        let rest = *rm.rest.get_or_insert(p);
+        let mut delta = Vector3::zeros();
+        if let Some((pseq, ptime, pp)) = rm.prev {
+            if pseq == cycle.0 && cycle.1 >= ptime {
+                delta = p - pp;
+            } else if pseq == cycle.0 && cycle.0 != usize::MAX {
+                // the cycle wrapped: to the end, then from the start
+                let len = self.seq_length(e, cycle.0)?;
+                let end = crate::animblend::pose_position(&self.sample(e, cycle.0, len)?, rm.bone).unwrap_or(pp);
+                let start = crate::animblend::pose_position(&self.sample(e, cycle.0, 0.0)?, rm.bone).unwrap_or(p);
+                delta = (end - pp) + (p - start);
+            }
+        }
+        rm.prev = Some((cycle.0, cycle.1, p));
+        let keep_y = rm.keep_y;
+        let bone = rm.bone;
+        self.anim_mut(e)?.extra.root = Some(rm);
+        crate::animblend::set_pose_position(pose, bone, Vector3::new(rest.x, if keep_y { p.y } else { rest.y }, rest.z));
+        if keep_y {
+            delta.y = 0.0;
+        }
+        if delta.norm_squared() > 0.0 {
+            // bone space -> world (Fyrox) -> Blitz
+            let graph = self.graph()?;
+            let parent = graph[bone].parent();
+            let m = if parent.is_some() { graph[parent].global_transform() } else { fyrox::core::algebra::Matrix4::identity() };
+            let w = m.transform_vector(&delta);
+            self.set_xf(e, |x| x.pos += Vector3::new(-w.x, w.y, w.z))?;
+        }
         Ok(())
     }
 
@@ -185,7 +312,8 @@ impl Host3D<'_> {
         let n = self.seq_count(e)?;
         let seq = usize::try_from(seq).ok().filter(|&s| s < n).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
         let st = self.anim_mut(e)?;
-        let restart = st.seq != seq || st.mode == 0;
+        let restart = st.seq != seq || st.mode == 0 || st.extra.blend.is_some();
+        st.extra.blend = None;
         st.mode = mode.clamp(0, 3);
         st.speed = speed;
         if restart && transition > 0.0 && st.last_pose.is_some() {
@@ -223,30 +351,32 @@ impl Host3D<'_> {
 
     /// Advances every playing animation by `frames` (called by `UpdateWorld`).
     pub fn update_animations(&mut self, frames: f32) -> Result<(), String> {
-        let animated: Vec<i32> = self.entities().filter(|(_, e)| e.anim.as_ref().is_some_and(|a| a.mode != 0)).map(|(i, _)| i).collect();
+        let animated: Vec<i32> = self.entities().filter(|(_, e)| e.anim.as_ref().is_some_and(|a| a.mode != 0 || a.extra.active())).map(|(i, _)| i).collect();
         for e in animated {
-            let (seq, mut time, speed, mode, mut dir) = {
+            if self.anim_mut(e)?.keys.is_none() {
+                self.step_machine(e)?;
+            }
+            let (seq, mut time, speed, mode, mut dir, blend) = {
                 let a = self.anim_mut(e)?;
-                (a.seq, a.time, a.speed, a.mode, a.dir)
+                (a.seq, a.time, a.speed, a.mode, a.dir, a.extra.blend.clone())
             };
-            let len = self.seq_length(e, seq)?.max(1e-3);
-            time += speed * dir * frames;
             let mut stop = false;
-            match mode {
-                1 => time = time.rem_euclid(len),
-                2 => {
-                    // ping-pong: bounce between the ends
-                    while !(0.0..=len).contains(&time) {
-                        time = if time > len { 2.0 * len - time } else { -time };
-                        dir = -dir;
+            if let Some(mut bp) = blend {
+                // a blend state follows its state machine parameters
+                if let Some((px, py)) = bp.params.clone() {
+                    if let Some(m) = &self.anim_mut(e)?.extra.machine {
+                        bp.x = m.params.get(&px).copied().unwrap_or(0.0);
+                        bp.y = py.and_then(|py| m.params.get(&py).copied()).unwrap_or(0.0);
                     }
                 }
-                _ => {
-                    if !(0.0..=len).contains(&time) {
-                        time = time.clamp(0.0, len);
-                        stop = true;
-                    }
+                if mode != 0 {
+                    let len = self.blend_length(e, &bp)?;
+                    bp.phase = (bp.phase + speed * frames / len).rem_euclid(1.0);
                 }
+                self.anim_mut(e)?.extra.blend = Some(bp);
+            } else if mode != 0 {
+                let len = self.seq_length(e, seq)?.max(1e-3);
+                (time, dir, stop) = advance(time, dir, speed, frames, len, mode);
             }
             {
                 let a = self.anim_mut(e)?;
@@ -262,8 +392,185 @@ impl Host3D<'_> {
                     a.mode = 0;
                 }
             }
+            // layers keep their own time
+            let mut layers = self.anim_mut(e)?.extra.layers.clone();
+            for l in layers.iter_mut().flatten().filter(|l| l.mode != 0) {
+                let len = self.seq_length(e, l.seq)?.max(1e-3);
+                let (t, d, s) = advance(l.time, l.dir, l.speed, frames, len, l.mode);
+                (l.time, l.dir) = (t, d);
+                if s {
+                    l.mode = 0;
+                }
+            }
+            self.anim_mut(e)?.extra.layers = layers;
             self.pose(e, seq, time)?;
         }
+        Ok(())
+    }
+
+    /// Takes the state machine's first transition whose condition holds.
+    fn step_machine(&mut self, e: i32) -> Result<(), String> {
+        let next = {
+            let a = self.anim_mut(e)?;
+            let ended = a.mode == 0 && a.extra.blend.is_none();
+            a.extra.machine.as_ref().and_then(|m| m.next(ended).cloned())
+        };
+        if let Some(t) = next {
+            self.enter_state(e, t.to, t.duration)?;
+        }
+        Ok(())
+    }
+
+    /// Switches the state machine to state `idx`, crossfading over `transition` frames.
+    pub fn enter_state(&mut self, e: i32, idx: usize, transition: f32) -> Result<(), String> {
+        let state = {
+            let m = self.anim_mut(e)?.extra.machine.as_mut().ok_or_else(|| format!("Entity {e} has no animation states"))?;
+            m.current = Some(idx);
+            m.states.get(idx).cloned().ok_or("animation state missing")?
+        };
+        match state.kind {
+            crate::animblend::StateKind::Seq { seq, mode, speed } => {
+                // a new state always starts its animation from the beginning
+                self.anim_mut(e)?.mode = 0;
+                self.animate(e, mode, speed, seq as i32, transition)
+            }
+            crate::animblend::StateKind::Blend { space, px, py, speed } => self.start_blend(e, space, 0.0, 0.0, speed, transition, Some((px, py))),
+        }
+    }
+
+    /// Plays a blend space on the base layer (`AnimBlend`, blend states).
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_blend(&mut self, e: i32, space: i32, x: f32, y: f32, speed: f32, transition: f32, params: Option<(String, Option<String>)>) -> Result<(), String> {
+        self.blend_space(space)?;
+        let st = self.anim_mut(e)?;
+        if st.keys.is_some() {
+            return Err(format!("Entity {e} is not an animated model"));
+        }
+        let same = st.extra.blend.as_ref().is_some_and(|b| b.space == space) && st.mode != 0;
+        if same {
+            // already playing: only the parameters change
+            let b = st.extra.blend.as_mut().unwrap();
+            b.x = x;
+            b.y = y;
+            st.speed = speed;
+            return Ok(());
+        }
+        if transition > 0.0 && st.last_pose.is_some() {
+            st.from_pose = st.last_pose.clone();
+            st.transition = transition;
+            st.blend_total = transition;
+        } else {
+            st.from_pose = None;
+            st.transition = 0.0;
+        }
+        st.mode = 1;
+        st.speed = speed;
+        st.extra.blend = Some(crate::animblend::BlendPlay { space, x, y, phase: 0.0, params });
+        let (seq, time) = (st.seq, st.time);
+        self.pose(e, seq, time)
+    }
+
+    /// `AnimLayer`: plays `seq` on `layer` (1-8) on top of the base, on the
+    /// bones from `bone` down ("" = the whole model).
+    #[allow(clippy::too_many_arguments)]
+    pub fn anim_layer(&mut self, e: i32, layer: i32, seq: i32, mode: i32, speed: f32, weight: f32, bone: &str) -> Result<(), String> {
+        let n = self.seq_count(e)?;
+        if self.anim_mut(e)?.keys.is_some() {
+            return Err(format!("Entity {e} is not an animated model"));
+        }
+        let seq = usize::try_from(seq).ok().filter(|&s| s < n).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
+        let li = usize::try_from(layer - 1).ok().filter(|&l| l < crate::animblend::LAYERS).ok_or_else(|| format!("layer must be 1 to {}, not {layer}", crate::animblend::LAYERS))?;
+        let mask = if bone.is_empty() { None } else { Some(self.bone_set(e, bone)?) };
+        let time = if speed < 0.0 { self.seq_length(e, seq)? } else { 0.0 };
+        let layers = &mut self.anim_mut(e)?.extra.layers;
+        if layers.len() <= li {
+            layers.resize(li + 1, None);
+        }
+        layers[li] = Some(crate::animblend::Layer { seq, time, speed, mode: mode.clamp(0, 3), dir: 1.0, weight: weight.clamp(0.0, 1.0), mask });
+        Ok(())
+    }
+
+    fn layer_mut(&mut self, e: i32, layer: i32) -> Result<&mut crate::animblend::Layer, String> {
+        let li = usize::try_from(layer - 1).unwrap_or(usize::MAX);
+        self.anim_mut(e)?.extra.layers.get_mut(li).and_then(Option::as_mut).ok_or_else(|| format!("Entity {e} has no animation layer {layer}"))
+    }
+
+    pub fn anim_layer_weight(&mut self, e: i32, layer: i32, weight: f32) -> Result<(), String> {
+        self.layer_mut(e, layer)?.weight = weight.clamp(0.0, 1.0);
+        Ok(())
+    }
+
+    pub fn anim_layer_stop(&mut self, e: i32, layer: i32) -> Result<(), String> {
+        self.layer_mut(e, layer)?;
+        self.anim_mut(e)?.extra.layers[layer as usize - 1] = None;
+        Ok(())
+    }
+
+    fn machine_mut(&mut self, e: i32) -> Result<&mut crate::animblend::Machine, String> {
+        let st = self.anim_mut(e)?;
+        if st.keys.is_some() {
+            return Err(format!("Entity {e} is not an animated model"));
+        }
+        Ok(st.extra.machine.get_or_insert_with(Default::default))
+    }
+
+    /// `AddAnimState` / `AddBlendState`: returns the state's number.
+    pub fn add_anim_state(&mut self, e: i32, name: &str, kind: crate::animblend::StateKind) -> Result<i32, String> {
+        if let crate::animblend::StateKind::Seq { seq, .. } = &kind {
+            if *seq >= self.seq_count(e)? {
+                return Err(format!("entity {e} has no animation sequence {seq}"));
+            }
+        }
+        let m = self.machine_mut(e)?;
+        if m.state(name).is_some() {
+            return Err(format!("animation state '{name}' already exists"));
+        }
+        m.states.push(crate::animblend::State { name: name.to_string(), kind });
+        Ok(m.states.len() as i32 - 1)
+    }
+
+    /// `AddAnimTransition`: from `from` ("" or "*" = any state) to `to` when
+    /// `condition` holds, crossfading over `duration` frames.
+    pub fn add_anim_transition(&mut self, e: i32, from: &str, to: &str, condition: &str, duration: f32) -> Result<(), String> {
+        let cond = crate::animblend::parse_cond(condition)?;
+        let m = self.machine_mut(e)?;
+        let from = if from.is_empty() || from == "*" { None } else { Some(m.state(from).ok_or_else(|| format!("no animation state '{from}'"))?) };
+        let to = m.state(to).ok_or_else(|| format!("no animation state '{to}'"))?;
+        m.transitions.push(crate::animblend::Transition { from, to, cond, duration: duration.max(0.0) });
+        Ok(())
+    }
+
+    pub fn set_anim_param(&mut self, e: i32, name: &str, v: f32) -> Result<(), String> {
+        self.machine_mut(e)?.params.insert(name.to_lowercase(), v);
+        Ok(())
+    }
+
+    pub fn anim_param(&mut self, e: i32, name: &str) -> Result<f32, String> {
+        Ok(self.machine_mut(e)?.params.get(&name.to_lowercase()).copied().unwrap_or(0.0))
+    }
+
+    /// `StartAnimStates`: runs the state machine from state `name`.
+    pub fn start_anim_states(&mut self, e: i32, name: &str) -> Result<(), String> {
+        let idx = self.machine_mut(e)?.state(name).ok_or_else(|| format!("no animation state '{name}'"))?;
+        self.enter_state(e, idx, 0.0)
+    }
+
+    pub fn anim_state_name(&mut self, e: i32) -> Result<String, String> {
+        let m = self.machine_mut(e)?;
+        Ok(m.current.and_then(|i| m.states.get(i)).map(|s| s.name.clone()).unwrap_or_default())
+    }
+
+    /// `AnimRootMotion`: the root bone's movement moves the entity.
+    pub fn anim_root_motion(&mut self, e: i32, bone: &str, enable: bool, keep_y: bool) -> Result<(), String> {
+        let bone = if bone.is_empty() || !enable {
+            Handle::NONE
+        } else {
+            let root = self.ent(e)?.node;
+            let graph = self.graph()?;
+            graph.traverse_handle_iter(root).find(|&n| graph[n].name().eq_ignore_ascii_case(bone)).ok_or_else(|| format!("Entity {e} has no bone named '{bone}'"))?
+        };
+        let st = self.anim_mut(e)?;
+        st.extra.root = enable.then_some(crate::animblend::RootMotion { bone, rest: None, prev: None, keep_y });
         Ok(())
     }
 

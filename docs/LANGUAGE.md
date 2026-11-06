@@ -305,6 +305,27 @@ ShaderFloat mesh, "time", MilliSecs() / 1000.0
 VertexData surface, v, 0, phase, height  ; read in the shader at location 8
 ```
 
+## Animation states, blend spaces and layers (ext)
+
+```basic
+moves = CreateBlendSpace()                ; idle, walk and run along "speed"
+BlendSpacePoint moves, 0, 0 : BlendSpacePoint moves, 1, 1 : BlendSpacePoint moves, 2, 3
+AddBlendState hero, "move", moves, "speed"
+AddAnimState hero, "jump", 3, 3           ; sequence 3, played once
+AddAnimTransition hero, "move", "jump", "jump = 1", 6
+AddAnimTransition hero, "jump", "move", "end", 10
+StartAnimStates hero, "move"
+; each frame
+SetAnimParam hero, "speed", speed
+SetAnimParam hero, "jump", KeyHit(57)
+AnimLayer hero, 1, 4, 1, 1, 1, "Spine"    ; aim with the upper body only
+UpdateWorld
+
+glow = CreateTrack(lamp, "lightcolor")    ; animate any property
+TrackKey glow, 0, 255, 100, 0 : TrackKey glow, 60, 0, 100, 255
+PlayTrack glow, 2
+```
+
 ## Joint motors and ragdolls (ext)
 
 ```basic

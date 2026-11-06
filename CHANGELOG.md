@@ -4,6 +4,21 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Animation states, blend spaces, layers and tracks
+
+* **Animation layers, blend spaces, state machines, root motion and
+  property tracks** – Several animations can play on one model at once,
+  mixed by weight or limited to part of the skeleton (`AnimLayer`: run with
+  the legs, aim with the upper body). Blend spaces mix sequences by
+  parameters such as speed, keeping them in step (`AnimBlend`). State
+  machines switch between named states by themselves when parameter
+  conditions hold or a one-shot animation ends, with crossfades
+  (`AddAnimState`, `AddAnimTransition`, `SetAnimParam`). Root motion lets
+  an animation's own movement move the entity. Property tracks keyframe
+  colour, alpha, emission, light colour and range, camera zoom, fog,
+  texture offsets and transforms on any entity (`CreateTrack`, `TrackKey`,
+  `PlayTrack`). `examples/animstates.nb` drives a fox with all of it.
+
 ## Command reference and documentation
 
 * **Every command documented** – `docs/COMMANDS.md` explains all commands

@@ -209,6 +209,9 @@ pub struct World {
     pub ui: crate::ui::UiState,
     /// (ext) Joints' starting poses for motors and `JointAngle` ((2D?, id)).
     pub joint_info: std::collections::HashMap<(bool, i32), crate::jointmotor::JointInfo>,
+    /// (ext) `CreateBlendSpace` blend spaces and `CreateTrack` property tracks.
+    pub blend_spaces: Vec<Option<crate::animblend::BlendSpace>>,
+    pub tracks: Vec<Option<crate::proptrack::Track>>,
     /// `LoadShader` shaders.
     pub shaders: Vec<Option<fyrox::material::shader::ShaderResource>>,
     /// Cameras with a `CameraColorGrading` table (`SetGamma` leaves them alone).
@@ -278,6 +281,8 @@ impl Default for World {
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
             shaders: Vec::new(),
+            blend_spaces: Vec::new(),
+            tracks: Vec::new(),
             joint_info: Default::default(),
             bodies2d: Vec::new(),
             joints2d: Vec::new(),

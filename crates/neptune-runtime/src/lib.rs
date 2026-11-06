@@ -42,6 +42,8 @@ pub mod anim2d;
 pub mod ui;
 pub mod jointmotor;
 pub mod ragdoll;
+pub mod animblend;
+pub mod proptrack;
 pub mod physics;
 pub mod pick;
 pub mod primitive;

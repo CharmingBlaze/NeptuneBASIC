@@ -664,6 +664,27 @@ AnimSeq: Returns the animation sequence entity is currently playing.
 AnimLength: Returns the length in frames of entity's current animation sequence.
 ExtractAnimSeq: Creates a new animation sequence from frames first_frame to last_frame of sequence anim_seq and returns the new sequence's number.
 CountAnimSeqs: (ext) Returns how many animation sequences entity has (0 if it is not animated).
+AnimLayer: (ext) Plays sequence on animation layer (1-8) of entity on top of its main animation, blended in by weight (0-1); mode and speed work like Animate. bone limits the layer to that bone and everything below it ("" = the whole model), e.g. the upper body shooting while the legs run; a whole-body layer at weight 0.3 mixes the two animations 70/30.
+AnimLayerWeight: (ext) Changes how strongly animation layer of entity is blended in, from 0 (not at all) to 1 (fully); change it a little each frame to fade a layer in or out.
+AnimLayerStop: (ext) Removes animation layer from entity.
+CreateBlendSpace: (ext) Creates an empty blend space and returns its handle; add sequences to it with BlendSpacePoint and play it with AnimBlend or AddBlendState.
+BlendSpacePoint: (ext) Places animation sequence at point x (and y) of blend space, e.g. idle at 0, walk at 1 and run at 3 for speed. Points that all share one y form a line; otherwise they form a plane (speed and direction).
+AnimBlend: (ext) Plays blend space on entity, mixing its sequences for the point x,y (call it again each frame with new values; the mix changes smoothly). All sequences stay at the same point of their cycle so steps stay in step. speed scales playback; transition crossfades from the previous animation over that many frames.
+AddAnimState: (ext) Adds a state called name to entity's animation state machine that plays sequence with mode (1 loop, 2 ping-pong, 3 once) and speed; returns the state's number.
+AddBlendState: (ext) Adds a state called name to entity's animation state machine that plays blend space, its position taken each frame from the parameters param_x (and param_y) set with SetAnimParam; returns the state's number.
+AddAnimTransition: (ext) Makes entity's state machine switch from state from ("*" or "" for any state) to state to when condition holds, crossfading over duration frames. condition is "" (at once), "end" (the state's one-shot animation has finished) or a comparison of a parameter such as "speed > 0.5" (operators > < >= <= = <>).
+SetAnimParam: (ext) Sets parameter name of entity's animation state machine to value; transitions and blend states read it.
+AnimParam: (ext) Returns the value of parameter name of entity's animation state machine (0 if never set).
+StartAnimStates: (ext) Starts entity's animation state machine in state; from then on UpdateWorld takes its transitions by itself.
+AnimStateName: (ext) Returns the name of the state entity's animation state machine is in, or "" if it has none.
+AnimRootMotion: (ext) Root motion: the movement of the root bone in entity's animation moves the entity instead, so its feet do not slide (for animations made moving forward rather than in place). bone picks the root bone ("" = the model's topmost moving bone); enable 0 turns it off; keep_y 1 leaves up and down movement in the animation.
+CreateTrack: (ext) Creates a property track that animates property of entity and returns its handle. property is position, rotation, scale, color, alpha, shininess, emissive, lightcolor, lightrange, camerazoom, fogrange, texture (offset of the entity's first texture) or texturerotation; add keys with TrackKey.
+TrackKey: (ext) Sets the value of track at frame (1/60 s each): value1 to value3 as the property needs (x,y,z; red,green,blue; near,far; u,v; or one value). Values between keys change in a straight line.
+PlayTrack: (ext) Plays track from its start: mode 1 loops, 2 goes back and forth, 3 plays once, 0 stops; speed scales it (negative plays backwards). Tracks advance in UpdateWorld.
+SetTrackTime: (ext) Stops track and sets its property to the value at frame.
+TrackTime: (ext) Returns the current frame of track.
+TrackPlaying: (ext) Returns 1 while track is playing, 0 when stopped or finished.
+FreeTrack: (ext) Deletes track; the property keeps its last value.
 
 # Sprites
 CreateSprite: Creates a flat sprite that faces the camera and returns its handle; parent is optional.

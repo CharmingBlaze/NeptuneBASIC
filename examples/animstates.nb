@@ -1,0 +1,71 @@
+; Animation layers, blend spaces, state machines and property tracks (ext).
+; Run from the project folder:  neptune run examples/animstates.nb
+; Up/Down: speed up / slow down   Left/Right: turn   L: look around (a
+; layer on the neck)   Space: stop and survey (a one-shot state)   Esc: quit
+
+Graphics3D 1024, 640, 0, 2
+AppTitle "Animation states"
+
+cam = CreateCamera()
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0 : LightShadows sun, True
+AmbientLight 70, 70, 80
+ground = CreatePlane() : EntityColor ground, 90, 130, 80
+
+; the fox's sequences: 0 Survey, 1 Walk, 2 Run
+fox = LoadAnimMesh("examples/media/Fox.glb")
+ScaleEntity fox, 0.02, 0.02, 0.02
+
+; locomotion: a blend space from standing (0) through walking (1) to running (3)
+moves = CreateBlendSpace()
+BlendSpacePoint moves, 0, 0
+BlendSpacePoint moves, 1, 1
+BlendSpacePoint moves, 2, 3
+
+; the state machine: moving (the blend space, by "speed") and a one-shot survey
+AddBlendState fox, "move", moves, "speed"
+AddAnimState fox, "survey", 0, 3
+AddAnimTransition fox, "move", "survey", "stop = 1", 8
+AddAnimTransition fox, "survey", "move", "end", 12
+StartAnimStates fox, "move"
+
+; a lamp whose colour and range follow property tracks
+lamp = CreateLight(2) : PositionEntity lamp, 0, 3, 4
+bulb = CreateSphere(12) : ScaleEntity bulb, 0.2, 0.2, 0.2 : PositionEntity bulb, 0, 3, 4
+EntityFX bulb, 1
+lampcol = CreateTrack(lamp, "lightcolor")
+TrackKey lampcol, 0, 255, 120, 40 : TrackKey lampcol, 90, 60, 120, 255
+PlayTrack lampcol, 2
+lamprange = CreateTrack(lamp, "lightrange")
+TrackKey lamprange, 0, 4 : TrackKey lamprange, 45, 9 : TrackKey lamprange, 90, 4
+PlayTrack lamprange, 1
+bulbcol = CreateTrack(bulb, "color")
+TrackKey bulbcol, 0, 255, 120, 40 : TrackKey bulbcol, 90, 60, 120, 255
+PlayTrack bulbcol, 2
+
+speed# = 0 : looking = False
+While Not KeyHit(1)
+    If KeyDown(200) Then speed = speed + 0.03
+    If KeyDown(208) Then speed = speed - 0.03
+    If speed < 0 Then speed = 0
+    If speed > 3 Then speed = 3
+    If KeyDown(203) Then TurnEntity fox, 0, 2, 0
+    If KeyDown(205) Then TurnEntity fox, 0, -2, 0
+    SetAnimParam fox, "speed", speed
+    SetAnimParam fox, "stop", KeyDown(57)
+    If KeyHit(38)
+        looking = Not looking
+        If looking Then AnimLayer fox, 1, 0, 1, 1, 0.8, "b_Neck_04" Else AnimLayerStop fox, 1
+    EndIf
+    ; move forward with the animation's speed (the fox's walk is animated in place)
+    If AnimStateName(fox) = "move" Then MoveEntity fox, 0, 0, -speed * 2.2
+    PositionEntity cam, EntityX(fox), 3, EntityZ(fox) - 8
+    PointEntity cam, fox
+
+    UpdateWorld
+    RenderWorld
+    Color 255, 255, 255
+    Text 10, 10, "Up/Down: speed   Left/Right: turn   L: look around   Space: survey   Esc: quit"
+    Text 10, 30, "state: " + AnimStateName(fox) + "   speed: " + Left(speed, 4) + "   looking: " + looking
+    Flip
+Wend
+End

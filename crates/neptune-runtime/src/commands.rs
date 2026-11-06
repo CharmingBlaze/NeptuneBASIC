@@ -1348,10 +1348,11 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("%GraphicsWidth", |h, _, _| int(h.world.width as i32)),
     ("%GraphicsHeight", |h, _, _| int(h.world.height as i32)),
-    ("UpdateWorld#elapsed_time=1", |h, a, _| {
+    ("UpdateWorld#elapsed_time=1", |h, a, ctx| {
         h.scene()?;
         h.flush_meshes()?;
         h.update_animations(a[0].float())?;
+        h.update_tracks(a[0].float(), ctx)?;
         update_world(h)?;
         VOID
     }),
@@ -2018,6 +2019,96 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("%FindChild%entity$name", |h, a, _| int(h.find_child(a[0].int(), &a[1].str())?)),
     // ---- animation
+    // (ext) layers, blend spaces, state machines, root motion (see animblend.rs)
+    ("AnimLayer%entity%layer%sequence%mode=1#speed=1#weight=1$bone=\"\"", |h, a, _| {
+        h.anim_layer(a[0].int(), a[1].int(), a[2].int(), a[3].int(), a[4].float(), a[5].float(), &a[6].str())?;
+        VOID
+    }),
+    ("AnimLayerWeight%entity%layer#weight", |h, a, _| {
+        h.anim_layer_weight(a[0].int(), a[1].int(), a[2].float())?;
+        VOID
+    }),
+    ("AnimLayerStop%entity%layer", |h, a, _| {
+        h.anim_layer_stop(a[0].int(), a[1].int())?;
+        VOID
+    }),
+    ("%CreateBlendSpace", |h, _, _| {
+        h.world.blend_spaces.push(Some(Default::default()));
+        int(h.world.blend_spaces.len() as i32)
+    }),
+    ("BlendSpacePoint%space%sequence#x#y=0", |h, a, _| {
+        h.blend_space(a[0].int())?;
+        let seq = usize::try_from(a[1].int()).map_err(|_| "sequence numbers start at 0".to_string())?;
+        h.world.blend_spaces[a[0].int() as usize - 1].as_mut().unwrap().points.push((a[2].float(), a[3].float(), seq));
+        VOID
+    }),
+    ("AnimBlend%entity%space#x#y=0#speed=1#transition=0", |h, a, _| {
+        h.start_blend(a[0].int(), a[1].int(), a[2].float(), a[3].float(), a[4].float(), a[5].float(), None)?;
+        VOID
+    }),
+    ("%AddAnimState%entity$name%sequence%mode=1#speed=1", |h, a, _| {
+        let seq = usize::try_from(a[2].int()).map_err(|_| "sequence numbers start at 0".to_string())?;
+        let kind = crate::animblend::StateKind::Seq { seq, mode: a[3].int().clamp(1, 3), speed: a[4].float() };
+        int(h.add_anim_state(a[0].int(), &a[1].str(), kind)?)
+    }),
+    ("%AddBlendState%entity$name%space$param_x$param_y=\"\"#speed=1", |h, a, _| {
+        h.blend_space(a[2].int())?;
+        let py = a[4].str().to_lowercase();
+        let kind = crate::animblend::StateKind::Blend { space: a[2].int(), px: a[3].str().to_lowercase(), py: (!py.is_empty()).then_some(py), speed: a[5].float() };
+        int(h.add_anim_state(a[0].int(), &a[1].str(), kind)?)
+    }),
+    ("AddAnimTransition%entity$from$to$condition=\"\"#duration=10", |h, a, _| {
+        h.add_anim_transition(a[0].int(), &a[1].str(), &a[2].str(), &a[3].str(), a[4].float())?;
+        VOID
+    }),
+    ("SetAnimParam%entity$name#value", |h, a, _| {
+        h.set_anim_param(a[0].int(), &a[1].str(), a[2].float())?;
+        VOID
+    }),
+    ("#AnimParam%entity$name", |h, a, _| float(h.anim_param(a[0].int(), &a[1].str())?)),
+    ("StartAnimStates%entity$state", |h, a, _| {
+        h.start_anim_states(a[0].int(), &a[1].str())?;
+        VOID
+    }),
+    ("$AnimStateName%entity", |h, a, _| Ok(Value::Str(h.anim_state_name(a[0].int())?.into()))),
+    ("AnimRootMotion%entity$bone=\"\"%enable=1%keep_y=1", |h, a, _| {
+        h.anim_root_motion(a[0].int(), &a[1].str(), a[2].int() != 0, a[3].int() != 0)?;
+        VOID
+    }),
+    // (ext) property tracks: keyframed colour, alpha, light, camera and texture values (see proptrack.rs)
+    ("%CreateTrack%entity$property", |h, a, _| {
+        h.ent(a[0].int())?;
+        let prop = crate::proptrack::Prop::parse(&a[1].str())?;
+        h.world.tracks.push(Some(crate::proptrack::Track { entity: a[0].int(), prop, keys: Vec::new(), time: 0.0, speed: 1.0, mode: 0, dir: 1.0 }));
+        int(h.world.tracks.len() as i32)
+    }),
+    ("TrackKey%track#frame#value1#value2=0#value3=0", |h, a, _| {
+        h.track_mut(a[0].int())?.add_key(a[1].float().max(0.0), [a[2].float(), a[3].float(), a[4].float()]);
+        VOID
+    }),
+    ("PlayTrack%track%mode=1#speed=1", |h, a, ctx| {
+        let t = h.track_mut(a[0].int())?;
+        t.mode = a[1].int().clamp(0, 3);
+        t.speed = a[2].float();
+        t.dir = 1.0;
+        t.time = if t.speed < 0.0 { t.length() } else { 0.0 };
+        h.apply_track(a[0].int(), ctx)?;
+        VOID
+    }),
+    ("SetTrackTime%track#frame", |h, a, ctx| {
+        let t = h.track_mut(a[0].int())?;
+        t.mode = 0;
+        t.time = a[1].float().max(0.0);
+        h.apply_track(a[0].int(), ctx)?;
+        VOID
+    }),
+    ("#TrackTime%track", |h, a, _| float(h.track_mut(a[0].int())?.time)),
+    ("%TrackPlaying%track", |h, a, _| int((h.track_mut(a[0].int())?.mode != 0) as i32)),
+    ("FreeTrack%track", |h, a, _| {
+        h.track_mut(a[0].int())?;
+        h.world.tracks[a[0].int() as usize - 1] = None;
+        VOID
+    }),
     ("Animate%entity%mode=1#speed=1%sequence=0#transition=0", |h, a, _| {
         h.animate(a[0].int(), a[1].int(), a[2].float(), a[3].int(), a[4].float())?;
         VOID
