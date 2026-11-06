@@ -4,6 +4,17 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Asset management
+
+* **Caching, more background loading and live reloading** – Loading a
+  texture, image or sound file again shares what was decoded the first
+  time (each load still gets its own handle and settings, as in Blitz3D),
+  and a file changed on disk is read again. `LoadImageAsync` and
+  `LoadSoundAsync` complete background loading. `ReloadAssets` and
+  `WatchAssets` bring in art changed while the game runs, keeping every
+  handle's settings; `ImageName`, `SoundName` and `ModelName` tell where an
+  asset came from.
+
 ## GUI widgets
 
 * **Fyrox's retained UI for BASIC programs** – 72 `Gui*` commands: windows,

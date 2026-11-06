@@ -45,6 +45,7 @@ pub mod ragdoll;
 pub mod animblend;
 pub mod proptrack;
 pub mod gui;
+pub mod assets;
 pub mod gui_lists;
 pub mod gui_dialogs;
 pub mod gui_editors;

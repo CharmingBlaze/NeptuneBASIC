@@ -390,7 +390,7 @@ fn append_surfaces(h: &mut Host3D, src: i32, dst: i32) -> Result<(), String> {
 fn load_sound(h: &mut Host3D, path: &str, spatial: bool) -> Result<Value, String> {
     match crate::sound::load(path, false) {
         Ok((buffer, rate)) => {
-            let info = crate::sound::SoundInfo { buffer, looping: false, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial };
+            let info = crate::sound::SoundInfo { buffer, looping: false, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial, path: path.to_string() };
             int(h.add_sound(info))
         }
         Err(e) => {
@@ -1387,6 +1387,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("Flip%vwait=1", |h, _, ctx| {
         h.scene()?;
+        h.watch_assets()?;
         h.commit_buffers()?;
         h.ui_end_frame();
         // Flip ends the frame: publish the 2D layer and let the engine render.
@@ -1991,6 +1992,23 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%LoadMeshAsync$file%parent=0", |h, a, _| int(crate::loading::load_mesh(h, &a[0].str(), a[1].int())?)),
     ("%EntityLoaded%entity", |h, a, _| int(crate::loading::entity_state(h, a[0].int())?)),
     ("%PendingLoads", |h, _, _| int(crate::loading::pending(h)?)),
+    // (ext) asset caching and reloading (see assets.rs)
+    ("%ReloadAssets", |h, _, _| int(h.reload_assets(None)?)),
+    ("WatchAssets%enable=1", |h, a, _| {
+        h.world.watch.on = a[0].int() != 0;
+        h.world.watch.times.clear();
+        h.world.watch.last = None;
+        VOID
+    }),
+    ("%AssetsReloaded", |h, _, _| int(std::mem::take(&mut h.world.watch.reloaded))),
+    ("$ModelName%entity", |h, a, _| {
+        let res = h.ent(a[0].int())?.model_res.clone();
+        let path = match (res, h.resources()) {
+            (Some(r), Some(rm)) => rm.resource_path(r.as_ref()).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default(),
+            _ => String::new(),
+        };
+        Ok(Value::Str(path.into()))
+    }),
     // (ext) save entities as a Fyrox scene file; LoadMesh/LoadScene loads it
     ("%SaveScene$file", |h, a, _| {
         let all = crate::scenefile::top_level(h);
@@ -2551,6 +2569,12 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     // ---- sound (bbaudio.cpp)
+    ("%LoadSoundAsync$file%spatial=0", |h, a, _| {
+        h.scene()?;
+        int(crate::loading::load_sound(h, &a[0].str(), a[1].int() != 0)?)
+    }),
+    ("%SoundLoaded%sound", |h, a, _| int(crate::loading::sound_state(h, a[0].int())?)),
+    ("$SoundName%sound", |h, a, _| Ok(Value::Str(h.sound(a[0].int())?.path.as_str().into()))),
     ("%LoadSound$file", |h, a, _| {
         h.scene()?;
         load_sound(h, &a[0].str(), false)
@@ -2591,7 +2615,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.scene()?;
         match crate::sound::load(&a[0].str(), true) {
             Ok((buffer, rate)) => {
-                let info = crate::sound::SoundInfo { buffer, looping: a[1].int() != 0, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial: false };
+                let info = crate::sound::SoundInfo { buffer, looping: a[1].int() != 0, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial: false, path: String::new() };
                 int(h.play(&info, 0)?)
             }
             Err(e) => {
@@ -3028,6 +3052,13 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%MovieWidth%movie", |h, a, _| int(movie_mut(h, a[0].int())?.width as i32)),
     ("%MovieHeight%movie", |h, a, _| int(movie_mut(h, a[0].int())?.height as i32)),
     ("%MoviePlaying%movie", |h, a, _| int(movie_mut(h, a[0].int())?.playing() as i32)),
+    // (ext) background loading of images (cut into frames when a frame size is given) and sounds
+    ("%LoadImageAsync$file%width=0%height=0%first=0%count=0", |h, a, _| {
+        let f = (a[1].int().max(0) as u32, a[2].int().max(0) as u32, a[3].int().max(0) as u32, a[4].int().max(0) as u32);
+        int(crate::loading::load_image(h, &a[0].str(), f)?)
+    }),
+    ("%ImageLoaded%image", |h, a, _| int(crate::loading::image_state(h, a[0].int())?)),
+    ("$ImageName%image", |h, a, _| Ok(Value::Str(h.image(a[0].int())?.path.as_str().into()))),
     ("%LoadImage$file", |h, a, _| add_image(h, crate::image2d::Image2D::load(&a[0].str(), 0, 0, 0, 1))),
     ("%LoadAnimImage$file%width%height%first%count", |h, a, _| {
         let n = |i: usize| a[i].int().max(0) as u32;

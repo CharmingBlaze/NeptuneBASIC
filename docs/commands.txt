@@ -274,6 +274,9 @@ RectsOverlap: Returns 1 if the rectangle x1,y1,width1,height1 overlaps the recta
 ImagesOverlap: Returns 1 if the bounding rectangles of image1 at x1,y1 and image2 at x2,y2 overlap (fast, not pixel-accurate).
 ImagesCollide: Returns 1 if frame1 of image1 at x1,y1 and frame2 of image2 at x2,y2 overlap, ignoring transparent pixels.
 ImageRectOverlap: Returns 1 if the bounding rectangle of image at x,y overlaps the rectangle at rect_x,rect_y of size rect_width by rect_height.
+LoadImageAsync: (ext) Starts loading an image file in the background and returns its handle at once (a single transparent pixel until it arrives); with width and height it is cut into frames like LoadAnimImage (first and count as there, count 0 = all). Use ImageLoaded or PendingLoads to know when it is ready.
+ImageLoaded: (ext) Returns 1 when image has loaded (always for other images), 0 while it is loading in the background, -1 if loading failed.
+ImageName: (ext) Returns the file image was loaded from, or "" for an image made in the program.
 
 # Buffers and pixels
 GetColor: Sets the current drawing colour to the colour of the pixel at x, y in the current buffer. Pixels are read from image and texture buffers, not the screen.
@@ -461,6 +464,9 @@ ChannelPitch: Sets the playback rate of channel, in Hz.
 ChannelPlaying: Returns 1 if channel is playing, otherwise 0.
 CreateListener: Creates the 3D sound listener as an entity (usually parented to the camera) and returns it; rolloff_factor and distance_scale control how sound fades with distance.
 EmitSound: Plays a 3D sound from the position of entity and returns its channel.
+LoadSoundAsync: (ext) Starts loading a sound file in the background and returns its handle at once (silent until it arrives); spatial 1 makes it a 3D sound like Load3DSound. Use SoundLoaded or PendingLoads to know when it is ready.
+SoundLoaded: (ext) Returns 1 when sound has loaded (always for other sounds), 0 while it is loading in the background, -1 if loading failed.
+SoundName: (ext) Returns the file sound was loaded from.
 
 # Entities
 EntityClass: Returns the kind of entity as a string, such as "Pivot", "Camera", "Light" or "Mesh".
@@ -838,6 +844,10 @@ ShaderTexture: (ext) Sets the texture property called name of entity's custom sh
 # Loading and saving scenes
 SaveScene: (ext) Saves every top-level entity as a Fyrox scene file (.rgs) that LoadMesh can load back as one entity; cameras, collision, pick and physics settings and sounds are not saved. Returns 1 on success.
 SaveEntity: (ext) Saves entity and its children as a Fyrox scene file (.rgs) named file, to be loaded back with LoadMesh. Returns 1 on success.
+ReloadAssets: (ext) Reads every loaded texture, image, sound and model again from its file, keeping each handle's settings (scale, frames, handle, volume, ...) and the entities using them; returns how many were reloaded. Useful after changing art while the game runs.
+WatchAssets: (ext) With enable 1, checks the files of loaded textures, images, sounds and models about once a second and reloads the ones that changed on disk, so art edited in another program shows up while the game runs; 0 stops watching.
+AssetsReloaded: (ext) Returns how many assets were reloaded (by ReloadAssets or WatchAssets) since the last call.
+ModelName: (ext) Returns the file entity's model was loaded from, or "" if it is not a loaded model.
 
 # GUI widgets
 GuiWindow: (ext) Creates a window with title at x,y of size width by height (draggable, with a close button) and returns its handle; widgets created with it as parent are stacked inside. GuiValue is 1 while it is open; closing it sets 0 and counts as a change. SetGuiValue window, 1 or 0 opens or closes it.

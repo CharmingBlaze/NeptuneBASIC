@@ -32,6 +32,8 @@ pub struct Image2D {
     pub block: TextureResource,
     /// Pixels changed through an image buffer and not yet uploaded.
     pub dirty: bool,
+    /// File the image was loaded from ("" if made in the program).
+    pub path: String,
 }
 
 fn make_texture(img: &RgbaImage) -> TextureResource {
@@ -84,6 +86,7 @@ impl Image2D {
             scale: (1.0, 1.0),
             mask,
             dirty: false,
+            path: String::new(),
         })
     }
 
@@ -212,8 +215,36 @@ impl Image2D {
     }
 
     pub fn load(path: &str, fw: u32, fh: u32, first: u32, frames: u32) -> Result<Image2D, String> {
-        let img = image::open(path).map_err(|e| format!("cannot load image '{path}': {e}"))?;
-        Image2D::new(img.to_rgba8(), fw, fh, first, frames)
+        let mut img = Image2D::new(crate::assets::pixels(path)?, fw, fh, first, frames)?;
+        img.path = path.to_string();
+        Ok(img)
+    }
+
+    /// Reads the image's file again, keeping its frames, handle, scale and mask.
+    pub fn reload(&mut self, path: &str) -> Result<(), String> {
+        let mut fresh = Image2D::new(crate::assets::pixels(path)?, self.frame_w, self.frame_h, self.first, self.frames)?;
+        fresh.handle = self.handle;
+        fresh.scale = self.scale;
+        fresh.set_mask(self.mask);
+        fresh.path = path.to_string();
+        *self = fresh;
+        Ok(())
+    }
+
+    /// An image whose pixels arrive later (`LoadImageAsync`): a single
+    /// transparent pixel until then.
+    pub fn placeholder() -> Image2D {
+        Image2D::new(RgbaImage::from_pixel(1, 1, image::Rgba([0, 0, 0, 0])), 1, 1, 0, 1).expect("1x1 image")
+    }
+
+    /// Fills a placeholder with loaded pixels, cut into frames.
+    pub fn fill(&mut self, pixels: RgbaImage, frames: (u32, u32, u32, u32), path: &str) -> Result<(), String> {
+        let mut fresh = Image2D::new(pixels, frames.0, frames.1, frames.2, frames.3)?;
+        fresh.handle = self.handle;
+        fresh.scale = self.scale;
+        fresh.path = path.to_string();
+        *self = fresh;
+        Ok(())
     }
 
     pub fn set_mask(&mut self, mask: [u8; 3]) {

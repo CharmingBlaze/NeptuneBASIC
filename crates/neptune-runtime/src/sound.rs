@@ -35,10 +35,44 @@ pub struct SoundInfo {
     pub rate: f64,
     /// Loaded with `Load3DSound`.
     pub spatial: bool,
+    /// File the sound was loaded from (for `SoundName` and reloading).
+    pub path: String,
 }
 
 /// Decodes a sound file into a buffer. `stream` decodes while playing (music).
 pub fn load(path: &str, stream: bool) -> Result<(SoundBufferResource, f64), String> {
+    if stream {
+        // a stream has its own playing position: never shared
+        load_file(path, true)
+    } else {
+        crate::assets::sound(path, || load_file(path, false))
+    }
+}
+
+/// A short silent sound (a sound still loading with `LoadSoundAsync`).
+pub fn silence() -> (SoundBufferResource, f64) {
+    let rate = 22050u32;
+    let samples = 64u32;
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + samples * 2).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&rate.to_le_bytes());
+    wav.extend_from_slice(&(rate * 2).to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(samples * 2).to_le_bytes());
+    wav.resize(wav.len() + samples as usize * 2, 0);
+    let data = SoundBuffer::raw_generic(DataSource::from_memory(wav)).expect("a valid silent wave");
+    (SoundBufferResource::new_ok(Uuid::new_v4(), ResourceKind::Embedded, data), rate as f64)
+}
+
+/// Decodes a sound file.
+fn load_file(path: &str, stream: bool) -> Result<(SoundBufferResource, f64), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("cannot read '{path}': {e}"))?;
     let source = DataSource::from_memory(bytes);
     let data = if stream { SoundBuffer::raw_streaming(source) } else { SoundBuffer::raw_generic(source) }

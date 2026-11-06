@@ -305,6 +305,20 @@ ShaderFloat mesh, "time", MilliSecs() / 1000.0
 VertexData surface, v, 0, phase, height  ; read in the shader at location 8
 ```
 
+## Assets (ext)
+
+Loading the same file twice shares the decoded data, so loading in several
+places is cheap. While working on art:
+
+```basic
+WatchAssets                   ; reload textures, images, sounds, models that change on disk
+; ...
+If AssetsReloaded() Then Print "art updated"
+```
+
+`LoadImageAsync` and `LoadSoundAsync` join `LoadMeshAsync` and
+`LoadTextureAsync` for loading screens (`PendingLoads` counts them all).
+
 ## GUI widgets (ext)
 
 `Gui*` widgets are made once and kept; Fyrox draws them and handles the

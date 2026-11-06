@@ -191,6 +191,10 @@ pub struct World {
     /// that failed.
     pub loading_meshes: Vec<crate::loading::PendingMesh>,
     pub loading_textures: Vec<crate::loading::PendingTexture>,
+    pub loading_images: Vec<crate::loading::PendingImage>,
+    pub loading_sounds: Vec<crate::loading::PendingSound>,
+    pub failed_images: std::collections::HashSet<i32>,
+    pub failed_sounds: std::collections::HashSet<i32>,
     pub failed_meshes: std::collections::HashSet<Handle<Node>>,
     pub failed_textures: std::collections::HashSet<i32>,
     /// Cameras drawing into textures (`CameraToTexture`).
@@ -209,6 +213,8 @@ pub struct World {
     pub ui: crate::ui::UiState,
     /// (ext) Joints' starting poses for motors and `JointAngle` ((2D?, id)).
     pub joint_info: std::collections::HashMap<(bool, i32), crate::jointmotor::JointInfo>,
+    /// (ext) `WatchAssets` state.
+    pub watch: crate::assets::Watch,
     /// (ext) Retained GUI widgets.
     pub gui: crate::gui::GuiState,
     /// (ext) `CreateBlendSpace` blend spaces and `CreateTrack` property tracks.
@@ -279,11 +285,16 @@ impl Default for World {
             movies: Vec::new(),
             loading_meshes: Vec::new(),
             loading_textures: Vec::new(),
+            loading_images: Vec::new(),
+            loading_sounds: Vec::new(),
+            failed_images: Default::default(),
+            failed_sounds: Default::default(),
             failed_meshes: Default::default(),
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
             shaders: Vec::new(),
             gui: Default::default(),
+            watch: Default::default(),
             blend_spaces: Vec::new(),
             tracks: Vec::new(),
             joint_info: Default::default(),

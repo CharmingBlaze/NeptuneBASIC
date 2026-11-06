@@ -178,9 +178,15 @@ impl TextureInfo {
     }
 }
 
-/// Loads an image file as a texture, applying Blitz flags:
-/// masked (4) makes pure black transparent, clamp U/V (16/32) disable wrapping.
+/// Loads an image file as a texture (shared with earlier loads of the same
+/// file and flags, see `assets.rs`).
 pub fn load(path: &str, flag_bits: i32) -> Result<TextureInfo, String> {
+    crate::assets::texture(path, flag_bits, || load_file(path, flag_bits))
+}
+
+/// Reads an image file as a texture, applying Blitz flags:
+/// masked (4) makes pure black transparent, clamp U/V (16/32) disable wrapping.
+fn load_file(path: &str, flag_bits: i32) -> Result<TextureInfo, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("cannot read '{path}': {e}"))?;
     let bytes = if flag_bits & flags::MASKED != 0 { mask_black(&bytes)? } else { bytes };
     let mut opts = TextureImportOptions::default();
