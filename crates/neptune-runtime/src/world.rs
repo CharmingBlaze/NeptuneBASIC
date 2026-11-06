@@ -193,6 +193,18 @@ pub struct World {
     pub failed_textures: std::collections::HashSet<i32>,
     /// Cameras drawing into textures (`CameraToTexture`).
     pub texture_cameras: Vec<crate::camerafx::TextureCamera>,
+    /// (ext) 2D physics: bodies, joints, pixels per metre, per-body
+    /// (friction, bounce, density, sensor), the last ray hit.
+    pub bodies2d: Vec<Option<crate::physics2d::Body2D>>,
+    pub joints2d: Vec<Option<Handle<Node>>>,
+    pub physics2d_scale: f32,
+    pub physics2d_ready: bool,
+    pub body2d_material: std::collections::HashMap<i32, (f32, f32, f32, bool)>,
+    pub ray2d: crate::physics2d::Hit2D,
+    /// (ext) `CreateAnim2D` animations.
+    pub anims2d: Vec<Option<crate::anim2d::Anim2D>>,
+    /// (ext) UI widget state.
+    pub ui: crate::ui::UiState,
     /// `LoadShader` shaders.
     pub shaders: Vec<Option<fyrox::material::shader::ShaderResource>>,
     /// Cameras with a `CameraColorGrading` table (`SetGamma` leaves them alone).
@@ -262,6 +274,14 @@ impl Default for World {
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
             shaders: Vec::new(),
+            bodies2d: Vec::new(),
+            joints2d: Vec::new(),
+            physics2d_scale: crate::physics2d::DEFAULT_SCALE,
+            physics2d_ready: false,
+            body2d_material: Default::default(),
+            ray2d: Default::default(),
+            anims2d: Vec::new(),
+            ui: Default::default(),
             texture_cameras: Vec::new(),
             graded_cameras: Default::default(),
             gamma: Default::default(),

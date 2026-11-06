@@ -305,6 +305,28 @@ ShaderFloat mesh, "time", MilliSecs() / 1000.0
 VertexData surface, v, 0, phase, height  ; read in the shader at location 8
 ```
 
+## 2D camera, physics, animation and UI (ext)
+
+```basic
+player = CreateBody2D(0, 100, 300)       ; dynamic body at (100, 300) pixels
+Body2DCapsule player, 20, 30
+Body2DFixedRotation player, True
+level = TileMapBody2D(map)               ; solid tiles become static boxes
+walk = CreateAnim2D(heroimage, 0, 3, 10) ; frames 0-3 at 10 per second
+
+While Not KeyHit(1)
+    SetVelocity2D player, (KeyDown(205) - KeyDown(203)) * 200, Body2DVY(player)
+    Cls
+    Camera2D Body2DX(player), Body2DY(player), 1.5   ; follow, zoomed in
+    DrawTileMap map
+    DrawImageEx heroimage, Body2DX(player), Body2DY(player), Anim2DFrame(walk)
+    Camera2DEnable False                 ; HUD and UI in screen pixels
+    If UIButton(10, 10, 100, 30, "Restart") Then PositionBody2D player, 100, 300
+    volume# = UISlider(10, 50, 150, volume, 0, 1)
+    Flip
+Wend
+```
+
 ## Tile maps (ext)
 
 A tile map is a grid of frames of an animation image. `AutoTile` paints a

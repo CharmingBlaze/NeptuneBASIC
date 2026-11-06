@@ -1,0 +1,155 @@
+; 2D extensions together (ext): a physics platformer with a follow camera,
+; an animated player, an autotiled level and a UI panel.
+;   neptune run examples/platformer2d.nb
+; Left/Right: run   Space/Up: jump   Mouse: the settings panel   Esc: quit
+
+Graphics 960, 540, 0, 2
+AppTitle "2D platformer"
+SetBuffer BackBuffer()
+
+Const TILE = 32
+
+; ---- graphics made in code ----------------------------------------------
+; 16 autotile frames: grass on top where nothing is above, dirt elsewhere
+tiles = CreateImage(TILE, TILE, 16)
+For mask = 0 To 15
+    SetBuffer ImageBuffer(tiles, mask)
+    Color 120, 80, 50 : Rect 0, 0, TILE, TILE
+    Color 100, 66, 40 : Rect 6, 10, 4, 4 : Rect 20, 20, 5, 4
+    If (mask And 1) = 0 Then Color 80, 180, 70 : Rect 0, 0, TILE, 8
+    If (mask And 2) = 0 Then Color 90, 60, 36 : Rect TILE - 2, 0, 2, TILE
+    If (mask And 8) = 0 Then Color 90, 60, 36 : Rect 0, 0, 2, TILE
+Next
+
+; the player: four running frames
+hero = CreateImage(24, 32, 4)
+For f = 0 To 3
+    SetBuffer ImageBuffer(hero, f)
+    Color 250, 200, 60 : Oval 4, 0, 16, 14
+    Color 60, 120, 230 : Rect 6, 13, 12, 11
+    Color 40, 40, 60
+    leg = (f Mod 2) * 4 - 2
+    Rect 7 + leg, 24, 4, 8 : Rect 13 - leg, 24, 4, 8
+Next
+MidHandle hero
+
+crate = CreateImage(32, 32)
+SetBuffer ImageBuffer(crate)
+Color 170, 120, 60 : Rect 0, 0, 32, 32
+Color 120, 80, 40 : Rect 0, 0, 32, 32, False : Line 0, 0, 31, 31 : Line 31, 0, 0, 31
+MidHandle crate
+
+ball = CreateImage(24, 24)
+SetBuffer ImageBuffer(ball)
+Color 230, 70, 90 : Oval 0, 0, 24, 24
+Color 255, 160, 170 : Oval 5, 4, 7, 6
+MidHandle ball
+
+plank = CreateImage(160, 12)
+SetBuffer ImageBuffer(plank)
+Color 140, 100, 60 : Rect 0, 0, 160, 12
+MidHandle plank
+SetBuffer BackBuffer()
+
+; ---- level ---------------------------------------------------------------
+map = CreateTileMap(tiles, 70, 17)
+TileMapTerrain map, 1, 0, 16
+For x = 0 To 69
+    For y = 14 To 16
+        AutoTile map, x, y, 1
+    Next
+Next
+Restore platforms
+For i = 1 To 6
+    Read px, py, pw
+    For x = px To px + pw - 1
+        AutoTile map, x, py, 1
+    Next
+Next
+.platforms
+Data 8, 11, 5,  16, 8, 4,  24, 11, 6,  33, 7, 3,  40, 10, 8,  52, 9, 5
+; walls at both ends
+For y = 0 To 13
+    AutoTile map, 0, y, 1 : AutoTile map, 69, y, 1
+Next
+ground = TileMapBody2D(map)
+
+; ---- physics objects -------------------------------------------------------
+player = CreateBody2D(0, 100, 380)
+Body2DCapsule player, 20, 30
+Body2DFixedRotation player, True
+Body2DFriction player, 0
+
+Dim crates(5)
+For i = 0 To 5
+    crates(i) = CreateBody2D(0, 560 + (i Mod 3) * 34, 420 - (i / 3) * 34)
+    Body2DBox crates(i), 32, 32
+Next
+Dim balls(3)
+For i = 0 To 3
+    balls(i) = CreateBody2D(0, 800 + i * 40, 100)
+    Body2DCircle balls(i), 12
+    Body2DBounce balls(i), 0.6
+Next
+; a seesaw: a plank on a hinge
+pivot = CreateBody2D(1, 1500, 420)
+saw = CreateBody2D(0, 1500, 420)
+Body2DBox saw, 160, 12
+Body2DDensity saw, 2
+CreateHingeJoint2D pivot, saw, 1500, 420
+
+walk = CreateAnim2D(hero, 0, 3, 10, 1)
+
+; ---- settings shown in the panel ---------------------------------------------
+facing = 1 : zoom# = 1.0 : tilt# = 0 : debug = False : name$ = "Player 1"
+camx# = 100 : camy# = 300
+
+While Not KeyHit(1)
+    ; --- controls (ignored while the mouse is over the panel)
+    vx# = 0
+    If KeyDown(203) Then vx = -230
+    If KeyDown(205) Then vx = 230
+    SetVelocity2D player, vx, Body2DVY(player)
+    ; standing on something: a short ray down from the feet
+    feet# = Body2DY(player) + 16
+    onground = RayCast2D(Body2DX(player), feet + 1, Body2DX(player), feet + 6) <> 0
+    If (KeyHit(57) Or KeyHit(200)) And onground Then SetVelocity2D player, vx, -520
+    If vx = 0 Or Not onground Then Anim2DPause walk, True Else Anim2DPause walk, False
+
+    ; --- camera follows the player smoothly
+    camx = camx + (Body2DX(player) - camx) * 0.1
+    camy = camy + (Body2DY(player) - 60 - camy) * 0.1
+
+    ; --- draw the world through the camera
+    ClsColor 120, 180, 230 : Cls
+    Camera2D camx, camy, zoom, tilt
+    DrawTileMap map
+    For i = 0 To 5 : DrawBody2D crates(i), crate : Next
+    For i = 0 To 3 : DrawBody2D balls(i), ball : Next
+    DrawBody2D saw, plank
+    If vx < 0 Then facing = -1 ElseIf vx > 0 Then facing = 1
+    DrawImageEx hero, Body2DX(player), Body2DY(player), Anim2DFrame(walk), 0, facing, 1
+    Color 255, 255, 255 : Text Body2DX(player), Body2DY(player) - 34, name, True
+    If debug Then Color 255, 255, 0 : DrawBodies2D
+
+    ; --- HUD and UI in screen space
+    Camera2DEnable False
+    UIPanel 10, 10, 250, 200, "Settings"
+    UILabel 22, 44, "Zoom"
+    zoom = UISlider(80, 42, 160, zoom, 0.5, 2.5)
+    UILabel 22, 74, "Tilt"
+    tilt = UISlider(80, 72, 160, tilt, -20, 20)
+    debug = UICheckBox(22, 104, "Show physics shapes", debug)
+    name = UITextBox(22, 134, 220, name)
+    If UIButton(22, 172, 106, 28, "Reset player")
+        PositionBody2D player, 100, 380
+        SetVelocity2D player, 0, 0
+    EndIf
+    If UIButton(136, 172, 106, 28, "Kick balls")
+        For i = 0 To 3 : ApplyImpulse2D balls(i), Rnd(-300, 300), -400 : Next
+    EndIf
+    Color 0, 0, 0
+    Text 10, GraphicsHeight() - 20, "Left/Right: run   Space: jump   Esc: quit"
+    Flip
+Wend
+End

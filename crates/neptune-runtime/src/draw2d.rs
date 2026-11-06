@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use fyrox::{
     asset::{untyped::ResourceKind, Resource},
     core::{
-        algebra::Vector2, color::Color, math::Rect, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
+        algebra::{Matrix3, Vector2}, color::Color, math::Rect, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
         uuid::Uuid, uuid_provider, visitor::prelude::*,
     },
     graph::SceneGraph,
@@ -130,6 +130,11 @@ pub enum DrawOp {
     Image { x: f32, y: f32, w: f32, h: f32, uv: Rect<f32>, texture: TextureResource },
     /// `Viewport`: later operations are clipped to this rectangle (`None` = whole screen).
     Clip { rect: Option<Rect<f32>> },
+    /// (ext) `Camera2D`: later operations are transformed (`None` = screen space).
+    Transform { m: Option<Matrix3<f32>> },
+    /// (ext) A rotated or scaled image (`DrawImageEx`): corners clockwise from
+    /// the top-left, tinted by `color`.
+    Quad { pts: [Vector2<f32>; 4], uv: Rect<f32>, texture: TextureResource, color: Color },
 }
 
 impl DrawOp {
@@ -159,6 +164,19 @@ impl DrawOp {
                     *r = Rect::new(r.x() * k, r.y() * k, r.w() * k, r.h() * k);
                 }
             }
+            DrawOp::Transform { m } => {
+                // the same transform in physical pixels: S * m * S^-1
+                if let Some(m) = m {
+                    let s = Matrix3::new_nonuniform_scaling(&Vector2::new(k, k));
+                    let si = Matrix3::new_nonuniform_scaling(&Vector2::new(1.0 / k, 1.0 / k));
+                    *m = s * *m * si;
+                }
+            }
+            DrawOp::Quad { pts, .. } => {
+                for p in pts.iter_mut() {
+                    *p *= k;
+                }
+            }
         }
         op
     }
@@ -177,6 +195,11 @@ pub struct Canvas2D {
     pub font: FontInfo,
     /// `Origin` offset added to all 2D coordinates.
     pub origin: (f32, f32),
+    /// (ext) `Camera2D` and whether it is in use (`Camera2DEnable`).
+    pub camera: crate::camera2d::Camera2D,
+    pub camera_on: bool,
+    /// The transform the draw list is currently under.
+    applied: Option<Matrix3<f32>>,
 }
 
 impl Default for Canvas2D {
@@ -189,12 +212,43 @@ impl Default for Canvas2D {
             fonts: Vec::new(),
             font: FontInfo::default_font(),
             origin: (0.0, 0.0),
+            camera: Default::default(),
+            camera_on: false,
+            applied: None,
         }
     }
 }
 
 impl Canvas2D {
+    /// Puts later drawing under the 2D camera's transform (or screen space).
+    fn ensure_transform(&mut self) {
+        if self.items.is_empty() {
+            self.applied = None;
+        }
+        let want = self.camera_on.then(|| self.camera.matrix());
+        if want != self.applied {
+            self.items.push(DrawOp::Transform { m: want });
+            self.applied = want;
+        }
+    }
+
+    /// `DrawImageEx`: an image rotated (degrees clockwise) and scaled about
+    /// its handle at `(x, y)`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn image_ex(&mut self, x: f32, y: f32, w: f32, h: f32, handle: (f32, f32), angle: f32, uv: Rect<f32>, texture: TextureResource, color: Color) {
+        self.ensure_transform();
+        let (x, y) = (x + self.origin.0, y + self.origin.1);
+        let (s, c) = angle.to_radians().sin_cos();
+        let corner = |cx: f32, cy: f32| {
+            let (dx, dy) = (cx - handle.0, cy - handle.1);
+            Vector2::new(x + dx * c - dy * s, y + dx * s + dy * c)
+        };
+        let pts = [corner(0.0, 0.0), corner(w, 0.0), corner(w, h), corner(0.0, h)];
+        self.items.push(DrawOp::Quad { pts, uv, texture, color });
+    }
+
     pub fn text(&mut self, x: f32, y: f32, text: &str, center_x: bool, center_y: bool) {
+        self.ensure_transform();
         let font = self.font.clone();
         let x = if center_x { x - (font.width(text) / 2.0).floor() } else { x } + self.origin.0;
         let y = if center_y { y - (font.height() / 2.0).floor() } else { y } + self.origin.1;
@@ -202,21 +256,25 @@ impl Canvas2D {
     }
 
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, solid: bool) {
+        self.ensure_transform();
         let (x, y) = (x + self.origin.0, y + self.origin.1);
         self.items.push(DrawOp::Rect { x, y, w, h, color: self.color, solid });
     }
 
     pub fn oval(&mut self, x: f32, y: f32, w: f32, h: f32, solid: bool) {
+        self.ensure_transform();
         let (x, y) = (x + self.origin.0, y + self.origin.1);
         self.items.push(DrawOp::Oval { x, y, w, h, color: self.color, solid });
     }
 
     pub fn line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32) {
+        self.ensure_transform();
         let (ox, oy) = self.origin;
         self.items.push(DrawOp::Line { x1: x1 + ox, y1: y1 + oy, x2: x2 + ox, y2: y2 + oy, color: self.color });
     }
 
     pub fn image(&mut self, x: f32, y: f32, w: f32, h: f32, uv: Rect<f32>, texture: TextureResource) {
+        self.ensure_transform();
         let (x, y) = (x + self.origin.0, y + self.origin.1);
         self.items.push(DrawOp::Image { x, y, w, h, uv, texture });
     }
@@ -249,8 +307,36 @@ impl Control for CanvasWidget {
         let full = self.clip_bounds();
         let mut clip = full;
         let material = &self.material;
+        // the widget's own transform; the 2D camera is applied on top of it
+        let base = *ctx.transform_stack.transform();
+        let mut pushed = false;
         for op in &self.ops {
             match op {
+                DrawOp::Transform { m } => {
+                    if pushed {
+                        ctx.transform_stack.pop();
+                        pushed = false;
+                    }
+                    if let Some(m) = m {
+                        ctx.transform_stack.push(base * m);
+                        pushed = true;
+                    }
+                }
+                DrawOp::Quad { pts, uv, texture, color } => {
+                    let tc = [
+                        Vector2::new(uv.x(), uv.y()),
+                        Vector2::new(uv.x() + uv.w(), uv.y()),
+                        Vector2::new(uv.x() + uv.w(), uv.y() + uv.h()),
+                        Vector2::new(uv.x(), uv.y() + uv.h()),
+                    ];
+                    let i = ctx.last_vertex_index();
+                    for (p, t) in pts.iter().zip(tc) {
+                        ctx.push_vertex(*p, t);
+                    }
+                    ctx.push_triangle(i, i + 1, i + 2);
+                    ctx.push_triangle(i, i + 2, i + 3);
+                    ctx.commit(clip, Brush::Solid(*color), CommandTexture::Texture(texture.clone()), material, None);
+                }
                 DrawOp::Clip { rect } => {
                     clip = match rect {
                         // viewport is in screen pixels; the widget's clip bounds are too
@@ -313,6 +399,9 @@ impl Control for CanvasWidget {
                     ctx.commit(clip, Brush::Solid(Color::WHITE), CommandTexture::Texture(texture.clone()), material, None);
                 }
             }
+        }
+        if pushed {
+            ctx.transform_stack.pop();
         }
     }
 

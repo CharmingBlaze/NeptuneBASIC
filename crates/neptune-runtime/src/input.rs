@@ -138,6 +138,10 @@ impl Input {
     pub fn get_key(&mut self) -> i32 {
         self.chars.pop_front().unwrap_or(0)
     }
+    /// All typed characters waiting for `GetKey` (a focused UI text box).
+    pub fn take_chars(&mut self) -> Vec<i32> {
+        self.chars.drain(..).collect()
+    }
     pub fn mouse_down(&self, b: i32) -> bool {
         (1..4).contains(&b) && self.mouse_down[b as usize]
     }

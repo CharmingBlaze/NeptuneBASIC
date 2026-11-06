@@ -2,7 +2,7 @@
 //! `bbgraphics.cpp` / `bbinput.cpp` declarations; NeptuneBASIC additions
 //! are marked `(ext)`.
 
-use fyrox::core::{algebra::Vector3, color::Color, math::Rect};
+use fyrox::core::{algebra::{Vector2, Vector3}, color::Color, math::Rect};
 use fyrox::graph::SceneGraph;
 use fyrox::scene::{
     camera::Camera,
@@ -626,6 +626,44 @@ fn emitter(h: &mut Host3D, e: i32, f: impl FnOnce(&mut crate::particles::Setting
 
 fn rgba(a: &[Value]) -> [u8; 4] {
     [1, 2, 3, 4].map(|i| a[i].int().clamp(0, 255) as u8)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_image_ex(h: &mut Host3D, image: i32, x: f32, y: f32, frame: i32, angle: f32, scale: (f32, f32), alpha: f32) -> Result<Value, String> {
+    if h.image(image)?.dirty {
+        h.image_mut(image)?.commit();
+    }
+    if h.current_buffer()? != crate::buffer::Buffer::Screen {
+        // into a buffer: no rotation there, like DrawImage
+        return draw_image(h, &[Value::Int(image), Value::Float(x), Value::Float(y), Value::Int(frame)], true, None);
+    }
+    let img = h.image(image)?;
+    let uv = img.uv(frame.max(0) as u32, None)?;
+    let (w, ht) = img.size();
+    let (hx, hy) = (img.handle.0 * img.scale.0, img.handle.1 * img.scale.1);
+    let tex = img.masked.clone();
+    let color = Color::from_rgba(255, 255, 255, (alpha.clamp(0.0, 1.0) * 255.0) as u8);
+    h.world.canvas.image_ex(x, y, w * scale.0, ht * scale.1, (hx * scale.0, hy * scale.1), angle, uv, tex, color);
+    VOID
+}
+
+fn anim2d<'a>(h: &'a mut Host3D, a: i32) -> Result<&'a mut crate::anim2d::Anim2D, String> {
+    usize::try_from(a - 1)
+        .ok()
+        .and_then(|i| h.world.anims2d.get_mut(i))
+        .and_then(Option::as_mut)
+        .ok_or_else(|| format!("Animation {a} does not exist"))
+}
+
+fn body2d(h: &mut Host3D, b: i32, f: impl FnOnce(&mut fyrox::scene::dim2::rigidbody::RigidBody, f32)) -> Result<Value, String> {
+    h.body2d_mut(b, f)?;
+    VOID
+}
+
+fn body2d_mat(h: &mut Host3D, a: &[Value], f: impl FnOnce(&mut (f32, f32, f32, bool), f32)) -> Result<Value, String> {
+    let v = a[1].float();
+    h.body2d_material(a[0].int(), |m| f(m, v))?;
+    VOID
 }
 
 fn movie_mut<'a>(h: &'a mut Host3D, m: i32) -> Result<&'a mut crate::movie::Movie, String> {
@@ -1343,6 +1381,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("Flip%vwait=1", |h, _, ctx| {
         h.scene()?;
         h.commit_buffers()?;
+        h.ui_end_frame();
         // Flip ends the frame: publish the 2D layer and let the engine render.
         h.world.canvas.flip();
         h.world.renders_at_flip = h.world.renders;
@@ -2662,10 +2701,13 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
             return VOID;
         }
         h.world.canvas.items.clear();
-        // without a camera, Cls is what defines the background
+        // without a camera, Cls is what defines the background: no camera
+        // renders the scene's clear colour, so the 2D frame starts with it
         if !h.entities().any(|(_, e)| matches!(e.kind, Kind::Camera { .. })) {
             let c = h.world.canvas.cls_color;
             h.scene()?.rendering_options.get_value_mut_silent().clear_color = Some(srgb_to_linear(c));
+            let (w, ht) = (h.world.width as f32, h.world.height as f32);
+            h.world.canvas.items.push(crate::draw2d::DrawOp::Rect { x: 0.0, y: 0.0, w, h: ht, color: Color::opaque(c.r, c.g, c.b), solid: true });
         }
         VOID
     }),
@@ -2858,6 +2900,174 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.image(a[0].int())?;
         h.world.images[a[0].int() as usize - 1] = None;
         VOID
+    }),
+    // (ext) an image rotated (degrees clockwise) and scaled about its handle, with alpha
+    ("DrawImageEx%image#x#y%frame=0#rotation=0#scale_x=1#scale_y=1#alpha=1", |h, a, _| {
+        draw_image_ex(h, a[0].int(), a[1].float(), a[2].float(), a[3].int(), a[4].float(), (a[5].float(), a[6].float()), a[7].float())
+    }),
+    // (ext) 2D camera: world coordinates for 2D drawing (see camera2d.rs)
+    ("Camera2D#x#y#zoom=1#rotation=0", |h, a, _| {
+        let screen = (h.world.width as f32, h.world.height as f32);
+        let c = &mut h.world.canvas;
+        c.camera = crate::camera2d::Camera2D { x: a[0].float(), y: a[1].float(), zoom: a[2].float().max(1e-4), rotation: a[3].float(), screen };
+        c.camera_on = true;
+        VOID
+    }),
+    ("Camera2DEnable%enable", |h, a, _| {
+        h.world.canvas.camera_on = a[0].int() != 0;
+        VOID
+    }),
+    ("#ScreenToWorld2DX#x#y", |h, a, _| float(h.world.canvas.camera.to_world(a[0].float(), a[1].float()).0)),
+    ("#ScreenToWorld2DY#x#y", |h, a, _| float(h.world.canvas.camera.to_world(a[0].float(), a[1].float()).1)),
+    ("#WorldToScreen2DX#x#y", |h, a, _| float(h.world.canvas.camera.to_screen(a[0].float(), a[1].float()).0)),
+    ("#WorldToScreen2DY#x#y", |h, a, _| float(h.world.canvas.camera.to_screen(a[0].float(), a[1].float()).1)),
+    // (ext) 2D animations of animation-image frames (see anim2d.rs)
+    ("%CreateAnim2D%image%first=0%last=-1#fps=10%mode=1", |h, a, _| {
+        let last = if a[2].int() < 0 { h.image(a[0].int())?.frames.max(1) as i32 - 1 } else { a[2].int() };
+        h.world.anims2d.push(Some(crate::anim2d::Anim2D::new(a[0].int(), a[1].int(), last, a[3].float(), a[4].int())));
+        int(h.world.anims2d.len() as i32)
+    }),
+    ("Anim2DPlay%anim%first%last#fps=10%mode=1", |h, a, _| {
+        anim2d(h, a[0].int())?.play(a[1].int(), a[2].int(), a[3].float(), a[4].int());
+        VOID
+    }),
+    ("Anim2DPause%anim%pause=1", |h, a, _| {
+        anim2d(h, a[0].int())?.pause(a[1].int() != 0);
+        VOID
+    }),
+    ("%Anim2DFrame%anim", |h, a, _| int(anim2d(h, a[0].int())?.frame())),
+    ("%Anim2DPlaying%anim", |h, a, _| int(anim2d(h, a[0].int())?.playing() as i32)),
+    ("DrawAnim2D%anim#x#y", |h, a, _| {
+        let an = anim2d(h, a[0].int())?;
+        let (image, frame) = (an.image, an.frame());
+        draw_image(h, &[Value::Int(image), a[1].clone(), a[2].clone(), Value::Int(frame)], true, None)
+    }),
+    ("FreeAnim2D%anim", |h, a, _| {
+        anim2d(h, a[0].int())?;
+        h.world.anims2d[a[0].int() as usize - 1] = None;
+        VOID
+    }),
+    // (ext) immediate UI widgets in screen space (see ui.rs)
+    ("%UIButton#x#y#width#height$label", |h, a, _| int(h.ui_button(a[0].float(), a[1].float(), a[2].float(), a[3].float(), &a[4].str()) as i32)),
+    ("%UICheckBox#x#y$label%checked", |h, a, _| int(h.ui_checkbox(a[0].float(), a[1].float(), &a[2].str(), a[3].int() != 0) as i32)),
+    ("#UISlider#x#y#width#value#min=0#max=1", |h, a, _| float(h.ui_slider(a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].float(), a[5].float()))),
+    ("$UITextBox#x#y#width$text", |h, a, _| Ok(Value::Str(h.ui_textbox(a[0].float(), a[1].float(), a[2].float(), &a[3].str()).into()))),
+    ("UIPanel#x#y#width#height$title=\"\"", |h, a, _| {
+        h.ui_panel(a[0].float(), a[1].float(), a[2].float(), a[3].float(), &a[4].str());
+        VOID
+    }),
+    ("UILabel#x#y$text", |h, a, _| {
+        h.ui_label(a[0].float(), a[1].float(), &a[2].str());
+        VOID
+    }),
+    ("%UIHover", |h, _, _| int((h.world.ui.last_hover || h.world.ui.active.is_some()) as i32)),
+    ("UITheme%red%green%blue", |h, a, _| {
+        h.world.ui.accent = Color::opaque(a[0].int().clamp(0, 255) as u8, a[1].int().clamp(0, 255) as u8, a[2].int().clamp(0, 255) as u8);
+        VOID
+    }),
+    // (ext) 2D physics in pixels, Y down, degrees clockwise (see physics2d.rs)
+    ("Physics2DGravity#x#y", |h, a, _| {
+        h.scene()?;
+        h.world.physics2d_ready = true;
+        h.set_gravity2d(a[0].float(), a[1].float())?;
+        VOID
+    }),
+    ("Physics2DScale#pixels_per_metre", |h, a, _| {
+        h.world.physics2d_scale = a[0].float().max(1e-3);
+        VOID
+    }),
+    ("%CreateBody2D%type=0#x=0#y=0", |h, a, _| int(h.create_body2d(a[0].int(), a[1].float(), a[2].float())?)),
+    ("FreeBody2D%body", |h, a, _| {
+        h.free_body2d(a[0].int())?;
+        VOID
+    }),
+    ("Body2DBox%body#width#height#offset_x=0#offset_y=0", |h, a, _| {
+        h.body2d_box(a[0].int(), a[1].float(), a[2].float(), a[3].float(), a[4].float())?;
+        VOID
+    }),
+    ("Body2DCircle%body#radius#offset_x=0#offset_y=0", |h, a, _| {
+        h.body2d_circle(a[0].int(), a[1].float(), a[2].float(), a[3].float())?;
+        VOID
+    }),
+    ("Body2DCapsule%body#width#height#offset_x=0#offset_y=0", |h, a, _| {
+        h.body2d_capsule(a[0].int(), a[1].float(), a[2].float(), a[3].float(), a[4].float())?;
+        VOID
+    }),
+    ("Body2DPolygon%body$points", |h, a, _| {
+        h.body2d_polygon(a[0].int(), &a[1].str())?;
+        VOID
+    }),
+    ("Body2DSegment%body#x1#y1#x2#y2", |h, a, _| {
+        h.body2d_segment(a[0].int(), a[1].float(), a[2].float(), a[3].float(), a[4].float())?;
+        VOID
+    }),
+    ("%TileMapBody2D%map#x=0#y=0", |h, a, _| {
+        let (tw, th) = tile_size(h, a[0].int())?;
+        int(h.tilemap_body2d(a[0].int(), a[1].float(), a[2].float(), tw, th)?)
+    }),
+    ("Body2DFriction%body#friction", |h, a, _| body2d_mat(h, a, |m, v| m.0 = v.max(0.0))),
+    ("Body2DBounce%body#bounce", |h, a, _| body2d_mat(h, a, |m, v| m.1 = v.max(0.0))),
+    ("Body2DDensity%body#density", |h, a, _| body2d_mat(h, a, |m, v| m.2 = v.max(1e-4))),
+    ("Body2DSensor%body%enable", |h, a, _| {
+        let on = a[1].int() != 0;
+        h.body2d_material(a[0].int(), |m| m.3 = on)?;
+        VOID
+    }),
+    ("Body2DFixedRotation%body%enable", |h, a, _| body2d(h, a[0].int(), |b, _| { b.lock_rotations(a[1].int() != 0); })),
+    ("Body2DGravityScale%body#scale", |h, a, _| body2d(h, a[0].int(), |b, _| { b.set_gravity_scale(a[1].float()); })),
+    ("Body2DDamping%body#linear#angular=0", |h, a, _| {
+        body2d(h, a[0].int(), |b, _| {
+            b.set_lin_damping(a[1].float().max(0.0));
+            b.set_ang_damping(a[2].float().max(0.0));
+        })
+    }),
+    ("PositionBody2D%body#x#y", |h, a, _| {
+        h.position_body2d(a[0].int(), a[1].float(), a[2].float())?;
+        VOID
+    }),
+    ("RotateBody2D%body#angle", |h, a, _| {
+        h.rotate_body2d(a[0].int(), a[1].float())?;
+        VOID
+    }),
+    ("#Body2DX%body", |h, a, _| float(h.body2d_pos(a[0].int())?.0)),
+    ("#Body2DY%body", |h, a, _| float(h.body2d_pos(a[0].int())?.1)),
+    ("#Body2DAngle%body", |h, a, _| float(h.body2d_pos(a[0].int())?.2)),
+    ("SetVelocity2D%body#x#y", |h, a, _| body2d(h, a[0].int(), |b, s| { b.set_lin_vel(Vector2::new(a[1].float() / s, a[2].float() / s)); })),
+    ("#Body2DVX%body", |h, a, _| float(h.body2d_velocity(a[0].int())?.0)),
+    ("#Body2DVY%body", |h, a, _| float(h.body2d_velocity(a[0].int())?.1)),
+    ("SetSpin2D%body#degrees_per_second", |h, a, _| body2d(h, a[0].int(), |b, _| { b.set_ang_vel(a[1].float().to_radians()); })),
+    ("#Body2DSpin%body", |h, a, _| float(h.body2d_velocity(a[0].int())?.2)),
+    ("ApplyForce2D%body#x#y", |h, a, _| body2d(h, a[0].int(), |b, s| b.apply_force(Vector2::new(a[1].float() / s, a[2].float() / s)))),
+    ("ApplyImpulse2D%body#x#y", |h, a, _| body2d(h, a[0].int(), |b, s| b.apply_impulse(Vector2::new(a[1].float() / s, a[2].float() / s)))),
+    ("ApplyTorque2D%body#torque", |h, a, _| body2d(h, a[0].int(), |b, s| b.apply_torque(a[1].float() / (s * s)))),
+    ("%Body2DTouching%body%other=0", |h, a, _| {
+        let t = h.touching2d(a[0].int())?;
+        int(if a[1].int() == 0 { !t.is_empty() } else { t.contains(&a[1].int()) } as i32)
+    }),
+    ("%CountContacts2D%body", |h, a, _| int(h.touching2d(a[0].int())?.len() as i32)),
+    ("%ContactBody2D%body%index", |h, a, _| {
+        let t = h.touching2d(a[0].int())?;
+        int(usize::try_from(a[1].int() - 1).ok().and_then(|i| t.get(i).copied()).unwrap_or(0))
+    }),
+    ("%RayCast2D#x1#y1#x2#y2", |h, a, _| int(h.raycast2d(a[0].float(), a[1].float(), a[2].float(), a[3].float())?)),
+    ("#RayCast2DX", |h, _, _| float(h.world.ray2d.x)),
+    ("#RayCast2DY", |h, _, _| float(h.world.ray2d.y)),
+    ("#RayCast2DNX", |h, _, _| float(h.world.ray2d.nx)),
+    ("#RayCast2DNY", |h, _, _| float(h.world.ray2d.ny)),
+    ("%CreateHingeJoint2D%body1%body2#x#y", |h, a, _| int(h.create_joint2d(a[0].int(), a[1].int(), 1, a[2].float(), a[3].float(), 0.0)?)),
+    ("%CreateFixedJoint2D%body1%body2#x#y", |h, a, _| int(h.create_joint2d(a[0].int(), a[1].int(), 2, a[2].float(), a[3].float(), 0.0)?)),
+    ("%CreateSliderJoint2D%body1%body2#x#y#angle=0", |h, a, _| int(h.create_joint2d(a[0].int(), a[1].int(), 3, a[2].float(), a[3].float(), a[4].float())?)),
+    ("FreeJoint2D%joint", |h, a, _| {
+        h.free_joint2d(a[0].int())?;
+        VOID
+    }),
+    ("DrawBodies2D", |h, _, _| {
+        h.draw_bodies2d()?;
+        VOID
+    }),
+    ("DrawBody2D%body%image%frame=0", |h, a, _| {
+        let (x, y, angle) = h.body2d_pos(a[0].int())?;
+        draw_image_ex(h, a[1].int(), x, y, a[2].int(), angle, (1.0, 1.0), 1.0)
     }),
     ("DrawImage%image%x%y%frame=0", |h, a, _| draw_image(h, a, true, None)),
     ("DrawBlock%image%x%y%frame=0", |h, a, _| draw_image(h, a, false, None)),
