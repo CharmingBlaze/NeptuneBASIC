@@ -12,6 +12,7 @@ use fyrox::scene::{
 use neptune_lang::commands::ConstVal;
 use neptune_vm::{NativeCtx, Value};
 
+use crate::draw2d::{load_font, FontInfo};
 use crate::transform::{angles, orthonormalize, rotation, vector_pitch, vector_yaw};
 use crate::world::{camera_node, light_node, mesh_node, pivot_node, primitive, Host3D, Kind, LightKind};
 
@@ -106,6 +107,14 @@ fn camera_mut<'h>(h: &'h mut Host3D, e: i32) -> Result<&'h mut Camera, String> {
     h.graph()?[node].cast_mut::<Camera>().ok_or_else(|| "camera node missing".to_string())
 }
 
+fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
+    usize::try_from(f - 1)
+        .ok()
+        .and_then(|i| h.world.canvas.fonts.get(i))
+        .and_then(Clone::clone)
+        .ok_or_else(|| format!("Font {f} does not exist"))
+}
+
 fn graphics_mode(h: &mut Host3D, a: &[Value], ctx: &mut NativeCtx) -> Result<Value, String> {
     let (w, ht) = (a[0].int().max(1) as u32, a[1].int().max(1) as u32);
     if h.has_graphics() {
@@ -152,22 +161,28 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("RenderWorld#tween=1", |h, _, ctx| {
         h.scene()?;
+        // A program that renders repeatedly without Flip still needs frames shown.
+        if h.world.renders > h.world.renders_at_flip {
+            h.world.canvas.flip();
+            h.world.renders_at_flip = h.world.renders;
+            ctx.request_yield();
+        }
+        // the 3D render covers whatever 2D was drawn before it
+        h.world.canvas.items.clear();
         // keep camera aspect in sync with the window
         let cams: Vec<i32> = h.entities().filter(|(_, e)| matches!(e.kind, Kind::Camera { .. })).map(|(i, _)| i).collect();
         for c in cams {
             h.update_camera_fov(c)?;
         }
         h.world.renders += 1;
-        ctx.request_yield();
         VOID
     }),
     ("Flip%vwait=1", |h, _, ctx| {
         h.scene()?;
-        // RenderWorld already ended this frame; only yield for programs that don't render
-        if h.world.renders == h.world.renders_at_flip {
-            ctx.request_yield();
-        }
+        // Flip ends the frame: publish the 2D layer and let the engine render.
+        h.world.canvas.flip();
         h.world.renders_at_flip = h.world.renders;
+        ctx.request_yield();
         VOID
     }),
     ("AmbientLight#red#green#blue", |h, a, _| {
@@ -429,6 +444,57 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.graph()?[light].set_cast_shadows(a[1].int() != 0);
         VOID
     }),
+    // ---- 2D (bbgraphics.cpp)
+    ("Text%x%y$string%center_x=0%center_y=0", |h, a, _| {
+        h.scene()?;
+        h.world.canvas.text(a[0].float(), a[1].float(), &a[2].str(), a[3].int() != 0, a[4].int() != 0);
+        VOID
+    }),
+    ("Color%red%green%blue", |h, a, _| {
+        h.world.canvas.color = color(a, 0);
+        VOID
+    }),
+    ("%ColorRed", |h, _, _| int(h.world.canvas.color.r as i32)),
+    ("%ColorGreen", |h, _, _| int(h.world.canvas.color.g as i32)),
+    ("%ColorBlue", |h, _, _| int(h.world.canvas.color.b as i32)),
+    ("ClsColor%red%green%blue", |h, a, _| {
+        h.world.canvas.cls_color = color(a, 0);
+        VOID
+    }),
+    ("Cls", |h, _, _| {
+        h.world.canvas.items.clear();
+        // without a camera, Cls is what defines the background
+        if !h.entities().any(|(_, e)| matches!(e.kind, Kind::Camera { .. })) {
+            let c = h.world.canvas.cls_color;
+            h.scene()?.rendering_options.get_value_mut_silent().clear_color = Some(c);
+        }
+        VOID
+    }),
+    ("%LoadFont$fontname%height=12%bold=0%italic=0%underline=0", |h, a, _| {
+        match load_font(&a[0].str(), a[1].float(), a[2].int() != 0, a[3].int() != 0) {
+            Ok(f) => {
+                let fonts = &mut h.world.canvas.fonts;
+                fonts.push(Some(f));
+                int(fonts.len() as i32)
+            }
+            Err(_) => int(0), // Blitz returns 0 when a font can't be loaded
+        }
+    }),
+    ("SetFont%font", |h, a, _| {
+        // (ext) font 0 selects the built-in font
+        let f = if a[0].int() == 0 { FontInfo::default_font() } else { font_of(h, a[0].int())? };
+        h.world.canvas.font = f;
+        VOID
+    }),
+    ("FreeFont%font", |h, a, _| {
+        font_of(h, a[0].int())?;
+        h.world.canvas.fonts[a[0].int() as usize - 1] = None;
+        VOID
+    }),
+    ("%FontWidth", |h, _, _| int(h.world.canvas.font.width("W").ceil() as i32)),
+    ("%FontHeight", |h, _, _| int(h.world.canvas.font.height() as i32)),
+    ("%StringWidth$string", |h, a, _| int(h.world.canvas.font.width(&a[0].str()).ceil() as i32)),
+    ("%StringHeight$string", |h, _, _| int(h.world.canvas.font.height() as i32)),
     // ---- input (bbinput.cpp)
     ("%KeyDown%key", |h, a, _| int(h.input.key_down(a[0].int()) as i32)),
     ("%KeyHit%key", |h, a, _| int(h.input.key_hit(a[0].int()))),

@@ -31,6 +31,7 @@ use fyrox::graph::SceneGraph;
 use neptune_vm::{Host, NativeCtx, Value};
 
 use crate::commands::COMMANDS;
+use crate::draw2d::Canvas2D;
 use crate::input::Input;
 use crate::transform::{WorldXform, Xform};
 
@@ -77,6 +78,8 @@ pub struct World {
     pub renders: u64,
     pub renders_at_flip: u64,
     pub ambient: Color,
+    /// 2D drawing (Text, fonts, colours).
+    pub canvas: Canvas2D,
 }
 
 impl Default for World {
@@ -93,6 +96,7 @@ impl Default for World {
             renders: 0,
             renders_at_flip: 0,
             ambient: Color::opaque(127, 127, 127),
+            canvas: Canvas2D::default(),
         }
     }
 }

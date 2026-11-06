@@ -1,0 +1,32 @@
+; 2D text over a 3D scene
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - HUD"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 0, -5
+light = CreateLight()
+RotateEntity light, 45, 30, 0
+
+cube = CreateCube()
+EntityColor cube, 60, 140, 255
+
+big = LoadFont("Arial", 40, True)
+frames = 0
+
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity cube, 0.5, 1, 0
+    frames += 1
+    RenderWorld
+
+    Color 255, 255, 0
+    Text 10, 10, $"Frame {frames}"
+    Color 255, 255, 255
+    Text 10, 10 + FontHeight(), "Press Escape to quit"
+
+    If big Then SetFont big
+    Color 255, 120, 80
+    Text GraphicsWidth() / 2, 60, "NeptuneBASIC", True, True
+    SetFont 0
+    Flip
+Wend
+End

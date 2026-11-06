@@ -11,6 +11,7 @@
 //! engine loop, one BASIC frame (`RenderWorld`/`Flip`) per engine update.
 
 pub mod commands;
+pub mod draw2d;
 pub mod input;
 pub mod transform;
 pub mod world;
@@ -91,6 +92,7 @@ pub fn run_program(program: neptune_lang::Program) -> Result<(), RunError> {
         }
     }
     // graphics phase
+    fyrox::core::log::Log::set_log_info(false);
     let mut attrs = WindowAttributes::default();
     attrs.title = world.title.clone();
     attrs.resizable = true;
@@ -107,7 +109,7 @@ pub fn run_program(program: neptune_lang::Program) -> Result<(), RunError> {
         },
     );
     executor.set_resource_hot_reloading_enabled(false);
-    let state = PluginState { vm: Some(vm), world, input, scene: Handle::NONE, error: None };
+    let state = PluginState { vm: Some(vm), world, input, scene: Handle::NONE, error: None, overlay: Default::default(), scale: 1.0 };
     let state = std::rc::Rc::new(std::cell::RefCell::new(state));
     executor.add_plugin(NeptunePlugin { state: state.clone() });
     executor.run();
@@ -124,6 +126,9 @@ struct PluginState {
     input: Input,
     scene: Handle<Scene>,
     error: Option<String>,
+    overlay: draw2d::Overlay,
+    /// Window DPI scale factor (physical pixels per logical pixel).
+    scale: f32,
 }
 
 /// Fyrox plugin that owns the VM and executes it frame by frame.
@@ -146,7 +151,12 @@ impl Plugin for NeptunePlugin {
     fn init(&mut self, _scene_path: Option<&str>, context: PluginContext) -> GameResult {
         let mut scene = Scene::new();
         world::setup_scene(&mut scene);
-        self.state.borrow_mut().scene = context.scenes.add(scene);
+        let mut st = self.state.borrow_mut();
+        st.scene = context.scenes.add(scene);
+        if context.user_interfaces.iter().next().is_none() {
+            let size = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32);
+            context.user_interfaces.add(fyrox::gui::UserInterface::new(size));
+        }
         Ok(())
     }
 
@@ -157,9 +167,13 @@ impl Plugin for NeptunePlugin {
             return Ok(());
         };
         if let GraphicsContext::Initialized(g) = &*context.graphics_context {
-            let size = g.window.inner_size();
-            st.world.width = size.width.max(1);
-            st.world.height = size.height.max(1);
+            // Programs work in logical pixels, so `Graphics3D 1280,720` means
+            // the same thing on a high-DPI screen.
+            let scale = g.window.scale_factor();
+            let size = g.window.inner_size().to_logical::<f64>(scale);
+            st.world.width = (size.width.round() as u32).max(1);
+            st.world.height = (size.height.round() as u32).max(1);
+            st.scale = scale as f32;
         }
         let Ok(scene) = context.scenes.try_get_mut(st.scene) else {
             return Ok(());
@@ -168,6 +182,10 @@ impl Plugin for NeptunePlugin {
             let mut host = Host3D::graphics(&mut st.world, &mut st.input, scene);
             vm.run(&mut host)
         };
+        // show the 2D frame published by Flip
+        if let Some(items) = st.world.canvas.published.take() {
+            st.overlay.show(context.user_interfaces.first_mut(), &items, st.scale);
+        }
         // apply window requests made by the program
         if let GraphicsContext::Initialized(g) = &*context.graphics_context {
             if let Some(t) = st.world.pending_title.take() {
@@ -184,7 +202,6 @@ impl Plugin for NeptunePlugin {
                 context.loop_controller.exit();
             }
             Err(e) => {
-                eprintln!("{e}");
                 st.error = Some(e.to_string());
                 st.vm = None;
                 context.loop_controller.exit();
@@ -195,6 +212,7 @@ impl Plugin for NeptunePlugin {
 
     fn on_os_event(&mut self, event: &Event<()>, _context: PluginContext) -> GameResult {
         let mut guard = self.state.borrow_mut();
+        let scale = guard.scale.max(0.01);
         let input = &mut guard.input;
         if let Event::WindowEvent { event, .. } = event {
             match event {
@@ -211,8 +229,8 @@ impl Plugin for NeptunePlugin {
                     }
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    input.mouse_x = position.x as f32;
-                    input.mouse_y = position.y as f32;
+                    input.mouse_x = position.x as f32 / scale;
+                    input.mouse_y = position.y as f32 / scale;
                 }
                 WindowEvent::MouseInput { state, button, .. } => {
                     let b = match button {
