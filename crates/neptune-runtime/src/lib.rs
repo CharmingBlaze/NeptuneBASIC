@@ -22,6 +22,7 @@ pub mod mesh;
 pub mod model;
 pub mod physics;
 pub mod pick;
+pub mod quality;
 pub mod sound;
 pub mod texture;
 pub mod transform;
@@ -114,7 +115,7 @@ pub fn run_program(program: neptune_lang::Program) -> Result<(), RunError> {
         GraphicsContextParams {
             window_attributes: attrs,
             vsync: true,
-            msaa_sample_count: Some(4),
+            msaa_sample_count: world.quality.msaa(),
             graphics_server_constructor: Default::default(),
             named_objects: false,
         },
@@ -197,6 +198,13 @@ impl Plugin for NeptunePlugin {
         if let Some(items) = st.world.canvas.published.take() {
             let screen = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32) * st.scale;
             st.overlay.show(context.user_interfaces.first_mut(), &items, st.scale, screen);
+        }
+        // apply renderer quality changes (GraphicsQuality / PostEffect)
+        if st.world.quality_dirty {
+            if let GraphicsContext::Initialized(g) = &mut *context.graphics_context {
+                st.world.quality_dirty = false;
+                let _ = g.renderer.set_quality_settings(&st.world.quality.settings());
+            }
         }
         // apply window requests made by the program
         if let GraphicsContext::Initialized(g) = &*context.graphics_context {

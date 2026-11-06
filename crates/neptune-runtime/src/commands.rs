@@ -452,6 +452,15 @@ pub fn constants() -> Vec<(String, ConstVal)> {
         ("FX_NOFOG".into(), ConstVal::Int(8)),
         ("FX_TWOSIDED".into(), ConstVal::Int(16)),
         ("FX_FORCEALPHA".into(), ConstVal::Int(32)),
+        ("QUALITY_LOW".into(), ConstVal::Int(0)),
+        ("QUALITY_MEDIUM".into(), ConstVal::Int(1)),
+        ("QUALITY_HIGH".into(), ConstVal::Int(2)),
+        ("QUALITY_ULTRA".into(), ConstVal::Int(3)),
+        ("EFFECT_BLOOM".into(), ConstVal::Int(1)),
+        ("EFFECT_SSAO".into(), ConstVal::Int(2)),
+        ("EFFECT_FXAA".into(), ConstVal::Int(3)),
+        ("EFFECT_SHADOWS".into(), ConstVal::Int(4)),
+        ("EFFECT_LIGHT_SCATTER".into(), ConstVal::Int(5)),
         ("PHYS_DYNAMIC".into(), ConstVal::Int(1)),
         ("PHYS_STATIC".into(), ConstVal::Int(2)),
         ("PHYS_KINEMATIC".into(), ConstVal::Int(3)),
@@ -566,6 +575,22 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
             h.world.pending_title = Some(t.clone());
         }
         h.world.title = t;
+        VOID
+    }),
+    // (ext) renderer quality presets and effects, for old and new GPUs
+    ("GraphicsQuality%level", |h, a, _| {
+        let l = a[0].int();
+        if !(0..=3).contains(&l) {
+            return Err(format!("GraphicsQuality level must be 0 (low) to 3 (ultra), got {l}"));
+        }
+        h.world.quality = crate::quality::Quality { level: l, ..Default::default() };
+        h.world.quality_dirty = true;
+        VOID
+    }),
+    ("%GetGraphicsQuality", |h, _, _| int(h.world.quality.level)),
+    ("PostEffect%effect%enable=1", |h, a, _| {
+        h.world.quality.set_effect(a[0].int(), a[1].int() != 0)?;
+        h.world.quality_dirty = true;
         VOID
     }),
     ("%GraphicsWidth", |h, _, _| int(h.world.width as i32)),

@@ -136,6 +136,9 @@ pub struct World {
     pub sounds: Vec<Option<crate::sound::SoundInfo>>,
     /// Channel number → sound node (stale handles mean the channel ended).
     pub channels: Vec<Handle<Node>>,
+    /// Renderer quality (ext); `quality_dirty` asks the engine to apply it.
+    pub quality: crate::quality::Quality,
+    pub quality_dirty: bool,
     /// Physics joints (`CreateBallJoint`, ...).
     pub joints: Vec<Handle<Node>>,
     pub listener: Option<Handle<Node>>,
@@ -174,6 +177,9 @@ impl Default for World {
             sounds: Vec::new(),
             channels: Vec::new(),
             joints: Vec::new(),
+            quality: Default::default(),
+            // apply the starting level once the window exists
+            quality_dirty: true,
             listener: None,
             listener_rolloff: 1.0,
             listener_distance: 1.0,
