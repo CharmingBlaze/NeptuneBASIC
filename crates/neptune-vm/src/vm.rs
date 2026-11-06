@@ -32,12 +32,20 @@ impl Host for NoHost {
 pub struct NativeCtx {
     pub(crate) yield_requested: bool,
     pub(crate) end_requested: bool,
+    pub(crate) retry_requested: bool,
 }
 
 impl NativeCtx {
     /// Suspend execution after this command returns (end of a frame).
     pub fn request_yield(&mut self) {
         self.yield_requested = true;
+    }
+    /// Wait a frame and then call this command again with the same
+    /// arguments (`WaitKey`, `WaitMouse`, ...: commands that block in
+    /// Blitz3D but must not block the engine loop). The return value of
+    /// this call is discarded.
+    pub fn request_retry(&mut self) {
+        self.retry_requested = true;
     }
     /// Terminate the program after this command returns.
     pub fn request_end(&mut self) {
@@ -640,6 +648,11 @@ impl Vm {
                     } else {
                         host.call(id - self.n_core, &self.stack[start..], &mut ctx)
                     };
+                    if ctx.retry_requested {
+                        // leave the arguments on the stack and run this call again
+                        self.frames[fi].pc = (pc - 1) as u32;
+                        return Ok(Status::Yielded);
+                    }
                     let v = tri!(r);
                     self.stack.truncate(start);
                     if self.native_returns[id as usize] {

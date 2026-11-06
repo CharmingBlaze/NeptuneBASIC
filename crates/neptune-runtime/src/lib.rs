@@ -18,6 +18,7 @@ pub mod commands;
 pub mod draw2d;
 pub mod image2d;
 pub mod input;
+pub mod joy;
 pub mod material;
 pub mod mesh;
 pub mod model;
@@ -25,6 +26,7 @@ pub mod physics;
 pub mod pick;
 pub mod primitive;
 pub mod quality;
+pub mod screenshot;
 pub mod sound;
 pub mod sprite;
 pub mod terrain;
@@ -55,6 +57,7 @@ pub fn env() -> Env {
     let mut env = base_env();
     env.commands.extend(commands::table().iter().map(|(s, _)| parse_sig(s)));
     env.constants.extend(input::constants());
+    env.constants.extend(joy::constants());
     env.constants.extend(commands::constants());
     env
 }
@@ -113,6 +116,11 @@ pub fn run_program(program: neptune_lang::Program) -> Result<(), RunError> {
     attrs.title = world.title.clone();
     attrs.resizable = true;
     attrs.inner_size = Some(fyrox::dpi::LogicalSize::new(world.width as f64, world.height as f64).into());
+    if world.fullscreen {
+        attrs.fullscreen = Some(fyrox::window::Fullscreen::Borderless(None));
+    }
+    // from now on Print/Write draw on the screen, like Blitz3D in graphics mode
+    vm.core.output = neptune_vm::stdlib::Output::Shared(world.print_sink.clone());
     let event_loop = EventLoop::new().map_err(|e| RunError::Runtime(format!("cannot create window: {e}")))?;
     let mut executor = Executor::from_params(
         Some(event_loop),
@@ -191,6 +199,21 @@ impl Plugin for NeptunePlugin {
             st.world.height = (size.height.round() as u32).max(1);
             st.scale = scale as f32;
         }
+        // a screenshot asked for last frame: the frame now on screen
+        if let Some(path) = st.world.pending_screenshot.take() {
+            if let GraphicsContext::Initialized(g) = &*context.graphics_context {
+                let pos = g.window.inner_position().unwrap_or_default();
+                let size = g.window.inner_size();
+                let r = screenshot::capture(pos.x, pos.y, size.width, size.height).and_then(|img| screenshot::save(&img, &path));
+                if let Err(e) = r {
+                    eprintln!("SaveBuffer: {e}");
+                }
+            }
+        }
+        st.input.joys.poll();
+        if let GraphicsContext::Initialized(g) = &*context.graphics_context {
+            st.world.tris_rendered = g.renderer.get_statistics().geometry.triangles_rendered as i32;
+        }
         let Ok(scene) = context.scenes.try_get_mut(st.scene) else {
             return Ok(());
         };
@@ -218,6 +241,23 @@ impl Plugin for NeptunePlugin {
             if let Some((w, h)) = st.world.pending_size.take() {
                 let _ = g.window.request_inner_size(fyrox::dpi::LogicalSize::new(w as f64, h as f64));
             }
+            if let Some(on) = st.world.pending_fullscreen.take() {
+                g.window.set_fullscreen(on.then_some(fyrox::window::Fullscreen::Borderless(None)));
+            }
+            if let Some(visible) = st.world.pending_cursor_visible.take() {
+                g.window.set_cursor_visible(visible);
+            }
+            if let Some((x, y)) = st.world.pending_cursor_pos.take() {
+                let _ = g.window.set_cursor_position(fyrox::dpi::LogicalPosition::new(x as f64, y as f64));
+            }
+            if let Some(grab) = st.world.pending_grab.take() {
+                use fyrox::window::CursorGrabMode;
+                let mode = if grab { CursorGrabMode::Locked } else { CursorGrabMode::None };
+                // not every platform can lock; confining is the next best thing
+                if g.window.set_cursor_grab(mode).is_err() && grab {
+                    let _ = g.window.set_cursor_grab(CursorGrabMode::Confined);
+                }
+            }
         }
         match result {
             Ok(Status::Yielded) => {}
@@ -238,6 +278,9 @@ impl Plugin for NeptunePlugin {
         let mut guard = self.state.borrow_mut();
         let scale = guard.scale.max(0.01);
         let input = &mut guard.input;
+        if let Event::DeviceEvent { event: fyrox::event::DeviceEvent::MouseMotion { delta }, .. } = event {
+            input.mouse_motion(delta.0 as f32 / scale, delta.1 as f32 / scale);
+        }
         if let Event::WindowEvent { event, .. } = event {
             match event {
                 WindowEvent::KeyboardInput { event, .. } => {

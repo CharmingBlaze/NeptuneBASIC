@@ -128,6 +128,8 @@ pub enum DrawOp {
     Line { x1: f32, y1: f32, x2: f32, y2: f32, color: Color },
     /// A textured rectangle; `uv` selects the part of the texture (an animation frame).
     Image { x: f32, y: f32, w: f32, h: f32, uv: Rect<f32>, texture: TextureResource },
+    /// `Viewport`: later operations are clipped to this rectangle (`None` = whole screen).
+    Clip { rect: Option<Rect<f32>> },
 }
 
 impl DrawOp {
@@ -151,6 +153,11 @@ impl DrawOp {
                 *y1 *= k;
                 *x2 *= k;
                 *y2 *= k;
+            }
+            DrawOp::Clip { rect } => {
+                if let Some(r) = rect {
+                    *r = Rect::new(r.x() * k, r.y() * k, r.w() * k, r.h() * k);
+                }
             }
         }
         op
@@ -239,10 +246,23 @@ impl Control for CanvasWidget {
     }
 
     fn draw(&self, ctx: &mut DrawingContext) {
-        let clip = self.clip_bounds();
+        let full = self.clip_bounds();
+        let mut clip = full;
         let material = &self.material;
         for op in &self.ops {
             match op {
+                DrawOp::Clip { rect } => {
+                    clip = match rect {
+                        // viewport is in screen pixels; the widget's clip bounds are too
+                        Some(r) => {
+                            let (x0, y0) = (r.x().max(full.x()), r.y().max(full.y()));
+                            let x1 = (r.x() + r.w()).min(full.x() + full.w());
+                            let y1 = (r.y() + r.h()).min(full.y() + full.h());
+                            Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
+                        }
+                        None => full,
+                    };
+                }
                 DrawOp::Text { x, y, text, color, font } => {
                     let mut ft = FormattedTextBuilder::new(font.resource.clone())
                         .with_text(text.clone())

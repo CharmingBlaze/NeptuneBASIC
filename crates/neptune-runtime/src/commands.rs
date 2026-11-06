@@ -484,6 +484,33 @@ fn tile_image(h: &mut Host3D, a: &[Value], masked: bool) -> Result<Value, String
     VOID
 }
 
+fn copy_pixel(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
+    let src = crate::buffer::decode(a[2].int())?;
+    let dst = buffer_arg(h, a[5].int())?;
+    if src == crate::buffer::Buffer::Screen {
+        return Err("CopyPixel cannot read from the screen".into());
+    }
+    let (sx, sy, dx, dy) = (a[0].int(), a[1].int(), a[3].int(), a[4].int());
+    let p = h.with_target(src, |t| t.get(sx, sy))?;
+    if dst == crate::buffer::Buffer::Screen {
+        let old = h.world.canvas.color;
+        h.world.canvas.color = Color::opaque(p[0], p[1], p[2]);
+        h.world.canvas.rect(dx as f32, dy as f32, 1.0, 1.0, true);
+        h.world.canvas.color = old;
+    } else {
+        h.with_target(dst, |t| t.plot(dx, dy, p))?;
+    }
+    VOID
+}
+
+fn buffer_size(h: &mut Host3D, b: i32, width: bool) -> Result<Value, String> {
+    let (w, ht) = match crate::buffer::decode(b)? {
+        crate::buffer::Buffer::Screen => (h.world.width as i32, h.world.height as i32),
+        other => h.with_target(other, |t| (t.w, t.h))?,
+    };
+    int(if width { w } else { ht })
+}
+
 fn write_pixel(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
     let b = buffer_arg(h, a[3].int())?;
     let (x, y, c) = (a[0].int(), a[1].int(), crate::buffer::argb_to_rgba(a[2].int()));
@@ -507,8 +534,28 @@ fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
         .ok_or_else(|| format!("Font {f} does not exist"))
 }
 
+/// Common screen sizes offered by `CountGfxModes` and friends. Windows can
+/// be any size, so these are the usual choices rather than a hardware list.
+const GFX_MODES: &[(i32, i32)] = &[
+    (640, 480), (800, 600), (1024, 768), (1152, 864), (1280, 720), (1280, 800), (1280, 1024),
+    (1366, 768), (1440, 900), (1600, 900), (1680, 1050), (1920, 1080), (1920, 1200), (2560, 1440),
+    (2560, 1600), (3440, 1440), (3840, 2160),
+];
+
+fn gfx_mode(i: i32) -> Option<(i32, i32)> {
+    usize::try_from(i - 1).ok().and_then(|i| GFX_MODES.get(i)).copied()
+}
+
 fn graphics_mode(h: &mut Host3D, a: &[Value], ctx: &mut NativeCtx) -> Result<Value, String> {
     let (w, ht) = (a[0].int().max(1) as u32, a[1].int().max(1) as u32);
+    // Blitz modes: 0 auto (windowed here), 1 fullscreen, 2 windowed, 3 scaled window
+    let fullscreen = a[3].int() == 1;
+    if h.has_graphics() {
+        if fullscreen != h.world.fullscreen {
+            h.world.pending_fullscreen = Some(fullscreen);
+        }
+    }
+    h.world.fullscreen = fullscreen;
     if h.has_graphics() {
         h.world.pending_size = Some((w, ht));
     } else {
@@ -680,6 +727,187 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.world.quality_dirty = true;
         VOID
     }),
+    // ---- graphics modes and drivers (bbgraphics.cpp)
+    ("%GraphicsDepth", |_, _, _| int(32)),
+    ("%CountGfxModes", |_, _, _| int(GFX_MODES.len() as i32)),
+    ("%CountGfxModes3D", |_, _, _| int(GFX_MODES.len() as i32)),
+    ("%GfxModeWidth%mode", |_, a, _| int(gfx_mode(a[0].int()).map_or(0, |m| m.0))),
+    ("%GfxModeHeight%mode", |_, a, _| int(gfx_mode(a[0].int()).map_or(0, |m| m.1))),
+    ("%GfxModeDepth%mode", |_, a, _| int(if gfx_mode(a[0].int()).is_some() { 32 } else { 0 })),
+    // any size works in a window; report the listed sizes for fullscreen-style checks
+    ("%GfxModeExists%width%height%depth=0", |_, a, _| int(GFX_MODES.contains(&(a[0].int(), a[1].int())) as i32)),
+    ("%GfxMode3DExists%width%height%depth=0", |_, a, _| int(GFX_MODES.contains(&(a[0].int(), a[1].int())) as i32)),
+    ("%CountGfxDrivers", |_, _, _| int(1)),
+    ("$GfxDriverName%driver", |_, a, _| Ok(Value::Str(if a[0].int() == 1 { "OpenGL 3.3 (Fyrox)" } else { "" }.into()))),
+    ("SetGfxDriver%driver", |_, _, _| VOID),
+    ("%Windowed3D", |_, _, _| int(1)),
+    ("%GfxDriverCaps3D", |_, _, _| int(110)),
+    ("%HWTexUnits", |_, _, _| int(crate::classic::MAX_LAYERS as i32)),
+    ("HWMultiTex%enable", |_, _, _| VOID),
+    ("Dither%enable", |_, _, _| VOID),
+    ("AntiAlias%enable", |h, a, _| {
+        h.world.quality.set_effect(crate::quality::EFFECT_FXAA, a[0].int() != 0)?;
+        h.world.quality_dirty = true;
+        VOID
+    }),
+    // video memory is not reported by OpenGL 3.3; a generous figure keeps old checks happy
+    ("%TotalVidMem", |_, _, _| int(1 << 30)),
+    ("%AvailVidMem", |_, _, _| int(1 << 30)),
+    // Flip already waits for the display (vsync)
+    ("VWait%frames=1", |_, _, _| VOID),
+    ("%ScanLine", |_, _, _| int(0)),
+    ("%TrisRendered", |h, _, _| int(h.world.tris_rendered)),
+    // (ext) switch between a window and borderless fullscreen at any time
+    ("SetFullscreen%enable", |h, a, _| {
+        let on = a[0].int() != 0;
+        if h.world.fullscreen != on {
+            h.world.fullscreen = on;
+            h.world.pending_fullscreen = Some(on);
+        }
+        VOID
+    }),
+    ("%IsFullscreen", |h, _, _| int(h.world.fullscreen as i32)), // (ext)
+    // ---- pointer and waiting input (bbinput.cpp)
+    ("HidePointer", |h, _, _| {
+        h.world.pending_cursor_visible = Some(false);
+        VOID
+    }),
+    ("ShowPointer", |h, _, _| {
+        h.world.pending_cursor_visible = Some(true);
+        VOID
+    }),
+    ("MoveMouse%x%y", |h, a, _| {
+        let (x, y) = (a[0].float(), a[1].float());
+        h.input.moved_to(x, y);
+        h.world.pending_cursor_pos = Some((x, y));
+        VOID
+    }),
+    // (ext) lock the pointer to the window for mouse-look (MouseXSpeed keeps working)
+    ("CaptureMouse%enable", |h, a, _| {
+        let on = a[0].int() != 0;
+        h.world.pending_grab = Some(on);
+        h.world.pending_cursor_visible = Some(!on);
+        VOID
+    }),
+    ("%MouseZSpeed", |h, _, _| int(h.input.mouse_speed_z() as i32)),
+    ("%GetMouse", |h, _, _| int(h.input.get_mouse())),
+    ("%WaitMouse", |h, _, ctx| {
+        h.scene()?;
+        let b = h.input.get_mouse();
+        if b == 0 {
+            ctx.request_retry();
+        }
+        int(b)
+    }),
+    ("%WaitKey", |h, _, ctx| {
+        h.scene()?;
+        let k = h.input.any_key_hit();
+        if k == 0 {
+            ctx.request_retry();
+        }
+        int(k)
+    }),
+    // ---- joysticks and gamepads (bbinput.cpp), port 0 is the first controller
+    ("%JoyType%port=0", |h, a, _| int(h.input.joys.kind(a[0].int()))),
+    ("%CountJoys", |h, _, _| int((0..16).filter(|&p| h.input.joys.kind(p) != 0).count() as i32)), // (ext)
+    ("%JoyDown%button%port=0", |h, a, _| int(h.input.joys.down(a[0].int(), a[1].int()) as i32)),
+    ("%JoyHit%button%port=0", |h, a, _| int(h.input.joys.hit(a[0].int(), a[1].int()))),
+    ("%GetJoy%port=0", |h, a, _| int(h.input.joys.get(a[0].int()))),
+    ("%WaitJoy%port=0", |h, a, ctx| {
+        h.scene()?;
+        let b = h.input.joys.get(a[0].int());
+        if b == 0 {
+            ctx.request_retry();
+        }
+        int(b)
+    }),
+    ("FlushJoy", |h, _, _| {
+        h.input.joys.flush();
+        VOID
+    }),
+    ("#JoyX%port=0", |h, a, _| float(h.input.joys.value(a[0].int(), "x"))),
+    ("#JoyY%port=0", |h, a, _| float(h.input.joys.value(a[0].int(), "y"))),
+    ("#JoyZ%port=0", |h, a, _| float(h.input.joys.value(a[0].int(), "z"))),
+    ("#JoyU%port=0", |h, a, _| float(h.input.joys.value(a[0].int(), "u"))),
+    ("#JoyV%port=0", |h, a, _| float(h.input.joys.value(a[0].int(), "v"))),
+    ("#JoyPitch%port=0", |h, a, _| float(h.input.joys.value(a[0].int(), "pitch"))),
+    ("#JoyYaw%port=0", |h, a, _| float(h.input.joys.value(a[0].int(), "yaw"))),
+    ("#JoyRoll%port=0", |h, a, _| float(h.input.joys.value(a[0].int(), "roll"))),
+    ("%JoyHat%port=0", |h, a, _| int(h.input.joys.hat(a[0].int()))),
+    ("%JoyXDir%port=0", |h, a, _| int(crate::joy::dir(h.input.joys.value(a[0].int(), "x")))),
+    ("%JoyYDir%port=0", |h, a, _| int(crate::joy::dir(h.input.joys.value(a[0].int(), "y")))),
+    ("%JoyZDir%port=0", |h, a, _| int(crate::joy::dir(h.input.joys.value(a[0].int(), "z")))),
+    ("%JoyUDir%port=0", |h, a, _| int(crate::joy::dir(h.input.joys.value(a[0].int(), "u")))),
+    ("%JoyVDir%port=0", |h, a, _| int(crate::joy::dir(h.input.joys.value(a[0].int(), "v")))),
+    // ---- text cursor, viewport, pixels and buffer files
+    ("Locate%x%y", |h, a, _| {
+        h.drain_print();
+        h.world.cursor = (a[0].float(), a[1].float());
+        VOID
+    }),
+    ("Viewport%x%y%width%height", |h, a, _| {
+        h.scene()?;
+        let (x, y, w, ht) = (a[0].float(), a[1].float(), a[2].float(), a[3].float());
+        let whole = x <= 0.0 && y <= 0.0 && w >= h.world.width as f32 && ht >= h.world.height as f32;
+        let rect = (!whole).then(|| Rect::new(x, y, w.max(0.0), ht.max(0.0)));
+        h.world.canvas.items.push(crate::draw2d::DrawOp::Clip { rect });
+        VOID
+    }),
+    ("GetColor%x%y", |h, a, _| {
+        let target = h.current_buffer()?;
+        if target != crate::buffer::Buffer::Screen {
+            let (x, y) = (a[0].int(), a[1].int());
+            let p = h.with_target(target, |t| t.get(x, y))?;
+            h.world.canvas.color = Color::opaque(p[0], p[1], p[2]);
+        }
+        VOID
+    }),
+    ("CopyPixel%src_x%src_y%src_buffer%dest_x%dest_y%dest_buffer=0", |h, a, _| copy_pixel(h, a)),
+    ("CopyPixelFast%src_x%src_y%src_buffer%dest_x%dest_y%dest_buffer=0", |h, a, _| copy_pixel(h, a)),
+    ("%BufferWidth%buffer", |h, a, _| buffer_size(h, a[0].int(), true)),
+    ("%BufferHeight%buffer", |h, a, _| buffer_size(h, a[0].int(), false)),
+    ("%SaveBuffer%buffer$file", |h, a, _| {
+        let path = a[1].str().to_string();
+        match crate::buffer::decode(a[0].int())? {
+            crate::buffer::Buffer::Screen => {
+                // saved at the start of the next frame, when this frame is on screen
+                h.world.pending_screenshot = Some(path);
+                int(1)
+            }
+            b => {
+                let img = h.with_target(b, |t| {
+                    let mut out = image::RgbaImage::new(t.w as u32, t.h as u32);
+                    for y in 0..t.h {
+                        for x in 0..t.w {
+                            out.put_pixel(x as u32, y as u32, t.get(x, y));
+                        }
+                    }
+                    out
+                })?;
+                int(crate::screenshot::save(&img, &path).is_ok() as i32)
+            }
+        }
+    }),
+    ("%LoadBuffer%buffer$file", |h, a, _| {
+        let b = crate::buffer::decode(a[0].int())?;
+        let Ok(src) = image::open(&*a[1].str()) else { return int(0) };
+        let src = src.to_rgba8();
+        if b == crate::buffer::Buffer::Screen {
+            let img = crate::image2d::Image2D::new(src, 0, 0, 0, 1)?;
+            let (w, ht) = (h.world.width as f32, h.world.height as f32);
+            h.world.canvas.image(0.0, 0.0, w, ht, Rect::new(0.0, 0.0, 1.0, 1.0), img.block.clone());
+        } else {
+            let (w, ht) = (src.width() as i32, src.height() as i32);
+            h.with_target(b, |t| t.blit(&src, 0, 0, w, ht, 0, 0, None))?;
+        }
+        int(1)
+    }),
+    ("%SaveImage%image$file%frame=0", |h, a, _| {
+        let img = h.image(a[0].int())?;
+        let (x, y, w, ht) = img.frame_rect(a[2].int().max(0) as u32)?;
+        let frame = image::imageops::crop_imm(img.pixels(), x as u32, y as u32, w as u32, ht as u32).to_image();
+        int(crate::screenshot::save(&frame, &a[1].str()).is_ok() as i32)
+    }),
     ("%GraphicsWidth", |h, _, _| int(h.world.width as i32)),
     ("%GraphicsHeight", |h, _, _| int(h.world.height as i32)),
     ("UpdateWorld#elapsed_time=1", |h, a, _| {
@@ -702,6 +930,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         }
         // the 3D render covers whatever 2D was drawn before it
         h.world.canvas.items.clear();
+        h.world.cursor = (0.0, 0.0);
         // keep camera aspect in sync with the window
         let cams: Vec<i32> = h.entities().filter(|(_, e)| matches!(e.kind, Kind::Camera { .. })).map(|(i, _)| i).collect();
         for c in cams {
@@ -1702,6 +1931,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("Cls", |h, _, _| {
+        h.world.cursor = (0.0, 0.0);
         let target = h.current_buffer()?;
         if target != crate::buffer::Buffer::Screen {
             let c = h.world.canvas.cls_color;

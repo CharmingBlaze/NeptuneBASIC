@@ -77,6 +77,12 @@ pub struct Input {
     last_mouse: (f32, f32),
     mouse_down: [bool; 4],
     mouse_hits: [u32; 4],
+    /// Raw mouse movement since the last `MouseXSpeed`/`MouseYSpeed` (works
+    /// while the pointer is hidden or captured), and wheel movement since the
+    /// last `MouseZSpeed`.
+    raw: (f32, f32),
+    last_z: f32,
+    pub joys: crate::joy::Joysticks,
 }
 
 impl Default for Input {
@@ -91,6 +97,9 @@ impl Default for Input {
             last_mouse: (0.0, 0.0),
             mouse_down: [false; 4],
             mouse_hits: [0; 4],
+            raw: (0.0, 0.0),
+            last_z: 0.0,
+            joys: Default::default(),
         }
     }
 }
@@ -138,17 +147,52 @@ impl Input {
         }
         std::mem::take(&mut self.mouse_hits[b as usize]) as i32
     }
+    /// Raw (device) mouse movement in logical pixels.
+    pub fn mouse_motion(&mut self, dx: f32, dy: f32) {
+        self.raw.0 += dx;
+        self.raw.1 += dy;
+    }
     /// Horizontal mouse movement since the previous `MouseXSpeed` call.
     pub fn mouse_speed_x(&mut self) -> f32 {
-        let d = self.mouse_x - self.last_mouse.0;
         self.last_mouse.0 = self.mouse_x;
-        d
+        std::mem::take(&mut self.raw.0)
     }
     /// Vertical mouse movement since the previous `MouseYSpeed` call.
     pub fn mouse_speed_y(&mut self) -> f32 {
-        let d = self.mouse_y - self.last_mouse.1;
         self.last_mouse.1 = self.mouse_y;
+        std::mem::take(&mut self.raw.1)
+    }
+    /// Wheel movement since the previous `MouseZSpeed` call.
+    pub fn mouse_speed_z(&mut self) -> f32 {
+        let d = self.mouse_z - self.last_z;
+        self.last_z = self.mouse_z;
         d
+    }
+    /// `MoveMouse`: the pointer jumps without counting as movement.
+    pub fn moved_to(&mut self, x: f32, y: f32) {
+        self.mouse_x = x;
+        self.mouse_y = y;
+        self.last_mouse = (x, y);
+    }
+    /// First mouse button pressed since the last call (`GetMouse`), or 0.
+    pub fn get_mouse(&mut self) -> i32 {
+        match (1..4).find(|&b| self.mouse_hits[b] > 0) {
+            Some(b) => {
+                self.mouse_hits[b] -= 1;
+                b as i32
+            }
+            None => 0,
+        }
+    }
+    /// Scancode of a key pressed since the last call (`WaitKey`), or 0.
+    pub fn any_key_hit(&mut self) -> i32 {
+        match (0..256).find(|&k| self.hits[k] > 0) {
+            Some(k) => {
+                self.hits[k] -= 1;
+                k as i32
+            }
+            None => 0,
+        }
     }
     pub fn flush_keys(&mut self) {
         self.down = [false; 256];
@@ -158,5 +202,6 @@ impl Input {
     pub fn flush_mouse(&mut self) {
         self.mouse_down = [false; 4];
         self.mouse_hits = [0; 4];
+        self.raw = (0.0, 0.0);
     }
 }

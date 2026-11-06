@@ -139,6 +139,20 @@ pub struct World {
     pub sounds: Vec<Option<crate::sound::SoundInfo>>,
     /// Channel number → sound node (stale handles mean the channel ended).
     pub channels: Vec<Handle<Node>>,
+    /// `Print`/`Write` text from the VM waiting to be drawn (graphics mode),
+    /// and the `Locate` cursor.
+    pub print_sink: std::rc::Rc<std::cell::RefCell<String>>,
+    pub cursor: (f32, f32),
+    /// Window requests applied by the engine loop.
+    pub fullscreen: bool,
+    pub pending_fullscreen: Option<bool>,
+    pub pending_cursor_visible: Option<bool>,
+    pub pending_cursor_pos: Option<(f32, f32)>,
+    pub pending_grab: Option<bool>,
+    /// `SaveBuffer BackBuffer()`: file to save the next presented frame to.
+    pub pending_screenshot: Option<String>,
+    /// Triangles drawn in the last frame (`TrisRendered`).
+    pub tris_rendered: i32,
     /// Current drawing buffer (`SetBuffer`), see `buffer.rs`.
     pub buffer: i32,
     /// Renderer quality (ext); `quality_dirty` asks the engine to apply it.
@@ -183,6 +197,15 @@ impl Default for World {
             channels: Vec::new(),
             joints: Vec::new(),
             buffer: crate::buffer::BACK,
+            print_sink: Default::default(),
+            cursor: (0.0, 0.0),
+            fullscreen: false,
+            pending_fullscreen: None,
+            pending_cursor_visible: None,
+            pending_cursor_pos: None,
+            pending_grab: None,
+            pending_screenshot: None,
+            tris_rendered: 0,
             quality: Default::default(),
             // apply the starting level once the window exists
             quality_dirty: true,
@@ -696,8 +719,36 @@ impl<'a> Host3D<'a> {
     }
 }
 
+impl Host3D<'_> {
+    /// Draws text the program printed (graphics mode) at the `Locate` cursor.
+    pub fn drain_print(&mut self) {
+        let text = std::mem::take(&mut *self.world.print_sink.borrow_mut());
+        if text.is_empty() || self.scene.is_none() {
+            return;
+        }
+        let line_h = self.world.canvas.font.height();
+        let mut parts = text.split('\n').peekable();
+        while let Some(part) = parts.next() {
+            let ends_line = parts.peek().is_some();
+            if !part.is_empty() {
+                let (x, y) = self.world.cursor;
+                let (ox, oy) = self.world.canvas.origin;
+                // Print ignores Origin, like Blitz3D
+                self.world.canvas.text(x - ox, y - oy, part, false, false);
+                self.world.cursor.0 += self.world.canvas.font.width(part);
+            }
+            if ends_line {
+                self.world.cursor = (0.0, self.world.cursor.1 + line_h);
+            }
+        }
+    }
+}
+
 impl Host for Host3D<'_> {
     fn call(&mut self, id: u32, args: &[Value], ctx: &mut NativeCtx) -> Result<Value, String> {
+        if !self.world.print_sink.borrow().is_empty() {
+            self.drain_print();
+        }
         (crate::commands::table()[id as usize].1)(self, args, ctx)
     }
 }
