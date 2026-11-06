@@ -39,7 +39,7 @@ impl Host3D<'_> {
     /// Does this entity need the classic material?
     fn needs_classic(&self, id: i32) -> Result<bool, String> {
         let e = self.ent(id)?;
-        if e.fx != 0 || e.blend != BLEND_ALPHA || e.shininess > 0.0 || e.color.a < 255 || e.order != 0 {
+        if e.fx != 0 || e.blend != BLEND_ALPHA || e.shininess > 0.0 || e.color.a < 255 || e.order != 0 || e.mirror.is_some() {
             return Ok(true);
         }
         if self.world.classic.fog_mode != 0 || self.has_painted_surfaces(id) {
@@ -79,6 +79,19 @@ impl Host3D<'_> {
 
     fn layers(&self, id: i32) -> Result<Vec<Layer>, String> {
         let (textures, frames) = (self.ent(id)?.textures, self.ent(id)?.tex_frames);
+        if let Some(m) = &self.ent(id)?.mirror {
+            // a mirror shows its reflection texture
+            return Ok(vec![Layer {
+                texture: m.texture.clone(),
+                blend: 2,
+                scale: (1.0, 1.0),
+                offset: (0.0, 0.0),
+                rotation: 0.0,
+                coords: 0,
+                sphere_map: false,
+                cube: 4,
+            }]);
+        }
         let mut layers = self.texture_layers(&textures)?;
         // animated textures: show the chosen frame
         let used = textures.iter().zip(frames.iter()).filter(|(&t, _)| t != 0);
@@ -113,6 +126,7 @@ impl Host3D<'_> {
                 rotation: info.rotation,
                 coords: info.coords,
                 sphere_map: info.flags & flags::SPHERE_MAP != 0,
+                cube: if info.flags & flags::CUBE_MAP != 0 { info.cube_mode.clamp(1, 3) } else { 0 },
             });
         }
         Ok(layers)
@@ -182,6 +196,7 @@ impl Host3D<'_> {
                             rotation: 0.0,
                             coords: 0,
                             sphere_map: false,
+                            cube: 0,
                         });
                     }
                 } else if surface_state.layers.is_empty() && is_classic {
@@ -194,6 +209,7 @@ impl Host3D<'_> {
                             rotation: 0.0,
                             coords: 0,
                             sphere_map: false,
+                            cube: 0,
                         });
                     }
                 }

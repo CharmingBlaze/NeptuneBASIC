@@ -22,6 +22,7 @@ pub mod joy;
 pub mod keyanim;
 pub mod material;
 pub mod mesh;
+pub mod mirror;
 pub mod model;
 pub mod physics;
 pub mod pick;

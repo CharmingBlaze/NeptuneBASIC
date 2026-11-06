@@ -589,6 +589,7 @@ fn align_to_vector(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
 
 /// `EntityAutoFade` and `CaptureWorld` tweening, before each render.
 fn before_render(h: &mut Host3D, tween: f32) -> Result<(), String> {
+    h.update_mirrors()?;
     // put tweened nodes back to their real transforms
     for e in std::mem::take(&mut h.world.tweened) {
         if h.ent(e).is_ok() {
@@ -775,6 +776,12 @@ pub fn constants() -> Vec<(String, ConstVal)> {
         ("FX_NOFOG".into(), ConstVal::Int(8)),
         ("FX_TWOSIDED".into(), ConstVal::Int(16)),
         ("FX_FORCEALPHA".into(), ConstVal::Int(32)),
+        ("CUBE_LEFT".into(), ConstVal::Int(0)),
+        ("CUBE_FRONT".into(), ConstVal::Int(1)),
+        ("CUBE_RIGHT".into(), ConstVal::Int(2)),
+        ("CUBE_BACK".into(), ConstVal::Int(3)),
+        ("CUBE_UP".into(), ConstVal::Int(4)),
+        ("CUBE_DOWN".into(), ConstVal::Int(5)),
         ("QUALITY_LOW".into(), ConstVal::Int(0)),
         ("QUALITY_MEDIUM".into(), ConstVal::Int(1)),
         ("QUALITY_HIGH".into(), ConstVal::Int(2)),
@@ -1621,6 +1628,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%CreateSphere%segments=8%parent=0", |h, a, _| create(h, "sphere", a[0].int(), true, a[1].int())),
     ("%CreateCylinder%segments=8%solid=1%parent=0", |h, a, _| create(h, "cylinder", a[0].int(), a[1].int() != 0, a[2].int())),
     ("%CreateCone%segments=8%solid=1%parent=0", |h, a, _| create(h, "cone", a[0].int(), a[1].int() != 0, a[2].int())),
+    ("%CreateMirror%parent=0", |h, a, _| int(h.create_mirror(a[0].int())?)),
     ("%CreatePlane%segments=1%parent=0", |h, a, _| create(h, "plane", a[0].int(), true, a[1].int())),
     ("%CreateCamera%parent=0", |h, a, _| {
         h.scene()?;
@@ -1825,7 +1833,19 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         // entities keep showing the texture until re-textured, like Blitz
         VOID
     }),
-    ("%TextureWidth%texture", |h, a, _| int(h.texture(a[0].int())?.width as i32)),
+    ("%TextureWidth%texture", |h, a, _| int(h.texture(a[0].int())?.face_size() as i32)),
+    ("SetCubeFace%texture%face", |h, a, _| {
+        let f = a[1].int();
+        if !(0..=5).contains(&f) {
+            return Err(format!("SetCubeFace face must be 0-5 (left, front, right, back, up, down), got {f}"));
+        }
+        h.texture_mut(a[0].int())?.cube_face = f;
+        VOID
+    }),
+    ("SetCubeMode%texture%mode", |h, a, _| {
+        let m = a[1].int().clamp(1, 3);
+        modify_texture(h, a[0].int(), |t| t.cube_mode = m)
+    }),
     ("%TextureHeight%texture", |h, a, _| int(h.texture(a[0].int())?.height as i32)),
     ("$TextureName%texture", |h, a, _| Ok(Value::Str(h.texture(a[0].int())?.path.as_str().into()))),
     ("ScaleTexture%texture#u_scale#v_scale", |h, a, _| {

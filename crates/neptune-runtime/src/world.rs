@@ -85,6 +85,8 @@ pub struct Entity {
     pub fade_base: u8,
     /// `EntityTexture` frame per layer (animated textures).
     pub tex_frames: [i32; crate::classic::MAX_LAYERS],
+    /// Set for mirrors (`CreateMirror`).
+    pub mirror: Option<crate::mirror::MirrorState>,
     /// Set for sprites (`CreateSprite`) and terrains (`CreateTerrain`).
     pub sprite: Option<crate::sprite::SpriteState>,
     pub terrain: Option<crate::terrain::TerrainState>,
@@ -437,6 +439,7 @@ impl<'a> Host3D<'a> {
             adopted: false,
             model_res: None,
             phys: None,
+            mirror: None,
             sprite: None,
             terrain: None,
             auto_fade: None,
@@ -493,7 +496,23 @@ impl<'a> Host3D<'a> {
                 self.world.free.push(i - 1);
             }
         }
+        // mirror cameras live at the scene root
+        let mirror_cams: Vec<Handle<Node>> = self
+            .world
+            .entities
+            .iter()
+            .flatten()
+            .filter(|e| e.mirror.is_some())
+            .map(|e| e.mirror.as_ref().unwrap().camera)
+            .collect();
         self.graph()?.remove_node(node);
+        let alive: std::collections::HashSet<Handle<Node>> =
+            self.world.entities.iter().flatten().filter_map(|e| e.mirror.as_ref().map(|m| m.camera)).collect();
+        for c in mirror_cams {
+            if !alive.contains(&c) && self.graph()?.try_get(c).is_ok() {
+                self.graph()?.remove_node(c);
+            }
+        }
         self.prune_surfaces();
         self.forget_channels();
         Ok(())

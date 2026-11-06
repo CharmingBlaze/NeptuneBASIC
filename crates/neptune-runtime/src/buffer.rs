@@ -206,9 +206,12 @@ impl Host3D<'_> {
                 let tex = self.texture_mut(id)?;
                 tex.ensure_pixels()?;
                 tex.dirty = true;
+                let cube = tex.flags & crate::texture::flags::CUBE_MAP != 0;
+                let face = tex.cube_face.clamp(0, 5);
                 let pixels = tex.pixels.as_mut().expect("pixels just loaded");
                 let (w, h) = (pixels.width() as i32, pixels.height() as i32);
-                let mut t = Target { pixels, x0: 0, y0: 0, w, h };
+                // a cube map's buffer is the face chosen with SetCubeFace
+                let mut t = if cube { Target { pixels, x0: face * h, y0: 0, w: h, h } } else { Target { pixels, x0: 0, y0: 0, w, h } };
                 Ok(f(&mut t))
             }
         }

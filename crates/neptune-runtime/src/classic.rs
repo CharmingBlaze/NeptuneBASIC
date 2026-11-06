@@ -63,6 +63,9 @@ pub struct Layer {
     pub coords: i32,
     /// Texture flag 64: spherical environment map.
     pub sphere_map: bool,
+    /// Cube map mode (0 none, 1 reflection, 2 normal, 3 refraction), or 4:
+    /// a mirror's reflection, projected with the `mirrorMatrix` property.
+    pub cube: i32,
 }
 
 /// Everything the classic material shows for one entity.
@@ -126,7 +129,13 @@ impl ClassicState {
                     );
                     m.set_property(
                         name("layerOptions"),
-                        Vector4::new(l.rotation.to_radians(), l.coords as f32, l.sphere_map as i32 as f32, 0.0),
+                        // z: 1 sphere map, 2-4 cube map reflection/normal/refraction
+                        Vector4::new(
+                            l.rotation.to_radians(),
+                            l.coords as f32,
+                            if l.cube > 0 { (l.cube + 1) as f32 } else { l.sphere_map as i32 as f32 },
+                            0.0,
+                        ),
                     );
                 }
                 None => {
@@ -332,6 +341,7 @@ pub fn source(blend: i32, two_sided: bool, transparent: bool) -> String {
                 (name: "useNormalMap", kind: Int(value: 0)),
                 (name: "layerCount", kind: Int(value: 0)),
                 {layer_props}
+                (name: "mirrorMatrix", kind: Matrix4(value: (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0))),
                 (name: "fogMode", kind: Int(value: 0)),
                 (name: "fogColor", kind: Vector3(value: (0.0, 0.0, 0.0))),
                 (name: "fogRange", kind: Vector2(value: (1.0, 1000.0))),
@@ -400,8 +410,40 @@ pub fn source(blend: i32, two_sided: bool, transparent: bool) -> String {
                 in vec2 uv1;
                 in vec4 vcolor;
 
+                // Blitz cube map stored as a strip of six faces: left, front,
+                // right, back, up, down. `d` is a Blitz-space direction.
+                vec2 cubeUV(vec3 d) {{
+                    vec3 a = abs(d);
+                    float face;
+                    vec2 st;
+                    if (a.x >= a.y && a.x >= a.z) {{
+                        if (d.x < 0.0) {{ face = 0.0; st = vec2(d.z, -d.y) / a.x; }}
+                        else {{ face = 2.0; st = vec2(-d.z, -d.y) / a.x; }}
+                    }} else if (a.z >= a.y) {{
+                        if (d.z > 0.0) {{ face = 1.0; st = vec2(d.x, -d.y) / a.z; }}
+                        else {{ face = 3.0; st = vec2(-d.x, -d.y) / a.z; }}
+                    }} else {{
+                        if (d.y > 0.0) {{ face = 4.0; st = vec2(d.x, d.z) / a.y; }}
+                        else {{ face = 5.0; st = vec2(d.x, -d.z) / a.y; }}
+                    }}
+                    // stay a little inside the face so filtering does not bleed
+                    vec2 local = clamp(st * 0.5 + 0.5, 0.003, 0.997);
+                    return vec2((face + local.x) / 6.0, local.y);
+                }}
+
                 vec2 layerUV(vec4 xf, vec4 opt, vec3 n) {{
                     vec2 uv;
+                    if (opt.z > 4.5) {{
+                        // mirror: where this point lands in the reflected camera's image
+                        vec4 c = properties.mirrorMatrix * vec4(worldPosition, 1.0);
+                        return c.xy / c.w * 0.5 + 0.5;
+                    }}
+                    if (opt.z > 1.5) {{
+                        vec3 v = normalize(worldPosition - fyrox_cameraData.position);
+                        vec3 d = opt.z < 2.5 ? reflect(v, n) : (opt.z < 3.5 ? n : refract(v, n, 0.9));
+                        // Fyrox space is Blitz space mirrored on X
+                        return cubeUV(vec3(-d.x, d.y, d.z));
+                    }}
                     if (opt.z > 0.5) {{
                         // spherical environment map from the view-space reflection
                         vec3 v = normalize(worldPosition - fyrox_cameraData.position);

@@ -17,6 +17,7 @@ pub mod flags {
     pub const CLAMP_U: i32 = 16;
     pub const CLAMP_V: i32 = 32;
     pub const SPHERE_MAP: i32 = 64;
+    pub const CUBE_MAP: i32 = 128;
 }
 
 /// A loaded texture and the Blitz-side state attached to it.
@@ -42,6 +43,11 @@ pub struct TextureInfo {
     pub frame_h: u32,
     pub first_frame: u32,
     pub frames: u32,
+    /// Cube maps (flag 128) are a horizontal strip of six square faces in
+    /// Blitz order: left, front, right, back, up, down. `cube_face` is the
+    /// face `TextureBuffer` draws to; `cube_mode` 1 reflection, 2 normal, 3 refraction.
+    pub cube_face: i32,
+    pub cube_mode: i32,
     pub path: String,
     /// CPU copy of the pixels while the texture is drawn to (`TextureBuffer`).
     pub pixels: Option<image::RgbaImage>,
@@ -70,7 +76,7 @@ impl TextureInfo {
 
     /// Whether this texture uses settings only the classic material supports.
     pub fn needs_classic(&self) -> bool {
-        if self.frames > 0 {
+        if self.frames > 0 || self.flags & flags::CUBE_MAP != 0 {
             return true;
         }
         self.pos_u != 0.0
@@ -99,6 +105,8 @@ impl TextureInfo {
             frame_h: 0,
             first_frame: 0,
             frames: 0,
+            cube_face: 0,
+            cube_mode: 1,
             path,
             pixels: None,
             dirty: false,
@@ -106,11 +114,22 @@ impl TextureInfo {
         }
     }
 
-    /// `CreateTexture`: a blank texture that programs draw into.
+    /// Face size of a cube map (the strip's height), else the width.
+    pub fn face_size(&self) -> u32 {
+        if self.flags & flags::CUBE_MAP != 0 {
+            self.height
+        } else {
+            self.width
+        }
+    }
+
+    /// `CreateTexture`: a blank texture that programs draw into. A cube map
+    /// (flag 128) gets six `w`-sized faces.
     pub fn blank(w: u32, h: u32, flag_bits: i32) -> Result<Self, String> {
         if w == 0 || h == 0 || w > 8192 || h > 8192 {
             return Err(format!("texture size {w}x{h} is not allowed"));
         }
+        let (w, h) = if flag_bits & flags::CUBE_MAP != 0 { (w * 6, w) } else { (w, h) };
         let px = image::RgbaImage::from_pixel(w, h, image::Rgba([0, 0, 0, 255]));
         let mut t = TextureInfo::from_resource(rgba_texture(&px, flag_bits), w, h, flag_bits, String::new());
         t.pixels = Some(px);
