@@ -1,0 +1,32 @@
+; Modern BASIC 3D example: modern command names (ext) for Blitz3D commands.
+; Run from the repository root: neptune run examples/modern3d.nb
+
+Graphics3D 1280, 720, 32
+SetWindowTitle "My First 3D Game"
+
+camera = CreateCamera()
+SetCameraPosition camera, 0, 5, -10
+CameraLookAt camera, 0, 0, 0
+
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0, -1, 0
+
+ground = CreateCube()
+ScaleEntity ground, 20, 1, 20
+SetEntityPosition ground, 0, -1, 0
+
+player = LoadModel("examples/media/pyramid.gltf")
+If player = 0 Then RuntimeError "could not load the player model"
+SetEntityPosition player, 0, 1, 0
+
+While Not KeyDown(KEY_ESCAPE)
+
+    If KeyDown(KEY_W) Then MoveEntity player, 0, 0, 0.1
+    If KeyDown(KEY_S) Then MoveEntity player, 0, 0, -0.1
+
+    UpdatePhysics()
+    RenderWorld()
+
+Wend
+
+End

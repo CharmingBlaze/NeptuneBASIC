@@ -41,6 +41,7 @@ pub fn load_mesh(h: &mut Host3D, path: &str, parent: i32) -> Result<i32, String>
     h.graph()?.link_nodes(instance, pivot);
     // Materials belong to the shared model resource until first modified.
     h.ent_mut(id)?.own_materials = false;
+    h.ent_mut(id)?.model = true;
     Ok(id)
 }
 

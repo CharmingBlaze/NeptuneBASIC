@@ -30,7 +30,6 @@ use fyrox::{
 use fyrox::graph::SceneGraph;
 use neptune_vm::{Host, NativeCtx, Value};
 
-use crate::commands::COMMANDS;
 use crate::draw2d::Canvas2D;
 use crate::texture::TextureInfo;
 use crate::input::Input;
@@ -46,7 +45,8 @@ pub enum LightKind {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Kind {
     Pivot,
-    Camera { zoom: f32 },
+    /// `mode` is the Blitz `CameraProjMode`: 0 off, 1 perspective, 2 orthographic.
+    Camera { zoom: f32, mode: i32 },
     /// The light node is a child of the entity node, rotated so it shines along +Z.
     Light { kind: LightKind, light: Handle<Node> },
     Mesh,
@@ -62,8 +62,21 @@ pub struct Entity {
     pub name: String,
     pub color: Color,
     pub hidden: bool,
-    /// Texture handle applied with `EntityTexture` (0 = none).
-    pub texture: i32,
+    /// Texture handles per layer applied with `EntityTexture` (0 = none).
+    pub textures: [i32; crate::classic::MAX_LAYERS],
+    /// `EntityNormalMap` (ext) texture, 0 = none.
+    pub normal_map: i32,
+    /// `EntityShininess`, `EntityFX`, `EntityBlend`.
+    pub shininess: f32,
+    pub fx: i32,
+    pub blend: i32,
+    /// Materials replaced by the classic material, restored when the entity
+    /// no longer needs it: (mesh node, surface index, original material).
+    pub originals: Vec<(Handle<Node>, usize, MaterialResource)>,
+    /// Loaded with `LoadMesh`: surfaces keep the model's own textures.
+    pub model: bool,
+    /// `EntityOrder`: non-zero draws in the forward pass, after normal geometry.
+    pub order: i32,
     /// False while the entity's materials are shared (loaded models, copies);
     /// they are cloned before the first per-entity change.
     pub own_materials: bool,
@@ -108,6 +121,8 @@ pub struct World {
     pub picked: Option<crate::pick::PickHit>,
     /// Result of the last `CameraProject`.
     pub projected: (f32, f32, f32),
+    /// Fog and other settings shared by every classic material.
+    pub classic: crate::classic::Globals,
     /// `Collisions` rules: (source type, destination type, method, response).
     pub collision_rules: Vec<(i32, i32, i32, crate::collision::Response)>,
 }
@@ -133,6 +148,7 @@ impl Default for World {
             picked: None,
             projected: (0.0, 0.0, 0.0),
             collision_rules: Vec::new(),
+            classic: Default::default(),
         }
     }
 }
@@ -280,7 +296,14 @@ impl<'a> Host3D<'a> {
             name: String::new(),
             color: Color::WHITE,
             hidden: false,
-            texture: 0,
+            textures: [0; crate::classic::MAX_LAYERS],
+            normal_map: 0,
+            shininess: 0.0,
+            fx: 0,
+            blend: crate::classic::BLEND_ALPHA,
+            originals: Vec::new(),
+            order: 0,
+            model: false,
             own_materials: true,
             col_type: 0,
             radius: (1.0, 1.0),
@@ -402,9 +425,13 @@ impl<'a> Host3D<'a> {
 
     /// Copies an entity and its child entities (`CopyEntity`).
     pub fn copy_entity(&mut self, id: i32, parent: i32) -> Result<i32, String> {
-        let (node, kind, xf, name, color, hidden, texture, children) = {
+        let (node, kind, xf, name, color, hidden, children) = {
             let e = self.ent(id)?;
-            (e.node, e.kind, e.xf, e.name.clone(), e.color, e.hidden, e.texture, e.children.clone())
+            (e.node, e.kind, e.xf, e.name.clone(), e.color, e.hidden, e.children.clone())
+        };
+        let look = {
+            let e = self.ent(id)?;
+            (e.textures, e.normal_map, e.shininess, e.fx, e.blend, e.order)
         };
         let src_col = {
             let e = self.ent(id)?;
@@ -429,7 +456,7 @@ impl<'a> Host3D<'a> {
             e.name = name;
             e.color = color;
             e.hidden = hidden;
-            e.texture = texture;
+            (e.textures, e.normal_map, e.shininess, e.fx, e.blend, e.order) = look;
             e.own_materials = false;
             e.col_type = src_col.0;
             e.radius = src_col.1;
@@ -452,14 +479,34 @@ impl<'a> Host3D<'a> {
             let e = self.ent(id)?;
             (e.node, e.kind)
         };
-        let Kind::Camera { zoom } = kind else { return Err(format!("Entity {id} is not a camera")) };
+        let Kind::Camera { zoom, mode } = kind else { return Err(format!("Entity {id} is not a camera")) };
         let aspect = self.world.width as f32 / self.world.height.max(1) as f32;
         let graph = self.graph()?;
         if let Some(cam) = graph[node].cast_mut::<fyrox::scene::camera::Camera>() {
-            // Blitz zoom defines the horizontal FOV: hfov = 2*atan(1/zoom)
-            let fov = 2.0 * (1.0 / (zoom.max(0.0001) * aspect)).atan();
-            if let Projection::Perspective(p) = cam.projection_mut() {
-                p.fov = fov;
+            let (near, far) = (cam.projection().z_near(), cam.projection().z_far());
+            if mode == 2 {
+                // Orthographic: the view is 2/zoom units wide, like Blitz3D
+                // (so programs use small zooms such as 0.05 to see a scene).
+                let half_h = 1.0 / (zoom.max(1e-6) * aspect);
+                match cam.projection_mut() {
+                    Projection::Orthographic(o) => o.vertical_size = half_h,
+                    _ => {
+                        cam.set_projection(Projection::Orthographic(fyrox::scene::camera::OrthographicProjection {
+                            z_near: near,
+                            z_far: far,
+                            vertical_size: half_h,
+                        }));
+                    }
+                }
+            } else {
+                // Blitz zoom defines the horizontal FOV: hfov = 2*atan(1/zoom)
+                let fov = 2.0 * (1.0 / (zoom.max(0.0001) * aspect)).atan();
+                match cam.projection_mut() {
+                    Projection::Perspective(p) => p.fov = fov,
+                    _ => {
+                        cam.set_projection(Projection::Perspective(PerspectiveProjection { fov, z_near: near, z_far: far }));
+                    }
+                }
             }
         }
         Ok(())
@@ -489,35 +536,6 @@ impl<'a> Host3D<'a> {
             .ok_or_else(|| format!("Texture {id} does not exist"))
     }
 
-    /// Re-applies material state that depends on colour, alpha and texture,
-    /// choosing the forward (blended) render path when transparency is needed.
-    pub fn refresh_material(&mut self, id: i32) -> Result<(), String> {
-        let (color, tex_id, node) = {
-            let e = self.ent(id)?;
-            (e.color, e.texture, e.node)
-        };
-        let tex = if tex_id != 0 { self.texture(tex_id).ok().cloned() } else { None };
-        let blend = color.a < 255 || tex.as_ref().is_some_and(|t| t.needs_blending());
-        self.with_materials(id, |m| {
-            m.set_property("diffuseColor", color);
-            match &tex {
-                Some(t) => {
-                    m.bind("diffuseTexture", t.resource.clone());
-                    m.set_property("texCoordScale", fyrox::core::algebra::Vector2::new(1.0 / t.scale_u, 1.0 / t.scale_v));
-                }
-                None => {
-                    m.unbind("diffuseTexture");
-                    m.set_property("texCoordScale", fyrox::core::algebra::Vector2::new(1.0f32, 1.0));
-                }
-            }
-        })?;
-        if let Some(mesh) = self.graph()?[node].cast_mut::<Mesh>() {
-            use fyrox::scene::mesh::RenderPath;
-            mesh.set_render_path(if blend { RenderPath::Forward } else { RenderPath::Deferred });
-        }
-        Ok(())
-    }
-
     pub fn entities_mut(&mut self) -> impl Iterator<Item = (i32, &mut Entity)> {
         self.world.entities.iter_mut().enumerate().filter_map(|(i, e)| e.as_mut().map(|e| (i as i32 + 1, e)))
     }
@@ -529,7 +547,7 @@ impl<'a> Host3D<'a> {
 
 impl Host for Host3D<'_> {
     fn call(&mut self, id: u32, args: &[Value], ctx: &mut NativeCtx) -> Result<Value, String> {
-        (COMMANDS[id as usize].1)(self, args, ctx)
+        (crate::commands::table()[id as usize].1)(self, args, ctx)
     }
 }
 

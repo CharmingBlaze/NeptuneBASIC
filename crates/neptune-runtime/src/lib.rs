@@ -10,11 +10,13 @@
 //! yields, a Fyrox window is opened and execution continues inside the
 //! engine loop, one BASIC frame (`RenderWorld`/`Flip`) per engine update.
 
+pub mod classic;
 pub mod collision;
 pub mod commands;
 pub mod draw2d;
 pub mod image2d;
 pub mod input;
+pub mod material;
 pub mod model;
 pub mod pick;
 pub mod texture;
@@ -42,7 +44,7 @@ use crate::world::{Host3D, World};
 /// Compiler environment: standard library followed by the 3D runtime commands.
 pub fn env() -> Env {
     let mut env = base_env();
-    env.commands.extend(commands::COMMANDS.iter().map(|(s, _)| parse_sig(s)));
+    env.commands.extend(commands::table().iter().map(|(s, _)| parse_sig(s)));
     env.constants.extend(input::constants());
     env.constants.extend(commands::constants());
     env

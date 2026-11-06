@@ -1,0 +1,62 @@
+; Classic materials: fog, blend modes, EntityFX, shininess, texture layers.
+; Run from the repository root: neptune run examples/materials.nb
+
+Graphics3D 1280, 720
+SetWindowTitle "Materials"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 4, -12
+CameraLookAt camera, 0, 1, 0
+CameraClsColor camera, 90, 110, 140
+CameraFogMode camera, 1
+CameraFogColor camera, 90, 110, 140
+CameraFogRange camera, 10, 60
+
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.5, -1, 0.7
+AmbientLight 60, 60, 70
+
+checker = LoadTexture("examples/media/checker.png")
+ring = LoadTexture("examples/media/ring.png", 1 + 4)
+
+ground = CreatePlane()
+EntityTexture ground, checker
+ScaleTexture checker, 4, 4
+
+shiny = CreateSphere(24)
+PositionEntity shiny, -4, 1, 0
+EntityColor shiny, 200, 40, 40
+EntityShininess shiny, 1
+
+glow = CreateCube()
+PositionEntity glow, -1.3, 1, 0
+EntityColor glow, 255, 200, 50
+EntityBlend glow, BLEND_ADD
+
+glass = CreateCube()
+PositionEntity glass, 1.3, 1, 0
+EntityColor glass, 80, 160, 255
+EntityAlpha glass, 0.5
+
+layered = CreateCube()
+PositionEntity layered, 4, 1, 0
+EntityTexture layered, checker, 0, 0
+EntityTexture layered, ring, 0, 1
+TextureBlend ring, 1
+EntityFX layered, FX_FULLBRIGHT
+
+For i = 1 To 12
+    pillar = CreateCylinder(12)
+    PositionEntity pillar, -15 + i * 2.5, 2, 10 + i * 3
+    ScaleEntity pillar, 0.5, 2, 0.5
+Next
+
+While Not KeyDown(KEY_ESCAPE)
+    TurnEntity shiny, 0, 1, 0
+    TurnEntity layered, 0.5, 1, 0
+    RotateTexture ring, MilliSecs() / 20.0
+    RenderWorld
+    Text 10, 10, "fog, add blend, alpha, shininess, two texture layers"
+    Flip
+Wend
+End

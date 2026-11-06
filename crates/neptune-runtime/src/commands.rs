@@ -5,7 +5,7 @@
 use fyrox::core::{algebra::Vector3, color::Color, math::Rect};
 use fyrox::graph::SceneGraph;
 use fyrox::scene::{
-    camera::{Camera, Projection},
+    camera::Camera,
     light::{directional::DirectionalLight, point::PointLight, spot::SpotLight, BaseLight},
 };
 use neptune_lang::commands::ConstVal;
@@ -231,33 +231,47 @@ fn picked(h: &mut Host3D, hit: Option<crate::pick::PickHit>) -> Result<Value, St
     int(hit.map_or(0, |p| p.entity))
 }
 
-/// Camera parameters: world transform, tan of the half field of view
-/// horizontally and vertically, and far range.
-fn camera_params(h: &mut Host3D, cam: i32) -> Result<(crate::transform::WorldXform, f32, f32, f32), String> {
-    let Kind::Camera { zoom } = h.ent(cam)?.kind else { return Err(format!("Entity {cam} is not a camera")) };
+/// Camera parameters for picking and projection.
+struct CamParams {
+    w: crate::transform::WorldXform,
+    /// Half extents of the view: tan(half fov) for perspective, world units for orthographic.
+    tx: f32,
+    ty: f32,
+    far: f32,
+    ortho: bool,
+}
+
+fn camera_params(h: &mut Host3D, cam: i32) -> Result<CamParams, String> {
+    let Kind::Camera { zoom, mode } = h.ent(cam)?.kind else { return Err(format!("Entity {cam} is not a camera")) };
     let far = camera_mut(h, cam)?.projection().z_far();
     let aspect = h.world.width as f32 / h.world.height.max(1) as f32;
-    let tx = 1.0 / zoom.max(1e-4);
-    Ok((h.world_of(cam)?, tx, tx / aspect, far))
+    let tx = 1.0 / zoom.max(1e-6);
+    Ok(CamParams { w: h.world_of(cam)?, tx, ty: tx / aspect, far, ortho: mode == 2 })
 }
 
 /// World-space ray through a screen pixel, as origin and full-length line.
 fn camera_ray(h: &mut Host3D, cam: i32, sx: f32, sy: f32) -> Result<(Vector3<f32>, Vector3<f32>), String> {
-    let (w, tx, ty, far) = camera_params(h, cam)?;
+    let c = camera_params(h, cam)?;
     let (sw, sh) = (h.world.width as f32, h.world.height as f32);
-    let d = Vector3::new((2.0 * sx / sw - 1.0) * tx, (1.0 - 2.0 * sy / sh) * ty, 1.0);
-    Ok((w.position(), w.rot * d * far))
+    let (nx, ny) = ((2.0 * sx / sw - 1.0) * c.tx, (1.0 - 2.0 * sy / sh) * c.ty);
+    if c.ortho {
+        let origin = c.w.position() + c.w.rot * Vector3::new(nx, ny, 0.0);
+        Ok((origin, c.w.rot * Vector3::z() * c.far))
+    } else {
+        Ok((c.w.position(), c.w.rot * Vector3::new(nx, ny, 1.0) * c.far))
+    }
 }
 
 /// Screen position of a world point, or `None` if it is behind the camera.
 fn camera_project(h: &mut Host3D, cam: i32, p: Vector3<f32>) -> Result<Option<(f32, f32, f32)>, String> {
-    let (w, tx, ty, _) = camera_params(h, cam)?;
-    let c = w.rot.transpose() * (p - w.position());
-    if c.z <= 1e-4 {
+    let c = camera_params(h, cam)?;
+    let v = c.w.rot.transpose() * (p - c.w.position());
+    if v.z <= 1e-4 {
         return Ok(None);
     }
     let (sw, sh) = (h.world.width as f32, h.world.height as f32);
-    Ok(Some((sw / 2.0 * (1.0 + c.x / (c.z * tx)), sh / 2.0 * (1.0 - c.y / (c.z * ty)), c.z)))
+    let (px, py) = if c.ortho { (v.x / c.tx, v.y / c.ty) } else { (v.x / (v.z * c.tx), v.y / (v.z * c.ty)) };
+    Ok(Some((sw / 2.0 * (1.0 + px), sh / 2.0 * (1.0 - py), v.z)))
 }
 
 fn add_image(h: &mut Host3D, img: Result<crate::image2d::Image2D, String>) -> Result<Value, String> {
@@ -290,6 +304,27 @@ fn draw_image(h: &mut Host3D, a: &[Value], masked: bool, sub: Option<Rect<f32>>)
     VOID
 }
 
+/// Pushes changed fog settings into every classic material.
+fn refresh_fog(h: &mut Host3D) -> Result<Value, String> {
+    if h.world.classic.fog_mode != 0 {
+        h.refresh_all_materials()?;
+    }
+    VOID
+}
+
+/// Changes a texture's settings and refreshes every entity that uses it.
+fn modify_texture(h: &mut Host3D, t: i32, f: impl FnOnce(&mut crate::texture::TextureInfo)) -> Result<Value, String> {
+    h.texture(t)?;
+    if let Some(Some(info)) = h.world.textures.get_mut(t as usize - 1) {
+        f(info);
+    }
+    let users: Vec<i32> = h.entities().filter(|(_, e)| e.textures.contains(&t) || e.normal_map == t).map(|(i, _)| i).collect();
+    for e in users {
+        h.refresh_material(e)?;
+    }
+    VOID
+}
+
 fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
     usize::try_from(f - 1)
         .ok()
@@ -317,9 +352,109 @@ pub fn constants() -> Vec<(String, ConstVal)> {
         ("LIGHT_DIRECTIONAL".into(), ConstVal::Int(1)),
         ("LIGHT_POINT".into(), ConstVal::Int(2)),
         ("LIGHT_SPOT".into(), ConstVal::Int(3)),
+        // (ext) short light names
+        ("DIRECTIONAL".into(), ConstVal::Int(1)),
+        ("POINT".into(), ConstVal::Int(2)),
+        ("SPOT".into(), ConstVal::Int(3)),
+        ("BLEND_ALPHA".into(), ConstVal::Int(1)),
+        ("BLEND_MULTIPLY".into(), ConstVal::Int(2)),
+        ("BLEND_ADD".into(), ConstVal::Int(3)),
+        ("FX_FULLBRIGHT".into(), ConstVal::Int(1)),
+        ("FX_VERTEXCOLOR".into(), ConstVal::Int(2)),
+        ("FX_FLAT".into(), ConstVal::Int(4)),
+        ("FX_NOFOG".into(), ConstVal::Int(8)),
+        ("FX_TWOSIDED".into(), ConstVal::Int(16)),
+        ("FX_FORCEALPHA".into(), ConstVal::Int(32)),
         ("PROJ_NONE".into(), ConstVal::Int(0)),
         ("PROJ_PERSPECTIVE".into(), ConstVal::Int(1)),
+        ("PROJ_ORTHO".into(), ConstVal::Int(2)),
     ]
+}
+
+/// Modern names for classic commands (ext). Each maps a new name onto the
+/// signature of an existing command, so both spellings behave identically.
+/// Only the command name differs; parameters and defaults are the target's.
+pub static ALIASES: &[(&str, &str)] = &[
+    ("SetWindowTitle", "AppTitle"),
+    ("LoadModel", "LoadMesh"),
+    ("LoadAnimModel", "LoadAnimMesh"),
+    ("CopyModel", "CopyEntity"),
+    ("UpdatePhysics", "UpdateWorld"),
+    ("SetEntityPosition", "PositionEntity"),
+    ("SetCameraPosition", "PositionEntity"),
+    ("SetLightPosition", "PositionEntity"),
+    ("SetEntityRotation", "RotateEntity"),
+    ("SetCameraRotation", "RotateEntity"),
+    ("SetEntityScale", "ScaleEntity"),
+    ("SetEntityColor", "EntityColor"),
+    ("SetEntityAlpha", "EntityAlpha"),
+    ("SetEntityTexture", "EntityTexture"),
+    ("SetEntityShininess", "EntityShininess"),
+    ("SetEntityBlend", "EntityBlend"),
+    ("SetEntityFX", "EntityFX"),
+    ("SetEntityParent", "EntityParent"),
+    ("SetEntityName", "NameEntity"),
+    ("GetEntityName", "EntityName"),
+    ("GetEntityX", "EntityX"),
+    ("GetEntityY", "EntityY"),
+    ("GetEntityZ", "EntityZ"),
+    ("GetEntityPitch", "EntityPitch"),
+    ("GetEntityYaw", "EntityYaw"),
+    ("GetEntityRoll", "EntityRoll"),
+    ("GetEntityDistance", "EntityDistance"),
+    ("SetCameraZoom", "CameraZoom"),
+    ("SetCameraRange", "CameraRange"),
+    ("SetCameraViewport", "CameraViewport"),
+    ("SetCameraClearColor", "CameraClsColor"),
+    ("SetCameraProjection", "CameraProjMode"),
+    ("SetCameraFog", "CameraFogMode"),
+    ("SetCameraFogColor", "CameraFogColor"),
+    ("SetCameraFogRange", "CameraFogRange"),
+    ("SetLightColor", "LightColor"),
+    ("SetLightRange", "LightRange"),
+    ("SetLightCone", "LightConeAngles"),
+    ("SetAmbientLight", "AmbientLight"),
+    ("SetCollisionType", "EntityType"),
+    ("SetCollisionRadius", "EntityRadius"),
+    ("SetCollisionBox", "EntityBox"),
+    ("SetPickMode", "EntityPickMode"),
+    ("SetTextureScale", "ScaleTexture"),
+    ("SetTexturePosition", "PositionTexture"),
+    ("SetTextureRotation", "RotateTexture"),
+    ("SetFont", "SetFont"),
+    ("DrawText", "Text"),
+    ("SetColor", "Color"),
+    ("SetClearColor", "ClsColor"),
+    ("ClearScreen", "Cls"),
+    ("DrawRect", "Rect"),
+    ("DrawOval", "Oval"),
+    ("DrawLine", "Line"),
+    ("DrawPixel", "Plot"),
+];
+
+/// The full command table: [`COMMANDS`] followed by [`ALIASES`].
+pub fn table() -> &'static [(String, Cmd)] {
+    static TABLE: std::sync::OnceLock<Vec<(String, Cmd)>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut t: Vec<(String, Cmd)> = COMMANDS.iter().map(|(s, f)| (s.to_string(), *f)).collect();
+        for (alias, target) in ALIASES {
+            if alias.eq_ignore_ascii_case(target) {
+                continue;
+            }
+            let (sig, f) = COMMANDS
+                .iter()
+                .find(|(s, _)| neptune_lang::commands::parse_sig(s).name.eq_ignore_ascii_case(target))
+                .unwrap_or_else(|| panic!("alias target {target} is not a command"));
+            let target_sig = neptune_lang::commands::parse_sig(sig);
+            let at = sig
+                .to_ascii_lowercase()
+                .find(&target_sig.name.to_ascii_lowercase())
+                .unwrap_or_else(|| panic!("cannot find name {} in {sig}", target_sig.name));
+            let new_sig = format!("{}{}{}", &sig[..at], alias, &sig[at + target_sig.name.len()..]);
+            t.push((new_sig, *f));
+        }
+        t
+    })
 }
 
 /// Command table. Order defines native ids (after the standard library).
@@ -393,7 +528,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%CreatePlane%segments=1%parent=0", |h, a, _| create(h, "plane", a[0].int(), true, a[1].int())),
     ("%CreateCamera%parent=0", |h, a, _| {
         h.scene()?;
-        let id = h.add_entity(camera_node(), Kind::Camera { zoom: 1.0 }, a[0].int())?;
+        let id = h.add_entity(camera_node(), Kind::Camera { zoom: 1.0, mode: 1 }, a[0].int())?;
         h.update_camera_fov(id)?;
         int(id)
     }),
@@ -561,44 +696,85 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%TextureHeight%texture", |h, a, _| int(h.texture(a[0].int())?.height as i32)),
     ("$TextureName%texture", |h, a, _| Ok(Value::Str(h.texture(a[0].int())?.path.as_str().into()))),
     ("ScaleTexture%texture#u_scale#v_scale", |h, a, _| {
-        let t = a[0].int();
-        h.texture(t)?;
         let (u, v) = (a[1].float(), a[2].float());
         if u == 0.0 || v == 0.0 {
             return Err("ScaleTexture scale must not be zero".into());
         }
-        if let Some(Some(info)) = h.world.textures.get_mut(t as usize - 1) {
-            info.scale_u = u;
-            info.scale_v = v;
+        modify_texture(h, a[0].int(), |t| {
+            t.scale_u = u;
+            t.scale_v = v;
+        })
+    }),
+    ("PositionTexture%texture#u_position#v_position", |h, a, _| {
+        let (u, v) = (a[1].float(), a[2].float());
+        modify_texture(h, a[0].int(), |t| {
+            t.pos_u = u;
+            t.pos_v = v;
+        })
+    }),
+    ("RotateTexture%texture#angle", |h, a, _| {
+        let r = a[1].float();
+        modify_texture(h, a[0].int(), |t| t.rotation = r)
+    }),
+    ("TextureBlend%texture%blend", |h, a, _| {
+        let b = a[1].int();
+        if !(0..=5).contains(&b) {
+            return Err(format!("TextureBlend mode must be 0-5, got {b}"));
         }
-        let users: Vec<i32> = h.entities().filter(|(_, e)| e.texture == t).map(|(i, _)| i).collect();
-        for e in users {
-            h.refresh_material(e)?;
-        }
-        VOID
+        modify_texture(h, a[0].int(), |t| t.blend = b)
+    }),
+    ("TextureCoords%texture%coords", |h, a, _| {
+        let c = a[1].int().clamp(0, 1);
+        modify_texture(h, a[0].int(), |t| t.coords = c)
     }),
     ("EntityTexture%entity%texture%frame=0%index=0", |h, a, _| {
-        let (e, t) = (a[0].int(), a[1].int());
-        if a[3].int() != 0 {
-            return Err("EntityTexture: only texture layer 0 is supported so far".into());
+        let (e, t, index) = (a[0].int(), a[1].int(), a[3].int());
+        if !(0..crate::classic::MAX_LAYERS as i32).contains(&index) {
+            return Err(format!("EntityTexture index must be 0-{}, got {index}", crate::classic::MAX_LAYERS - 1));
         }
         if t != 0 {
             h.texture(t)?;
         }
-        h.ent_mut(e)?.texture = t;
+        h.ent_mut(e)?.textures[index as usize] = t;
         h.refresh_material(e)?;
         VOID
     }),
     // (ext) normal map for per-pixel lighting detail
     ("EntityNormalMap%entity%texture", |h, a, _| {
         let (e, t) = (a[0].int(), a[1].int());
-        let tex = if t != 0 { Some(h.texture(t)?.resource.clone()) } else { None };
-        h.with_materials(e, |m| match &tex {
-            Some(r) => m.bind("normalTexture", r.clone()),
-            None => {
-                m.unbind("normalTexture");
-            }
-        })?;
+        if t != 0 {
+            h.texture(t)?;
+        }
+        h.ent_mut(e)?.normal_map = t;
+        h.refresh_material(e)?;
+        VOID
+    }),
+    ("EntityShininess%entity#shininess", |h, a, _| {
+        let e = a[0].int();
+        h.ent_mut(e)?.shininess = a[1].float().clamp(0.0, 1.0);
+        h.refresh_material(e)?;
+        VOID
+    }),
+    ("EntityBlend%entity%blend", |h, a, _| {
+        let (e, b) = (a[0].int(), a[1].int());
+        if !(1..=3).contains(&b) {
+            return Err(format!("EntityBlend mode must be 1 (alpha), 2 (multiply) or 3 (add), got {b}"));
+        }
+        h.ent_mut(e)?.blend = b;
+        h.refresh_material(e)?;
+        VOID
+    }),
+    ("EntityFX%entity%fx", |h, a, _| {
+        let e = a[0].int();
+        h.ent_mut(e)?.fx = a[1].int() & 63;
+        h.refresh_material(e)?;
+        VOID
+    }),
+    // Blitz draws non-zero orders after the main geometry; here they go to the forward pass
+    ("EntityOrder%entity%order", |h, a, _| {
+        let e = a[0].int();
+        h.ent_mut(e)?.order = a[1].int();
+        h.refresh_material(e)?;
         VOID
     }),
     // ---- cameras
@@ -618,7 +794,9 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("CameraZoom%camera#zoom", |h, a, _| {
         let e = a[0].int();
         camera_mut(h, e)?;
-        h.ent_mut(e)?.kind = Kind::Camera { zoom: a[1].float() };
+        if let Kind::Camera { zoom, .. } = &mut h.ent_mut(e)?.kind {
+            *zoom = a[1].float();
+        }
         h.update_camera_fov(e)?;
         VOID
     }),
@@ -629,20 +807,32 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("CameraProjMode%camera%mode", |h, a, _| {
-        let cam = camera_mut(h, a[0].int())?;
-        match a[1].int() {
-            0 => {
-                cam.set_enabled(false);
-            }
-            1 => {
-                cam.set_enabled(true);
-                if !matches!(cam.projection(), Projection::Perspective(_)) {
-                    cam.set_projection(Projection::Perspective(Default::default()));
-                }
-            }
-            m => return Err(format!("CameraProjMode {m} is not supported yet (use 0 or 1)")),
+        let (e, m) = (a[0].int(), a[1].int());
+        if !(0..=2).contains(&m) {
+            return Err(format!("CameraProjMode mode must be 0, 1 or 2, got {m}"));
         }
+        camera_mut(h, e)?.set_enabled(m != 0);
+        if let Kind::Camera { mode, .. } = &mut h.ent_mut(e)?.kind {
+            *mode = m;
+        }
+        h.update_camera_fov(e)?;
         VOID
+    }),
+    ("CameraFogMode%camera%mode", |h, a, _| {
+        camera_mut(h, a[0].int())?;
+        h.world.classic.fog_mode = a[1].int().clamp(0, 1);
+        h.refresh_all_materials()?;
+        VOID
+    }),
+    ("CameraFogColor%camera#red#green#blue", |h, a, _| {
+        camera_mut(h, a[0].int())?;
+        h.world.classic.fog_color = color(a, 1);
+        refresh_fog(h)
+    }),
+    ("CameraFogRange%camera#near#far", |h, a, _| {
+        camera_mut(h, a[0].int())?;
+        h.world.classic.fog_range = (a[1].float(), a[2].float());
+        refresh_fog(h)
     }),
     // ---- lights
     ("LightColor%light#red#green#blue", |h, a, _| {
@@ -683,6 +873,23 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         if let Some(s) = h.graph()?[light].cast_mut::<SpotLight>() {
             s.set_hotspot_cone_angle(inner.to_radians());
             s.set_falloff_angle_delta((outer - inner).max(0.0).to_radians());
+        }
+        VOID
+    }),
+    // (ext) aims a light (or any entity) along a direction vector
+    ("SetLightDirection%light#x#y#z", |h, a, _| {
+        let e = a[0].int();
+        let d = v3(a, 1);
+        if d.norm_squared() > 1e-12 {
+            set_world_rotation(h, e, rotation(vector_pitch(&d), vector_yaw(&d), 0.0))?;
+        }
+        VOID
+    }),
+    ("SetEntityDirection%entity#x#y#z", |h, a, _| {
+        let e = a[0].int();
+        let d = v3(a, 1);
+        if d.norm_squared() > 1e-12 {
+            set_world_rotation(h, e, rotation(vector_pitch(&d), vector_yaw(&d), 0.0))?;
         }
         VOID
     }),
@@ -994,3 +1201,20 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aliases_resolve_and_names_are_unique() {
+        let t = table();
+        assert!(t.len() > COMMANDS.len());
+        let mut names: Vec<String> =
+            t.iter().map(|(s, _)| neptune_lang::commands::parse_sig(s).name.to_lowercase()).collect();
+        names.sort();
+        let before = names.len();
+        names.dedup();
+        assert_eq!(before, names.len(), "duplicate command names");
+    }
+}
