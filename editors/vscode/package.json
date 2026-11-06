@@ -1,0 +1,54 @@
+{
+  "name": "neptunebasic",
+  "displayName": "NeptuneBASIC",
+  "description": "Syntax highlighting, diagnostics and run commands for NeptuneBASIC (.nb) programs",
+  "version": "0.1.0",
+  "publisher": "neptunebasic",
+  "license": "Zlib",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "languages": [
+      {
+        "id": "neptunebasic",
+        "aliases": ["NeptuneBASIC", "neptune"],
+        "extensions": [".nb"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      { "language": "neptunebasic", "scopeName": "source.neptune", "path": "./syntaxes/neptune.tmLanguage.json" }
+    ],
+    "commands": [
+      { "command": "neptunebasic.run", "title": "NeptuneBASIC: Run Program", "icon": "$(play)" },
+      { "command": "neptunebasic.runLow", "title": "NeptuneBASIC: Run Program (Low Quality)" },
+      { "command": "neptunebasic.build", "title": "NeptuneBASIC: Build Stand-alone Game" },
+      { "command": "neptunebasic.check", "title": "NeptuneBASIC: Check Program" }
+    ],
+    "keybindings": [
+      { "command": "neptunebasic.run", "key": "f5", "when": "editorLangId == neptunebasic" }
+    ],
+    "menus": {
+      "editor/title": [
+        { "command": "neptunebasic.run", "when": "editorLangId == neptunebasic", "group": "navigation" }
+      ]
+    },
+    "configuration": {
+      "title": "NeptuneBASIC",
+      "properties": {
+        "neptunebasic.executable": {
+          "type": "string",
+          "default": "neptune",
+          "description": "Path to the neptune executable, for example C:\\NeptuneBASIC\\target\\release\\neptune.exe."
+        },
+        "neptunebasic.checkOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run `neptune check` when a .nb file is saved and show its errors and warnings."
+        }
+      }
+    }
+  }
+}

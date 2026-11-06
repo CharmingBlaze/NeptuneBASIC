@@ -1,0 +1,122 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "NeptuneBASIC",
+  "scopeName": "source.neptune",
+  "fileTypes": [
+    "nb",
+    "bb"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "name": "keyword.control.neptune",
+      "match": "(?i)\\b(end\\s+(if|function|type|select|try|method|enum)|else\\s+if)\\b"
+    },
+    {
+      "name": "keyword.control.neptune",
+      "match": "(?i)\\b(EndFunction|EndMethod|EndSelect|Continue|Function|Classic|Default|EndEnum|EndType|Forever|Include|Restore|Before|Delete|ElseIf|EndTry|Global|Import|Insert|Method|Repeat|Return|Select|Strict|After|Catch|Const|EndIf|Field|First|Gosub|Local|Throw|Until|While|Case|Data|Each|Else|Enum|Exit|Goto|Last|Next|Read|Step|Stop|Then|Type|Wend|Dim|End|For|New|Try|As|If|In|To)\\b"
+    },
+    {
+      "name": "keyword.operator.word.neptune",
+      "match": "(?i)\\b(AndAlso|OrElse|And|Mod|Not|Sar|Shl|Shr|Xor|Or)\\b"
+    },
+    {
+      "name": "constant.language.neptune",
+      "match": "(?i)\\b(False|Null|Self|True|Pi)\\b"
+    },
+    {
+      "name": "storage.type.neptune",
+      "match": "(?i)\\b(Boolean|Integer|Variant|Handle|Object|Single|String|Float|Bool|Abs|Any|Int|Sgn|Str)\\b"
+    },
+    {
+      "name": "entity.name.label.neptune",
+      "match": "^\\s*\\.[A-Za-z_][A-Za-z0-9_]*"
+    },
+    {
+      "name": "support.function.neptune",
+      "match": "(?i)\\b(SetCameraClearColor|SetCameraProjection|ApplyTorqueImpulse|CountMeshTriangles|EntityGravityScale|GetGraphicsQuality|SetAngularVelocity|SetCollisionRadius|SetEntityDirection|SetEntityShininess|SetTexturePosition|SetTextureRotation|GetEntityDistance|SetCameraFogColor|SetCameraFogRange|SetCameraPosition|SetCameraRotation|SetCameraViewport|SetEntityPosition|SetEntityRotation|SetLightDirection|AngularVelocityX|AngularVelocityY|AngularVelocityZ|CreateFixedJoint|CreateHingeJoint|ImageRectOverlap|SetCollisionType|SetEntityTexture|SetLightPosition|ClearCollisions|CollisionEntity|CountCollisions|CreateBallJoint|EntityNormalMap|EntityShininess|GetSurfaceBrush|GraphicsQuality|LightConeAngles|PositionTexture|SetAmbientLight|SetCollisionBox|SetEntityParent|SetTextureScale|TranslateEntity|VertexTexCoords|ApplyImpulseAt|BrushShininess|CameraClsColor|CameraFogColor|CameraFogRange|CameraProjMode|CameraViewport|ChannelPlaying|CountTriangles|CreateCylinder|CreateListener|EntityCollided|EntityDistance|EntityFriction|EntityPickMode|EntityTouching|ExtractAnimSeq|GetEntityBrush|GetEntityPitch|GraphicsHeight|PhysicsGravity|PhysicsRayCast|PickedTriangle|PositionEntity|SetCameraRange|SetEntityAlpha|SetEntityBlend|SetEntityColor|SetEntityScale|SetWindowTitle|SpriteViewMode|TerrainShading|TriangleVertex|AutoMidHandle|CameraFogMode|CameraProject|ChannelVolume|CollisionTime|ContactEntity|CountAnimSeqs|CountChildren|CountContacts|CountSurfaces|CountVertices|CreateSurface|CreateTerrain|DrawBlockRect|DrawImageRect|EntityDamping|EntityPhysics|EntityTexture|EntityVisible|GetEntityName|GetEntityRoll|GetEntityType|GraphicsWidth|ImagesCollide|ImagesOverlap|LoadAnimImage|LoadAnimModel|ModifyTerrain|PickedSurface|ResumeChannel|RotateTexture|SetCameraZoom|SetClearColor|SetEntityName|SetLightColor|SetLightRange|TerrainDetail|TerrainHeight|TextureCoords|TextureHeight|UpdateNormals|UpdatePhysics|AmbientLight|ApplyImpulse|BrushTexture|CameraLookAt|ChannelPitch|ClearSurface|CreateCamera|CreateSphere|CreateSprite|EntityBounce|EntityHidden|EntityInView|EntityParent|EntityRadius|GetEntityYaw|HandleSprite|ImageXHandle|ImageYHandle|LightShadows|LoadAnimMesh|LockRotation|PaintSurface|PauseChannel|PickedEntity|PositionMesh|RectsOverlap|RotateEntity|RotateSprite|RuntimeError|ScaleTexture|SetCameraFog|SetLightCone|StringHeight|TextureBlend|TextureWidth|VertexCoords|VertexNormal|AddTriangle|ApplyTorque|CameraRange|ClearScreen|CollisionNX|CollisionNY|CollisionNZ|CommandLine|CreateBrush|CreateLight|CreatePivot|CreatePlane|CurrentDate|CurrentTime|EndGraphics|EntityAlpha|EntityBlend|EntityColor|EntityOrder|EntityPitch|FormatFloat|FreeTexture|HandleImage|ImageFrames|ImageHeight|Load3DSound|LoadTerrain|LoadTexture|MouseXSpeed|MouseYSpeed|PaintEntity|PointEntity|RenderWorld|ResetEntity|ResizeImage|ScaleEntity|ScaleSprite|SetAnimTime|SetEntityFX|SetPickMode|SetVelocity|SoundVolume|StopChannel|StringWidth|TerrainSize|TextureName|UpdateWorld|VertexAlpha|VertexColor|VertexGreen|WriteString|AnimLength|ApplyForce|BrushAlpha|BrushBlend|BrushColor|CameraPick|CameraZoom|ChannelPan|CollisionX|CollisionY|CollisionZ|Collisions|ColorGreen|CopyEntity|CreateCone|CreateCube|CreateMesh|CurrentDir|DeleteFile|EntityMass|EntityName|EntityPick|EntityRoll|EntityType|FlushMouse|FontHeight|FreeEntity|GetEntityX|GetEntityY|GetEntityZ|GetSurface|Graphics3D|HideEntity|ImageWidth|LightColor|LightRange|LoadSprite|MeshHeight|MoveEntity|NameEntity|PickedTime|PostEffect|ProjectedX|ProjectedY|ProjectedZ|ReadString|RotateMesh|ScaleImage|ShowEntity|SoundPitch|TurnEntity|VertexBlue|WriteFloat|WriteShort|AddVertex|Animating|ChangeDir|CloseFile|ColorBlue|CopyModel|CreateDir|DeleteDir|DrawBlock|DrawImage|DrawPixel|EmitSound|EntityBox|EntityYaw|FindChild|FlushKeys|FontWidth|FreeBrush|FreeImage|FreeJoint|FreeSound|GetParent|LoadBrush|LoadImage|LoadModel|LoadSound|LoopSound|MaskImage|MeshDepth|MeshWidth|MidHandle|MilliSecs|MouseDown|PaintMesh|PlayMusic|PlaySound|ReadFloat|ReadShort|ScaleMesh|VelocityX|VelocityY|VelocityZ|VertexRed|WireFrame|WriteByte|WriteFile|WriteLine|AnimTime|AppTitle|ClsColor|ColorRed|CopyFile|CopyMesh|DebugLog|DrawLine|DrawOval|DrawRect|DrawText|EntityFX|FileSize|FileType|FlipMesh|FreeFont|GetChild|Graphics|LinePick|LoadFont|LoadMesh|MouseHit|OpenFile|PickedNX|PickedNY|PickedNZ|ReadByte|ReadFile|ReadLine|SetColor|SoundPan|TerrainX|TerrainY|TerrainZ|VertexNX|VertexNY|VertexNZ|WriteInt|AddMesh|AnimSeq|Animate|BrushFX|EntityX|EntityY|EntityZ|FitMesh|KeyDown|PickedX|PickedY|PickedZ|ReadInt|Replace|SeedRnd|SetFont|VertexU|VertexV|VertexW|VertexX|VertexY|VertexZ|GetEnv|GetKey|KeyHit|LookAt|MouseX|MouseY|MouseZ|Origin|String|TypeOf|ATan2|Clamp|Color|Delay|Floor|Input|Instr|Log10|Lower|Print|Right|Upper|Write|ACos|ASin|ATan|Ceil|Flip|LSet|Left|Lerp|Line|Oval|Plot|RSet|Rand|Rect|Text|Trim|Asc|Bin|Chr|Cls|Cos|Eof|Exp|Hex|Len|Log|Max|Mid|Min|Rnd|Sin|Sqr|Tan)\\b"
+    },
+    {
+      "name": "constant.other.neptune",
+      "match": "\\b[A-Z][A-Z0-9_]*_[A-Z0-9_]+\\b"
+    },
+    {
+      "name": "keyword.operator.neptune",
+      "match": "\\+=|-=|\\*=|/=|<>|<=|>=|[-+*/^=<>\\]"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.semicolon.neptune",
+          "match": ";.*$"
+        },
+        {
+          "name": "comment.line.quote.neptune",
+          "match": "'.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.interpolated.neptune",
+          "begin": "\\$\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.neptune",
+              "match": "\"\"|\\{\\{|\\}\\}"
+            },
+            {
+              "name": "meta.embedded.neptune",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                {
+                  "include": "$self"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.neptune",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.neptune",
+              "match": "\"\""
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.neptune",
+          "match": "\\$[0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.neptune",
+          "match": "%[01]+\\b"
+        },
+        {
+          "name": "constant.numeric.neptune",
+          "match": "\\b[0-9]+(\\.[0-9]*)?([eE][-+]?[0-9]+)?\\b|\\.[0-9]+\\b"
+        }
+      ]
+    }
+  }
+}
