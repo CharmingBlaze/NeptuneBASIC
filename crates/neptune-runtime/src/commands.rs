@@ -111,6 +111,99 @@ fn mesh_extent(h: &mut Host3D, e: i32, axis: usize) -> Result<Value, String> {
     float(crate::model::bounds(&tris).map_or(0.0, |(lo, hi)| hi[axis] - lo[axis]))
 }
 
+fn nth_contact(h: &Host3D, a: &[Value]) -> Result<crate::collision::Contact, String> {
+    let (e, i) = (a[0].int(), a[1].int());
+    let list = &h.ent(e)?.contacts;
+    usize::try_from(i - 1)
+        .ok()
+        .and_then(|i| list.get(i))
+        .copied()
+        .ok_or_else(|| format!("collision index {i} out of range (entity {e} has {} collisions)", list.len()))
+}
+
+fn contact(h: &Host3D, a: &[Value], f: impl Fn(&crate::collision::Contact) -> f32) -> Result<Value, String> {
+    float(f(&nth_contact(h, a)?))
+}
+
+/// World-space collision shape of a destination entity for a method.
+fn collision_shape(h: &mut Host3D, e: i32, method: i32) -> Result<crate::collision::Shape, String> {
+    use crate::collision::{box_triangles, Shape};
+    let w = h.world_of(e)?;
+    let to_world = |p: Vector3<f32>| w.matrix.transform_point(&p.into()).coords;
+    Ok(match method {
+        1 => Shape::Sphere { center: w.position(), radius: h.ent(e)?.radius.0 },
+        3 => {
+            let b = match h.ent(e)?.col_box {
+                Some(b) => b,
+                None => {
+                    // default to the mesh bounds (or a 2x2x2 box for non-meshes)
+                    let tris = h.mesh_triangles(e)?;
+                    match crate::model::bounds(&tris) {
+                        Some((lo, hi)) => [lo.x, lo.y, lo.z, hi.x - lo.x, hi.y - lo.y, hi.z - lo.z],
+                        None => [-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
+                    }
+                }
+            };
+            Shape::Triangles(box_triangles(b, to_world))
+        }
+        _ => Shape::Triangles(h.mesh_triangles(e)?.into_iter().map(|t| t.map(to_world)).collect()),
+    })
+}
+
+/// `UpdateWorld`: moves every collision source from where it was at the
+/// previous update to where it is now, resolving collisions on the way.
+fn update_world(h: &mut Host3D) -> Result<(), String> {
+    use crate::collision::{collide_and_slide, Obstacle, Shape};
+    let rules = h.world.collision_rules.clone();
+    let typed: Vec<(i32, i32, bool)> =
+        h.entities().filter(|(_, e)| e.col_type != 0).map(|(i, e)| (i, e.col_type, e.hidden)).collect();
+    for (_, e) in h.entities_mut() {
+        e.contacts.clear();
+    }
+    let mut shape_cache: std::collections::HashMap<(i32, i32), Shape> = Default::default();
+    for &(src, src_type, hidden) in &typed {
+        let my_rules: Vec<_> = rules.iter().filter(|r| r.0 == src_type).collect();
+        if my_rules.is_empty() || hidden {
+            continue;
+        }
+        let now = h.world_of(src)?.position();
+        let start = h.ent(src)?.last_pos.unwrap_or(now);
+        if (now - start).norm_squared() < 1e-12 {
+            continue;
+        }
+        let mut obstacles = Vec::new();
+        for r in my_rules {
+            for &(dst, dst_type, dst_hidden) in &typed {
+                if dst == src || dst_type != r.1 || dst_hidden {
+                    continue;
+                }
+                let shape = match shape_cache.get(&(dst, r.2)) {
+                    Some(s) => s.clone(),
+                    None => {
+                        let s = collision_shape(h, dst, r.2)?;
+                        shape_cache.insert((dst, r.2), s.clone());
+                        s
+                    }
+                };
+                obstacles.push(Obstacle { entity: dst, response: r.3, shape });
+            }
+        }
+        let (rx, ry) = h.ent(src)?.radius;
+        let (end, contacts) = collide_and_slide(start, now, Vector3::new(rx, ry, rx), &obstacles);
+        if !contacts.is_empty() {
+            set_world_position(h, src, end)?;
+            // the source moved: cached shapes of it are stale
+            shape_cache.retain(|k, _| k.0 != src);
+        }
+        h.ent_mut(src)?.contacts = contacts;
+    }
+    for &(e, _, _) in &typed {
+        let p = h.world_of(e)?.position();
+        h.ent_mut(e)?.last_pos = Some(p);
+    }
+    Ok(())
+}
+
 fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
     usize::try_from(f - 1)
         .ok()
@@ -161,6 +254,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%GraphicsHeight", |h, _, _| int(h.world.height as i32)),
     ("UpdateWorld#elapsed_time=1", |h, _, _| {
         h.scene()?;
+        update_world(h)?;
         VOID
     }),
     ("RenderWorld#tween=1", |h, _, ctx| {
@@ -564,6 +658,76 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%StringWidth$string", |h, a, _| int(h.world.canvas.font.width(&a[0].str()).ceil() as i32)),
     ("%StringHeight$string", |h, _, _| int(h.world.canvas.font.height() as i32)),
     // ---- input (bbinput.cpp)
+    // ---- collisions
+    ("EntityType%entity%collision_type%recursive=0", |h, a, _| {
+        let (e, t) = (a[0].int(), a[1].int());
+        let mut stack = vec![e];
+        while let Some(i) = stack.pop() {
+            let pos = h.world_of(i)?.position();
+            let ent = h.ent_mut(i)?;
+            ent.col_type = t;
+            ent.last_pos = Some(pos);
+            if a[2].int() != 0 {
+                stack.extend(ent.children.iter().map(|&c| c as i32));
+            }
+        }
+        VOID
+    }),
+    ("%GetEntityType%entity", |h, a, _| int(h.ent(a[0].int())?.col_type)),
+    ("EntityRadius%entity#x_radius#y_radius=0", |h, a, _| {
+        let rx = a[1].float().abs();
+        let ry = if a[2].float() == 0.0 { rx } else { a[2].float().abs() };
+        h.ent_mut(a[0].int())?.radius = (rx.max(1e-4), ry.max(1e-4));
+        VOID
+    }),
+    ("EntityBox%entity#x#y#z#width#height#depth", |h, a, _| {
+        let b = [a[1].float(), a[2].float(), a[3].float(), a[4].float(), a[5].float(), a[6].float()];
+        h.ent_mut(a[0].int())?.col_box = Some(b);
+        VOID
+    }),
+    ("Collisions%src_type%dest_type%method%response", |h, a, _| {
+        let (src, dst, method) = (a[0].int(), a[1].int(), a[2].int());
+        if !(1..=3).contains(&method) {
+            return Err(format!("Collisions method must be 1 (sphere), 2 (polygon) or 3 (box), got {method}"));
+        }
+        let response = crate::collision::Response::from_blitz(a[3].int());
+        let rules = &mut h.world.collision_rules;
+        // a later rule for the same pair replaces the earlier one
+        rules.retain(|r| !(r.0 == src && r.1 == dst));
+        rules.push((src, dst, method, response));
+        VOID
+    }),
+    ("ClearCollisions", |h, _, _| {
+        h.world.collision_rules.clear();
+        VOID
+    }),
+    ("ResetEntity%entity", |h, a, _| {
+        let e = a[0].int();
+        let pos = h.world_of(e)?.position();
+        let ent = h.ent_mut(e)?;
+        ent.last_pos = Some(pos);
+        ent.contacts.clear();
+        VOID
+    }),
+    ("%EntityCollided%entity%type", |h, a, _| {
+        let t = a[1].int();
+        let contacts = h.ent(a[0].int())?.contacts.clone();
+        for c in contacts {
+            if h.ent(c.entity).is_ok_and(|e| e.col_type == t) {
+                return int(c.entity);
+            }
+        }
+        int(0)
+    }),
+    ("%CountCollisions%entity", |h, a, _| int(h.ent(a[0].int())?.contacts.len() as i32)),
+    ("#CollisionX%entity%index", |h, a, _| contact(h, a, |c| c.point.x)),
+    ("#CollisionY%entity%index", |h, a, _| contact(h, a, |c| c.point.y)),
+    ("#CollisionZ%entity%index", |h, a, _| contact(h, a, |c| c.point.z)),
+    ("#CollisionNX%entity%index", |h, a, _| contact(h, a, |c| c.normal.x)),
+    ("#CollisionNY%entity%index", |h, a, _| contact(h, a, |c| c.normal.y)),
+    ("#CollisionNZ%entity%index", |h, a, _| contact(h, a, |c| c.normal.z)),
+    ("#CollisionTime%entity%index", |h, a, _| contact(h, a, |c| c.time)),
+    ("%CollisionEntity%entity%index", |h, a, _| int(nth_contact(h, a)?.entity)),
     ("%KeyDown%key", |h, a, _| int(h.input.key_down(a[0].int()) as i32)),
     ("%KeyHit%key", |h, a, _| int(h.input.key_hit(a[0].int()))),
     ("%GetKey", |h, _, _| int(h.input.get_key())),

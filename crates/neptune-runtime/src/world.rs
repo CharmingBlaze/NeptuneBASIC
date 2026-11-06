@@ -67,6 +67,16 @@ pub struct Entity {
     /// False while the entity's materials are shared (loaded models, copies);
     /// they are cloned before the first per-entity change.
     pub own_materials: bool,
+    /// Collision type (`EntityType`), 0 = none.
+    pub col_type: i32,
+    /// Ellipsoid radii (x/z, y) used when this entity moves or is hit as a sphere.
+    pub radius: (f32, f32),
+    /// Collision box `(x, y, z, width, height, depth)` in local space.
+    pub col_box: Option<[f32; 6]>,
+    /// World position at the last `UpdateWorld`/`ResetEntity`.
+    pub last_pos: Option<Vector3<f32>>,
+    /// Contacts found by the last `UpdateWorld`.
+    pub contacts: Vec<crate::collision::Contact>,
 }
 
 /// Program-visible state that persists across frames.
@@ -87,6 +97,8 @@ pub struct World {
     /// 2D drawing (Text, fonts, colours).
     pub canvas: Canvas2D,
     pub textures: Vec<Option<TextureInfo>>,
+    /// `Collisions` rules: (source type, destination type, method, response).
+    pub collision_rules: Vec<(i32, i32, i32, crate::collision::Response)>,
 }
 
 impl Default for World {
@@ -105,6 +117,7 @@ impl Default for World {
             ambient: Color::opaque(127, 127, 127),
             canvas: Canvas2D::default(),
             textures: Vec::new(),
+            collision_rules: Vec::new(),
         }
     }
 }
@@ -254,6 +267,11 @@ impl<'a> Host3D<'a> {
             hidden: false,
             texture: 0,
             own_materials: true,
+            col_type: 0,
+            radius: (1.0, 1.0),
+            col_box: None,
+            last_pos: None,
+            contacts: Vec::new(),
         };
         let id = match self.world.free.pop() {
             Some(i) => {
@@ -371,6 +389,10 @@ impl<'a> Host3D<'a> {
             let e = self.ent(id)?;
             (e.node, e.kind, e.xf, e.name.clone(), e.color, e.hidden, e.texture, e.children.clone())
         };
+        let src_col = {
+            let e = self.ent(id)?;
+            (e.col_type, e.radius, e.col_box)
+        };
         let child_nodes: std::collections::HashSet<Handle<Node>> =
             children.iter().filter_map(|&c| self.ent(c as i32).ok().map(|e| e.node)).collect();
         // the light node of a light entity is a plain child, so it is copied along
@@ -392,6 +414,9 @@ impl<'a> Host3D<'a> {
             e.hidden = hidden;
             e.texture = texture;
             e.own_materials = false;
+            e.col_type = src_col.0;
+            e.radius = src_col.1;
+            e.col_box = src_col.2;
         }
         // the copy shares materials with the original, so neither owns them now
         self.ent_mut(id)?.own_materials = false;
@@ -456,6 +481,10 @@ impl<'a> Host3D<'a> {
             mesh.set_render_path(if blend { RenderPath::Forward } else { RenderPath::Deferred });
         }
         Ok(())
+    }
+
+    pub fn entities_mut(&mut self) -> impl Iterator<Item = (i32, &mut Entity)> {
+        self.world.entities.iter_mut().enumerate().filter_map(|(i, e)| e.as_mut().map(|e| (i as i32 + 1, e)))
     }
 
     pub fn entities(&self) -> impl Iterator<Item = (i32, &Entity)> {
@@ -541,7 +570,9 @@ pub fn primitive(kind: &str, segments: i32, solid: bool) -> SurfaceData {
     let seg = segments.clamp(3, 100) as usize;
     match kind {
         "cube" => SurfaceData::make_cube(Matrix4::new_scaling(2.0)),
-        "sphere" => SurfaceData::make_sphere(seg * 2, seg, 1.0, &Matrix4::identity()),
+        // Fyrox derives the latitude step from `slices` but iterates `stacks`,
+        // so the two must match for a closed sphere.
+        "sphere" => SurfaceData::make_sphere(seg * 2, seg * 2, 1.0, &Matrix4::identity()),
         "cylinder" => SurfaceData::make_cylinder(seg, 1.0, 2.0, solid, &Matrix4::new_translation(&Vector3::new(0.0, -1.0, 0.0))),
         "cone" => SurfaceData::make_cone(seg, 1.0, 2.0, &Matrix4::new_translation(&Vector3::new(0.0, -1.0, 0.0))),
         _ => {

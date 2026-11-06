@@ -1,0 +1,72 @@
+; Collisions: a ball you can roll around and jump, with gravity,
+; sliding against crates and walking up a ramp.
+; Arrow keys / WASD move, Space jumps, Escape quits.
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Collisions"
+
+Const TYPE_PLAYER = 1, TYPE_WORLD = 2
+
+camera = CreateCamera()
+light = CreateLight()
+RotateEntity light, 60, 30, 0
+
+ground = CreatePlane()
+EntityTexture ground, LoadTexture("examples/media/checker.png")
+ScaleTexture 1, 2, 2
+EntityType ground, TYPE_WORLD
+
+; a ring of crates
+For i = 0 To 7
+    crate = CreateCube()
+    EntityColor crate, 200, 140, 60
+    PositionEntity crate, Sin(i * 45) * 8, 1, Cos(i * 45) * 8
+    EntityType crate, TYPE_WORLD
+Next
+
+; a ramp to walk up
+ramp = CreateCube()
+ScaleEntity ramp, 2, 0.2, 5
+RotateEntity ramp, -20, 0, 0
+PositionEntity ramp, 0, 1.2, 3
+EntityColor ramp, 120, 120, 140
+EntityType ramp, TYPE_WORLD
+
+player = CreateSphere(16)
+EntityColor player, 230, 60, 60
+EntityRadius player, 0.5
+ScaleEntity player, 0.5, 0.5, 0.5
+PositionEntity player, 0, 2, -4
+EntityType player, TYPE_PLAYER
+
+Collisions TYPE_PLAYER, TYPE_WORLD, 2, 3   ; ellipsoid vs polygons, slide without slipping down slopes
+
+vy# = 0
+While Not KeyHit(KEY_ESCAPE)
+    speed# = 0.12
+    If KeyDown(KEY_LEFT) Or KeyDown(KEY_A) Then TranslateEntity player, -speed, 0, 0
+    If KeyDown(KEY_RIGHT) Or KeyDown(KEY_D) Then TranslateEntity player, speed, 0, 0
+    If KeyDown(KEY_UP) Or KeyDown(KEY_W) Then TranslateEntity player, 0, 0, speed
+    If KeyDown(KEY_DOWN) Or KeyDown(KEY_S) Then TranslateEntity player, 0, 0, -speed
+
+    vy = vy - 0.01                     ; gravity
+    TranslateEntity player, 0, vy, 0
+    UpdateWorld
+
+    onGround = False
+    For c = 1 To CountCollisions(player)
+        If CollisionNY(player, c) > 0.5 Then onGround = True
+    Next
+    If onGround Then
+        vy = 0
+        If KeyHit(KEY_SPACE) Then vy = 0.25
+    End If
+
+    PositionEntity camera, EntityX(player), EntityY(player) + 6, EntityZ(player) - 10
+    PointEntity camera, player
+
+    RenderWorld
+    Text 10, 10, "Arrows/WASD move, Space jumps"
+    Text 10, 30, $"Position {FormatFloat(EntityX(player), 1)}, {FormatFloat(EntityY(player), 1)}, {FormatFloat(EntityZ(player), 1)}   on ground: {onGround}"
+    Flip
+Wend
+End
