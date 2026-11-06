@@ -121,6 +121,9 @@ pub struct World {
     pub picked: Option<crate::pick::PickHit>,
     /// Result of the last `CameraProject`.
     pub projected: (f32, f32, f32),
+    /// Surfaces opened with `CreateSurface`/`GetSurface` and their CPU geometry.
+    pub surfaces: Vec<Option<crate::mesh::SurfaceInfo>>,
+    pub brushes: Vec<Option<crate::mesh::Brush>>,
     /// Fog and other settings shared by every classic material.
     pub classic: crate::classic::Globals,
     /// `Collisions` rules: (source type, destination type, method, response).
@@ -149,6 +152,8 @@ impl Default for World {
             projected: (0.0, 0.0, 0.0),
             collision_rules: Vec::new(),
             classic: Default::default(),
+            surfaces: Vec::new(),
+            brushes: Vec::new(),
         }
     }
 }
@@ -199,6 +204,7 @@ impl<'a> Host3D<'a> {
 
     /// Triangles of an entity's own meshes in its local Blitz space.
     pub fn mesh_triangles(&mut self, id: i32) -> Result<Vec<[Vector3<f32>; 3]>, String> {
+        self.flush_meshes()?;
         let node = self.ent(id)?.node;
         let skip = self.other_entity_nodes(id);
         Ok(crate::model::triangles(self.graph()?, node, &skip))
@@ -210,6 +216,10 @@ impl<'a> Host3D<'a> {
 
     pub fn scene(&mut self) -> Result<&mut Scene, String> {
         self.scene.as_deref_mut().ok_or_else(|| "Graphics3D must be called before using 3D commands".to_string())
+    }
+
+    pub fn scene_opt(&mut self) -> Option<&mut Scene> {
+        self.scene.as_deref_mut()
     }
 
     pub fn graph(&mut self) -> Result<&mut Graph, String> {
@@ -351,6 +361,7 @@ impl<'a> Host3D<'a> {
             }
         }
         self.graph()?.remove_node(node);
+        self.prune_surfaces();
         Ok(())
     }
 

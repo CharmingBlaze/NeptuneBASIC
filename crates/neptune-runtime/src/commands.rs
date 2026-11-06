@@ -33,6 +33,16 @@ fn color(a: &[Value], i: usize) -> Color {
     Color::opaque(c(&a[i]), c(&a[i + 1]), c(&a[i + 2]))
 }
 
+/// Clear colours are written to the linear HDR frame; programs give sRGB.
+fn srgb_to_linear(c: Color) -> Color {
+    let f = |v: u8| {
+        let x = v as f32 / 255.0;
+        let l = if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
+        (l * 255.0).round() as u8
+    };
+    Color::from_rgba(f(c.r), f(c.g), f(c.b), c.a)
+}
+
 fn create(h: &mut Host3D, kind: &str, segments: i32, solid: bool, parent: i32) -> Result<Value, String> {
     h.scene()?;
     let name = match kind {
@@ -214,6 +224,7 @@ fn pick_line(
     exclude: &[i32],
     obscurers_only: bool,
 ) -> Result<Option<crate::pick::PickHit>, String> {
+    h.flush_meshes()?;
     let candidates: Vec<(i32, i32)> = h
         .entities()
         .filter(|(i, e)| e.pick_mode != 0 && !e.hidden && !exclude.contains(i) && (!obscurers_only || e.obscurer))
@@ -323,6 +334,49 @@ fn modify_texture(h: &mut Host3D, t: i32, f: impl FnOnce(&mut crate::texture::Te
         h.refresh_material(e)?;
     }
     VOID
+}
+
+fn vfloat(h: &Host3D, a: &[Value], f: impl Fn(&crate::mesh::Vert) -> f32) -> Result<Value, String> {
+    float(f(&h.vertex(a[0].int(), a[1].int())?))
+}
+
+fn coord_set(a: &[Value], i: usize) -> usize {
+    a[i].int().clamp(0, 1) as usize
+}
+
+/// Sets one brush field and refreshes the surfaces painted with it.
+fn modify_brush(h: &mut Host3D, b: i32, f: impl FnOnce(&mut crate::mesh::Brush)) -> Result<Value, String> {
+    f(h.brush_mut(b)?);
+    for e in h.brush_users(b) {
+        h.refresh_material(e)?;
+    }
+    VOID
+}
+
+/// Copies a brush's settings onto an entity (`PaintEntity`/`PaintMesh`).
+fn paint_entity(h: &mut Host3D, e: i32, b: i32) -> Result<Value, String> {
+    let brush = h.brush(b)?.clone();
+    let ent = h.ent_mut(e)?;
+    ent.color = brush.color;
+    ent.shininess = brush.shininess;
+    ent.textures = brush.textures;
+    ent.blend = brush.blend;
+    ent.fx = brush.fx;
+    h.refresh_material(e)?;
+    VOID
+}
+
+/// Copies the surfaces of `src` into mesh `dst`.
+fn append_surfaces(h: &mut Host3D, src: i32, dst: i32) -> Result<(), String> {
+    for s in h.all_surfaces(src)? {
+        let info = h.surface(s)?.clone();
+        let ns = h.create_surface(dst, info.brush)?;
+        h.edit_surface(ns, |d| {
+            d.verts = info.verts;
+            d.tris = info.tris;
+        })?;
+    }
+    Ok(())
 }
 
 fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
@@ -475,11 +529,13 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%GraphicsHeight", |h, _, _| int(h.world.height as i32)),
     ("UpdateWorld#elapsed_time=1", |h, _, _| {
         h.scene()?;
+        h.flush_meshes()?;
         update_world(h)?;
         VOID
     }),
     ("RenderWorld#tween=1", |h, _, ctx| {
         h.scene()?;
+        h.flush_meshes()?;
         // A program that renders repeatedly without Flip still needs frames shown.
         if h.world.renders > h.world.renders_at_flip {
             h.world.canvas.flip();
@@ -515,6 +571,254 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.scene()?.rendering_options.get_value_mut_silent().polygon_rasterization_mode =
             if a[0].int() != 0 { PolygonFillMode::Line } else { PolygonFillMode::Fill };
         VOID
+    }),
+    // ---- custom meshes (Blitz3D mesh/surface commands)
+    ("%CreateMesh%brush=0%parent=0", |h, a, _| {
+        h.scene()?;
+        let id = h.add_entity(crate::mesh::empty_mesh_node(), Kind::Mesh, a[1].int())?;
+        if a[0].int() != 0 {
+            paint_entity(h, id, a[0].int())?;
+        }
+        int(id)
+    }),
+    ("%CreateSurface%mesh%brush=0", |h, a, _| int(h.create_surface(a[0].int(), a[1].int())?)),
+    ("%CountSurfaces%mesh", |h, a, _| int(h.count_surfaces(a[0].int())? as i32)),
+    ("%GetSurface%mesh%index", |h, a, _| {
+        let (m, i) = (a[0].int(), a[1].int());
+        let n = h.count_surfaces(m)?;
+        if i < 1 || i as usize > n {
+            return Err(format!("GetSurface index {i} out of range (mesh has {n} surfaces)"));
+        }
+        int(h.surface_handle(m, i as usize - 1)?)
+    }),
+    ("%AddVertex%surface#x#y#z#u=0#v=0#w=1", |h, a, _| {
+        let uv = [a[4].float(), a[5].float(), a[6].float()];
+        let v = crate::mesh::Vert { pos: v3(a, 1), uv: [uv, uv], ..Default::default() };
+        int(h.edit_surface(a[0].int(), |s| {
+            s.verts.push(v);
+            s.verts.len() as i32 - 1
+        })?)
+    }),
+    ("%AddTriangle%surface%v0%v1%v2", |h, a, _| {
+        let s = a[0].int();
+        let n = h.surface(s)?.verts.len() as i32;
+        let t = [a[1].int(), a[2].int(), a[3].int()];
+        if let Some(bad) = t.iter().find(|&&i| i < 0 || i >= n) {
+            return Err(format!("AddTriangle vertex {bad} out of range (surface has {n} vertices)"));
+        }
+        int(h.edit_surface(s, |info| {
+            info.tris.push(t.map(|i| i as u32));
+            info.tris.len() as i32 - 1
+        })?)
+    }),
+    ("ClearSurface%surface%clear_vertices=1%clear_triangles=1", |h, a, _| {
+        let (cv, ct) = (a[1].int() != 0, a[2].int() != 0);
+        h.edit_surface(a[0].int(), |s| {
+            if cv {
+                s.verts.clear();
+                s.tris.clear();
+            }
+            if ct {
+                s.tris.clear();
+            }
+        })?;
+        VOID
+    }),
+    ("%CountVertices%surface", |h, a, _| int(h.surface(a[0].int())?.verts.len() as i32)),
+    ("%CountTriangles%surface", |h, a, _| int(h.surface(a[0].int())?.tris.len() as i32)),
+    ("%TriangleVertex%surface%triangle%corner", |h, a, _| {
+        let s = h.surface(a[0].int())?;
+        let (t, c) = (a[1].int(), a[2].int());
+        let tri = usize::try_from(t).ok().and_then(|t| s.tris.get(t)).ok_or_else(|| format!("triangle {t} out of range"))?;
+        let c = usize::try_from(c).ok().filter(|&c| c < 3).ok_or_else(|| format!("triangle corner must be 0-2, got {c}"))?;
+        int(tri[c] as i32)
+    }),
+    ("VertexCoords%surface%index#x#y#z", |h, a, _| {
+        let p = v3(a, 2);
+        h.edit_vertex(a[0].int(), a[1].int(), |v| v.pos = p)?;
+        VOID
+    }),
+    ("VertexNormal%surface%index#nx#ny#nz", |h, a, _| {
+        let n = v3(a, 2);
+        h.edit_vertex(a[0].int(), a[1].int(), |v| v.normal = n)?;
+        VOID
+    }),
+    ("VertexColor%surface%index#red#green#blue#alpha=1", |h, a, _| {
+        let c = [a[2].float() / 255.0, a[3].float() / 255.0, a[4].float() / 255.0, a[5].float()];
+        h.edit_vertex(a[0].int(), a[1].int(), |v| v.color = c)?;
+        VOID
+    }),
+    ("VertexTexCoords%surface%index#u#v#w=1%coord_set=0", |h, a, _| {
+        let set = coord_set(a, 5);
+        let uv = [a[2].float(), a[3].float(), a[4].float()];
+        h.edit_vertex(a[0].int(), a[1].int(), |v| v.uv[set] = uv)?;
+        VOID
+    }),
+    ("#VertexX%surface%index", |h, a, _| vfloat(h, a, |v| v.pos.x)),
+    ("#VertexY%surface%index", |h, a, _| vfloat(h, a, |v| v.pos.y)),
+    ("#VertexZ%surface%index", |h, a, _| vfloat(h, a, |v| v.pos.z)),
+    ("#VertexNX%surface%index", |h, a, _| vfloat(h, a, |v| v.normal.x)),
+    ("#VertexNY%surface%index", |h, a, _| vfloat(h, a, |v| v.normal.y)),
+    ("#VertexNZ%surface%index", |h, a, _| vfloat(h, a, |v| v.normal.z)),
+    ("#VertexRed%surface%index", |h, a, _| vfloat(h, a, |v| v.color[0] * 255.0)),
+    ("#VertexGreen%surface%index", |h, a, _| vfloat(h, a, |v| v.color[1] * 255.0)),
+    ("#VertexBlue%surface%index", |h, a, _| vfloat(h, a, |v| v.color[2] * 255.0)),
+    ("#VertexAlpha%surface%index", |h, a, _| vfloat(h, a, |v| v.color[3])),
+    ("#VertexU%surface%index%coord_set=0", |h, a, _| {
+        let set = coord_set(a, 2);
+        vfloat(h, a, |v| v.uv[set][0])
+    }),
+    ("#VertexV%surface%index%coord_set=0", |h, a, _| {
+        let set = coord_set(a, 2);
+        vfloat(h, a, |v| v.uv[set][1])
+    }),
+    ("#VertexW%surface%index%coord_set=0", |h, a, _| {
+        let set = coord_set(a, 2);
+        vfloat(h, a, |v| v.uv[set][2])
+    }),
+    ("UpdateNormals%mesh", |h, a, _| {
+        for s in h.all_surfaces(a[0].int())? {
+            h.edit_surface(s, |info| crate::mesh::smooth_normals(&mut info.verts, &info.tris))?;
+        }
+        VOID
+    }),
+    ("FlipMesh%mesh", |h, a, _| {
+        for s in h.all_surfaces(a[0].int())? {
+            h.edit_surface(s, |info| {
+                for t in &mut info.tris {
+                    t.swap(1, 2);
+                }
+                for v in &mut info.verts {
+                    v.normal = -v.normal;
+                }
+            })?;
+        }
+        VOID
+    }),
+    ("ScaleMesh%mesh#x_scale#y_scale#z_scale", |h, a, _| {
+        let s = v3(a, 1);
+        let inv = Vector3::new(1.0 / s.x, 1.0 / s.y, 1.0 / s.z);
+        h.transform_mesh(a[0].int(), |v| {
+            v.pos.component_mul_assign(&s);
+            v.normal = v.normal.component_mul(&inv).try_normalize(1e-12).unwrap_or(v.normal);
+        })?;
+        VOID
+    }),
+    ("PositionMesh%mesh#x#y#z", |h, a, _| {
+        let d = v3(a, 1);
+        h.transform_mesh(a[0].int(), |v| v.pos += d)?;
+        VOID
+    }),
+    ("RotateMesh%mesh#pitch#yaw#roll", |h, a, _| {
+        h.rotate_mesh(a[0].int(), rotation(a[1].float(), a[2].float(), a[3].float()))?;
+        VOID
+    }),
+    ("FitMesh%mesh#x#y#z#width#height#depth%uniform=0", |h, a, _| {
+        let m = a[0].int();
+        let Some((lo, hi)) = h.mesh_bounds(m)? else { return VOID };
+        let size = hi - lo;
+        let target = v3(a, 4);
+        let fit = |s: f32, t: f32| if s > 1e-9 { t / s } else { 1.0 };
+        let mut scale = Vector3::new(fit(size.x, target.x), fit(size.y, target.y), fit(size.z, target.z));
+        if a[7].int() != 0 {
+            let s = scale.x.min(scale.y).min(scale.z);
+            scale = Vector3::new(s, s, s);
+        }
+        // centred within the box when scaled uniformly
+        let offset = v3(a, 1) + (target - size.component_mul(&scale)) / 2.0;
+        h.transform_mesh(m, |v| v.pos = (v.pos - lo).component_mul(&scale) + offset)?;
+        VOID
+    }),
+    ("AddMesh%source_mesh%dest_mesh", |h, a, _| {
+        append_surfaces(h, a[0].int(), a[1].int())?;
+        VOID
+    }),
+    ("%CopyMesh%mesh%parent=0", |h, a, _| {
+        h.scene()?;
+        let new = h.add_entity(crate::mesh::empty_mesh_node(), Kind::Mesh, a[1].int())?;
+        append_surfaces(h, a[0].int(), new)?;
+        int(new)
+    }),
+    // ---- brushes
+    ("%CreateBrush#red=255#green=255#blue=255", |h, a, _| {
+        let b = crate::mesh::Brush { color: color(a, 0), ..Default::default() };
+        h.world.brushes.push(Some(b));
+        int(h.world.brushes.len() as i32)
+    }),
+    ("%LoadBrush$file%flags=1#u_scale=1#v_scale=1", |h, a, _| match crate::texture::load(&a[0].str(), a[1].int()) {
+        Ok(mut t) => {
+            t.scale_u = a[2].float();
+            t.scale_v = a[3].float();
+            h.world.textures.push(Some(t));
+            let mut b = crate::mesh::Brush::default();
+            b.textures[0] = h.world.textures.len() as i32;
+            h.world.brushes.push(Some(b));
+            int(h.world.brushes.len() as i32)
+        }
+        Err(_) => int(0),
+    }),
+    ("FreeBrush%brush", |h, a, _| {
+        h.brush(a[0].int())?;
+        h.world.brushes[a[0].int() as usize - 1] = None;
+        VOID
+    }),
+    ("BrushColor%brush#red#green#blue", |h, a, _| {
+        let c = color(a, 1);
+        modify_brush(h, a[0].int(), |b| b.color = Color::from_rgba(c.r, c.g, c.b, b.color.a))
+    }),
+    ("BrushAlpha%brush#alpha", |h, a, _| {
+        let al = (a[1].float().clamp(0.0, 1.0) * 255.0) as u8;
+        modify_brush(h, a[0].int(), |b| b.color.a = al)
+    }),
+    ("BrushShininess%brush#shininess", |h, a, _| {
+        let s = a[1].float().clamp(0.0, 1.0);
+        modify_brush(h, a[0].int(), |b| b.shininess = s)
+    }),
+    ("BrushTexture%brush%texture%frame=0%index=0", |h, a, _| {
+        let (t, i) = (a[1].int(), a[3].int());
+        if t != 0 {
+            h.texture(t)?;
+        }
+        if !(0..crate::classic::MAX_LAYERS as i32).contains(&i) {
+            return Err(format!("BrushTexture index must be 0-{}, got {i}", crate::classic::MAX_LAYERS - 1));
+        }
+        modify_brush(h, a[0].int(), |b| b.textures[i as usize] = t)
+    }),
+    ("BrushBlend%brush%blend", |h, a, _| {
+        let m = a[1].int().clamp(1, 3);
+        modify_brush(h, a[0].int(), |b| b.blend = m)
+    }),
+    ("BrushFX%brush%fx", |h, a, _| {
+        let f = a[1].int() & 63;
+        modify_brush(h, a[0].int(), |b| b.fx = f)
+    }),
+    ("PaintSurface%surface%brush", |h, a, _| {
+        let (s, b) = (a[0].int(), a[1].int());
+        if b != 0 {
+            h.brush(b)?;
+        }
+        let e = {
+            let info = h.surface_mut(s)?;
+            info.brush = b;
+            info.entity
+        };
+        h.refresh_material(e)?;
+        VOID
+    }),
+    ("PaintEntity%entity%brush", |h, a, _| paint_entity(h, a[0].int(), a[1].int())),
+    ("PaintMesh%mesh%brush", |h, a, _| paint_entity(h, a[0].int(), a[1].int())),
+    ("%GetSurfaceBrush%surface", |h, a, _| {
+        // Blitz returns a new brush copied from the surface
+        let b = h.surface(a[0].int())?.brush;
+        let brush = if b != 0 { h.brush(b)?.clone() } else { crate::mesh::Brush::default() };
+        h.world.brushes.push(Some(brush));
+        int(h.world.brushes.len() as i32)
+    }),
+    ("%GetEntityBrush%entity", |h, a, _| {
+        let e = h.ent(a[0].int())?;
+        let brush = crate::mesh::Brush { color: e.color, shininess: e.shininess, textures: e.textures, blend: e.blend, fx: e.fx };
+        h.world.brushes.push(Some(brush));
+        int(h.world.brushes.len() as i32)
     }),
     // ---- entity creation
     ("%CreatePivot%parent=0", |h, a, _| {
@@ -781,7 +1085,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("CameraClsColor%camera#red#green#blue", |h, a, _| {
         camera_mut(h, a[0].int())?;
         let c = color(a, 1);
-        h.scene()?.rendering_options.get_value_mut_silent().clear_color = Some(c);
+        h.scene()?.rendering_options.get_value_mut_silent().clear_color = Some(srgb_to_linear(c));
         VOID
     }),
     ("CameraRange%camera#near#far", |h, a, _| {
@@ -921,7 +1225,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         // without a camera, Cls is what defines the background
         if !h.entities().any(|(_, e)| matches!(e.kind, Kind::Camera { .. })) {
             let c = h.world.canvas.cls_color;
-            h.scene()?.rendering_options.get_value_mut_silent().clear_color = Some(c);
+            h.scene()?.rendering_options.get_value_mut_silent().clear_color = Some(srgb_to_linear(c));
         }
         VOID
     }),

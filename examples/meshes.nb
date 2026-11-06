@@ -1,0 +1,69 @@
+; Custom meshes: surfaces, vertices, vertex colours, brushes, mesh transforms.
+; Run from the repository root: neptune run examples/meshes.nb
+
+Graphics3D 1280, 720
+SetWindowTitle "Custom meshes"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 3, -8
+CameraLookAt camera, 0, 0.5, 0
+CameraClsColor camera, 30, 30, 40
+
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.3, -1, 0.6
+
+; a quad with a different colour at each corner (vertex colours need FX 2)
+quad = CreateMesh()
+s = CreateSurface(quad)
+AddVertex s, -1, 1, 0, 0, 0
+AddVertex s, 1, 1, 0, 1, 0
+AddVertex s, 1, -1, 0, 1, 1
+AddVertex s, -1, -1, 0, 0, 1
+VertexColor s, 0, 255, 0, 0
+VertexColor s, 1, 0, 255, 0
+VertexColor s, 2, 0, 0, 255
+VertexColor s, 3, 255, 255, 0
+AddTriangle s, 0, 1, 2
+AddTriangle s, 0, 2, 3
+UpdateNormals quad
+EntityFX quad, FX_FULLBRIGHT + FX_VERTEXCOLOR
+PositionEntity quad, -3, 1, 0
+
+; a pyramid built from triangles, painted with a brush
+pyr = CreateMesh()
+s2 = CreateSurface(pyr)
+AddVertex s2, 0, 1, 0
+AddVertex s2, -1, -1, -1
+AddVertex s2, 1, -1, -1
+AddVertex s2, 1, -1, 1
+AddVertex s2, -1, -1, 1
+AddTriangle s2, 0, 2, 1
+AddTriangle s2, 0, 3, 2
+AddTriangle s2, 0, 4, 3
+AddTriangle s2, 0, 1, 4
+UpdateNormals pyr
+brush = CreateBrush(255, 160, 40)
+BrushShininess brush, 0.8
+PaintSurface s2, brush
+PositionEntity pyr, 0, 1, 0
+
+; edit a primitive's vertices: squash the top of a sphere
+ball = CreateSphere(16)
+FitMesh ball, -0.75, -0.75, -0.75, 1.5, 1.5, 1.5
+bs = GetSurface(ball, 1)
+For i = 0 To CountVertices(bs) - 1
+    If VertexY(bs, i) > 0.3 Then VertexCoords bs, i, VertexX(bs, i), 0.3, VertexZ(bs, i)
+Next
+UpdateNormals ball
+EntityColor ball, 80, 200, 255
+PositionEntity ball, 3, 1, 0
+
+While Not KeyDown(KEY_ESCAPE)
+    TurnEntity pyr, 0, 1, 0
+    TurnEntity ball, 0, -0.7, 0
+    RenderWorld
+    Text 10, 10, "vertex colours | brush + shininess | edited sphere"
+    Text 10, 30, $"pyramid: {CountVertices(s2)} vertices, {CountTriangles(s2)} triangles"
+    Flip
+Wend
+End

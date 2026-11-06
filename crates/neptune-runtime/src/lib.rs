@@ -17,6 +17,7 @@ pub mod draw2d;
 pub mod image2d;
 pub mod input;
 pub mod material;
+pub mod mesh;
 pub mod model;
 pub mod pick;
 pub mod texture;

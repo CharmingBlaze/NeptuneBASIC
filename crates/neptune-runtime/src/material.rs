@@ -3,7 +3,7 @@
 
 use fyrox::{
     asset::untyped::ResourceKind,
-    core::{algebra::Vector2, pool::Handle, uuid::Uuid},
+    core::{algebra::Vector2, color::Color, pool::Handle, uuid::Uuid},
     material::{Material, MaterialResource, MaterialResourceBinding},
     resource::texture::TextureResource,
     scene::{
@@ -42,7 +42,7 @@ impl Host3D<'_> {
         if e.fx != 0 || e.blend != BLEND_ALPHA || e.shininess > 0.0 || e.color.a < 255 || e.order != 0 {
             return Ok(true);
         }
-        if self.world.classic.fog_mode != 0 {
+        if self.world.classic.fog_mode != 0 || self.has_painted_surfaces(id) {
             return Ok(true);
         }
         if e.textures[1..].iter().any(|&t| t != 0) {
@@ -78,9 +78,17 @@ impl Host3D<'_> {
     }
 
     fn layers(&self, id: i32) -> Result<Vec<Layer>, String> {
-        let e = self.ent(id)?;
+        let textures = self.ent(id)?.textures;
+        self.texture_layers(&textures)
+    }
+
+    fn brush_layers(&self, b: &crate::mesh::Brush) -> Result<Vec<Layer>, String> {
+        self.texture_layers(&b.textures)
+    }
+
+    fn texture_layers(&self, textures: &[i32]) -> Result<Vec<Layer>, String> {
         let mut layers = Vec::new();
-        for &t in &e.textures {
+        for &t in textures {
             if t == 0 {
                 continue;
             }
@@ -112,6 +120,19 @@ impl Host3D<'_> {
         let mut originals = Vec::new();
         let mut state = ClassicState { color, shininess, fx, blend, layers, normal_map, alpha_test };
         let transparent = state.transparent();
+        let entity_node = self.ent(id)?.node;
+        let mut brushes = Vec::new();
+        if self.has_painted_surfaces(id) {
+            let count = self.graph()?[entity_node].cast::<Mesh>().map_or(0, |m| m.surfaces().len());
+            for i in 0..count {
+                let b = self.surface_brush(id, i);
+                let layers = match &b {
+                    Some(b) => self.brush_layers(b)?,
+                    None => Vec::new(),
+                };
+                brushes.push(b.map(|b| (b, layers)));
+            }
+        }
         let graph = self.graph()?;
         for n in nodes {
             let Some(mesh) = graph[n].cast_mut::<Mesh>() else { continue };
@@ -123,6 +144,22 @@ impl Host3D<'_> {
                 }
                 // a model's own texture shows when the program set none
                 let mut surface_state = state.clone();
+                if n == entity_node {
+                    if let Some(Some((b, layers))) = brushes.get(i) {
+                        // a painted surface combines its brush with the entity settings
+                        let c = surface_state.color;
+                        let m = |x: u8, y: u8| ((x as u16 * y as u16) / 255) as u8;
+                        surface_state.color = Color::from_rgba(m(c.r, b.color.r), m(c.g, b.color.g), m(c.b, b.color.b), m(c.a, b.color.a));
+                        surface_state.fx |= b.fx;
+                        surface_state.shininess = surface_state.shininess.max(b.shininess);
+                        if b.blend != BLEND_ALPHA {
+                            surface_state.blend = b.blend;
+                        }
+                        if surface_state.layers.is_empty() {
+                            surface_state.layers = layers.clone();
+                        }
+                    }
+                }
                 if surface_state.layers.is_empty() && !is_classic {
                     if let Some(t) = texture_binding(&current.data_ref(), "diffuseTexture") {
                         surface_state.layers.push(Layer {
