@@ -1,0 +1,56 @@
+; Animated models: sequences, Animate modes, FindChild.
+; Run from the repository root: neptune run examples/animation.nb
+; Keys 1-3 switch the fox animation, P toggles ping-pong, Space pauses.
+
+Graphics3D 1280, 720
+SetWindowTitle "Animation"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 2.2, -6
+CameraLookAt camera, 0, 1, 0
+CameraClsColor camera, 40, 50, 70
+
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.4, -1, 0.8
+AmbientLight 90, 90, 100
+
+ground = CreatePlane()
+EntityColor ground, 70, 110, 70
+
+fox = LoadAnimMesh("examples/media/Fox.glb")
+If fox = 0 Then RuntimeError "could not load Fox.glb"
+ScaleEntity fox, 0.025, 0.025, 0.025
+PositionEntity fox, -1.5, 0, 0
+TurnEntity fox, 0, -60, 0
+Animate fox, 1, 1, 0
+
+man = LoadAnimMesh("examples/media/CesiumMan.glb")
+If man = 0 Then RuntimeError "could not load CesiumMan.glb"
+PositionEntity man, 1.5, 0, 0
+Animate man, 1, 1
+
+head = FindChild(fox, "b_Head_05")
+mode = 1
+
+While Not KeyDown(KEY_ESCAPE)
+    For k = 1 To 3
+        If KeyHit(KEY_1 + k - 1) And k <= CountAnimSeqs(fox) Then Animate fox, mode, 1, k - 1
+    Next
+    If KeyHit(KEY_P) Then
+        mode = IIf(mode = 1, 2, 1)
+        Animate fox, mode, 1, AnimSeq(fox)
+    EndIf
+    If KeyHit(KEY_SPACE) Then
+        If Animating(fox) Then SetAnimTime fox, AnimTime(fox), AnimSeq(fox) Else Animate fox, mode, 1, AnimSeq(fox)
+    EndIf
+    UpdateWorld
+    RenderWorld
+    Text 10, 10, $"fox: sequence {AnimSeq(fox) + 1} of {CountAnimSeqs(fox)}, frame {Int(AnimTime(fox))} / {AnimLength(fox)}, mode {mode}"
+    If head Then
+        CameraProject camera, EntityX(head, True), EntityY(head, True), EntityZ(head, True)
+        Text ProjectedX(), ProjectedY() - 30, "head", True
+    EndIf
+    Text 10, 30, "1-3: fox animation   P: loop / ping-pong   Space: pause"
+    Flip
+Wend
+End

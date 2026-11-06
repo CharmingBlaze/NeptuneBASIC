@@ -75,6 +75,13 @@ pub struct Entity {
     pub originals: Vec<(Handle<Node>, usize, MaterialResource)>,
     /// Loaded with `LoadMesh`: surfaces keep the model's own textures.
     pub model: bool,
+    /// Animation playback of a loaded model.
+    pub anim: Option<crate::anim::AnimState>,
+    /// A node inside a loaded model registered by `FindChild`/`GetChild`;
+    /// its transform is read back from the node because animation moves it.
+    pub adopted: bool,
+    /// The model a `LoadMesh` entity was made from (for `CopyEntity`).
+    pub model_res: Option<fyrox::resource::model::ModelResource>,
     /// `EntityOrder`: non-zero draws in the forward pass, after normal geometry.
     pub order: i32,
     /// False while the entity's materials are shared (loaded models, copies);
@@ -257,7 +264,7 @@ impl<'a> Host3D<'a> {
         let mut cur = id;
         while cur != 0 {
             let e = self.ent(cur)?;
-            chain.push(e.xf);
+            chain.push(self.live_xf(e));
             cur = e.parent as i32;
             if chain.len() > 10_000 {
                 return Err("entity hierarchy is cyclic".into());
@@ -278,8 +285,19 @@ impl<'a> Host3D<'a> {
         Ok(())
     }
 
+    /// Local transform; for nodes inside animated models, the current one.
+    pub fn live_xf(&self, e: &Entity) -> Xform {
+        match (&self.scene, e.adopted) {
+            (Some(scene), true) => crate::anim::xform_of_node(&scene.graph, e.node),
+            _ => e.xf,
+        }
+    }
+
     pub fn set_xf(&mut self, id: i32, f: impl FnOnce(&mut Xform)) -> Result<(), String> {
-        f(&mut self.ent_mut(id)?.xf);
+        let live = self.live_xf(self.ent(id)?);
+        let e = self.ent_mut(id)?;
+        e.xf = live;
+        f(&mut e.xf);
         self.sync(id)
     }
 
@@ -294,6 +312,16 @@ impl<'a> Host3D<'a> {
 
     /// Registers an existing scene node as a new entity.
     pub fn attach_entity(&mut self, handle: Handle<Node>, kind: Kind, parent: i32) -> Result<i32, String> {
+        self.attach(handle, kind, parent, true)
+    }
+
+    /// Registers a node that is already linked under the parent entity's node,
+    /// keeping its current transform.
+    pub fn attach_entity_linked(&mut self, handle: Handle<Node>, kind: Kind, parent: i32) -> Result<i32, String> {
+        self.attach(handle, kind, parent, false)
+    }
+
+    fn attach(&mut self, handle: Handle<Node>, kind: Kind, parent: i32, link: bool) -> Result<i32, String> {
         if parent != 0 {
             self.ent(parent)?;
         }
@@ -314,6 +342,9 @@ impl<'a> Host3D<'a> {
             originals: Vec::new(),
             order: 0,
             model: false,
+            anim: None,
+            adopted: false,
+            model_res: None,
             own_materials: true,
             col_type: 0,
             radius: (1.0, 1.0),
@@ -334,11 +365,15 @@ impl<'a> Host3D<'a> {
             }
         };
         if parent != 0 {
-            let pnode = self.ent(parent)?.node;
-            self.graph()?.link_nodes(handle, pnode);
+            if link {
+                let pnode = self.ent(parent)?.node;
+                self.graph()?.link_nodes(handle, pnode);
+            }
             self.ent_mut(parent)?.children.push(id as u32);
         }
-        self.sync(id)?;
+        if link {
+            self.sync(id)?;
+        }
         Ok(id)
     }
 
@@ -436,6 +471,32 @@ impl<'a> Host3D<'a> {
 
     /// Copies an entity and its child entities (`CopyEntity`).
     pub fn copy_entity(&mut self, id: i32, parent: i32) -> Result<i32, String> {
+        if let Some(res) = self.ent(id)?.model_res.clone() {
+            // animated models need their own skeleton and animation player
+            let new = crate::model::instantiate(self, &res, parent)?;
+            let (xf, name, hidden) = {
+                let e = self.ent(id)?;
+                (e.xf, e.name.clone(), e.hidden)
+            };
+            let copied = {
+                let e = self.ent(id)?;
+                (e.col_type, e.radius, e.col_box, e.pick_mode, e.obscurer, e.color, e.textures, e.shininess, e.fx, e.blend)
+            };
+            {
+                let e = self.ent_mut(new)?;
+                e.xf = xf;
+                e.name = name;
+                (e.col_type, e.radius, e.col_box, e.pick_mode, e.obscurer, e.color, e.textures, e.shininess, e.fx, e.blend) = copied;
+            }
+            self.sync(new)?;
+            if hidden {
+                self.ent_mut(new)?.hidden = true;
+                let n = self.ent(new)?.node;
+                self.graph()?[n].set_visibility(false);
+            }
+            self.refresh_material(new)?;
+            return Ok(new);
+        }
         let (node, kind, xf, name, color, hidden, children) = {
             let e = self.ent(id)?;
             (e.node, e.kind, e.xf, e.name.clone(), e.color, e.hidden, e.children.clone())

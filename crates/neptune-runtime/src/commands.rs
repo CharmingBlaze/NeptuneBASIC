@@ -527,9 +527,10 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("%GraphicsWidth", |h, _, _| int(h.world.width as i32)),
     ("%GraphicsHeight", |h, _, _| int(h.world.height as i32)),
-    ("UpdateWorld#elapsed_time=1", |h, _, _| {
+    ("UpdateWorld#elapsed_time=1", |h, a, _| {
         h.scene()?;
         h.flush_meshes()?;
+        h.update_animations(a[0].float())?;
         update_world(h)?;
         VOID
     }),
@@ -866,12 +867,35 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("%GetParent%entity", |h, a, _| int(h.ent(a[0].int())?.parent as i32)),
-    ("%CountChildren%entity", |h, a, _| int(h.ent(a[0].int())?.children.len() as i32)),
+    ("%CountChildren%entity", |h, a, _| int(h.node_children(a[0].int())?.len() as i32)),
     ("%GetChild%entity%index", |h, a, _| {
-        let e = h.ent(a[0].int())?;
+        let kids = h.node_children(a[0].int())?;
         let i = a[1].int();
-        int(if i >= 1 { e.children.get(i as usize - 1).map_or(0, |&c| c as i32) } else { 0 })
+        int(if i >= 1 { kids.get(i as usize - 1).copied().unwrap_or(0) } else { 0 })
     }),
+    ("%FindChild%entity$name", |h, a, _| int(h.find_child(a[0].int(), &a[1].str())?)),
+    // ---- animation
+    ("Animate%entity%mode=1#speed=1%sequence=0#transition=0", |h, a, _| {
+        h.animate(a[0].int(), a[1].int(), a[2].float(), a[3].int(), a[4].float())?;
+        VOID
+    }),
+    ("SetAnimTime%entity#time%sequence=0", |h, a, _| {
+        h.set_anim_time(a[0].int(), a[1].float(), a[2].int())?;
+        VOID
+    }),
+    ("%Animating%entity", |h, a, _| int(h.ent(a[0].int())?.anim.as_ref().is_some_and(|s| s.mode != 0) as i32)),
+    ("#AnimTime%entity", |h, a, _| float(h.ent(a[0].int())?.anim.as_ref().map_or(0.0, |s| s.time))),
+    ("%AnimSeq%entity", |h, a, _| int(h.ent(a[0].int())?.anim.as_ref().map_or(0, |s| s.seq as i32))),
+    ("%AnimLength%entity", |h, a, _| {
+        let e = a[0].int();
+        let Some(seq) = h.ent(e)?.anim.as_ref().map(|s| s.seq) else { return int(0) };
+        int(h.seq_length(e, seq)?.round() as i32)
+    }),
+    ("%ExtractAnimSeq%entity%first_frame%last_frame%anim_seq=0", |h, a, _| {
+        int(h.extract_seq(a[0].int(), a[1].float(), a[2].float(), a[3].int())?)
+    }),
+    // (ext)
+    ("%CountAnimSeqs%entity", |h, a, _| int(h.ent(a[0].int())?.anim.as_ref().map_or(0, |s| s.seqs.len() as i32))),
     // ---- transforms
     ("PositionEntity%entity#x#y#z%global=0", |h, a, _| {
         let (e, p) = (a[0].int(), v3(a, 1));

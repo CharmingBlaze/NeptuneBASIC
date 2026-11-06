@@ -35,13 +35,42 @@ pub fn load_mesh(h: &mut Host3D, path: &str, parent: i32) -> Result<i32, String>
             return Ok(0);
         }
     };
+    instantiate(h, &model, parent)
+}
+
+/// Creates an entity holding a new instance of a loaded model.
+pub fn instantiate(h: &mut Host3D, model: &fyrox::resource::model::ModelResource, parent: i32) -> Result<i32, String> {
     let instance = model.instantiate(h.scene()?);
     let id = h.add_entity(pivot_node(), Kind::Mesh, parent)?;
     let pivot = h.ent(id)?.node;
     h.graph()?.link_nodes(instance, pivot);
+    let anim = match crate::anim::find_player(h.graph()?, instance) {
+        Some(player) => {
+            let seqs = crate::anim::take_control(h.graph()?, player);
+            (!seqs.is_empty()).then_some(crate::anim::AnimState {
+                player,
+                seqs,
+                mode: 0,
+                speed: 1.0,
+                seq: 0,
+                time: 0.0,
+                dir: 1.0,
+                transition: 0.0,
+            })
+        }
+        None => None,
+    };
+    let has_anim = anim.is_some();
+    let e = h.ent_mut(id)?;
     // Materials belong to the shared model resource until first modified.
-    h.ent_mut(id)?.own_materials = false;
-    h.ent_mut(id)?.model = true;
+    e.own_materials = false;
+    e.model = true;
+    e.anim = anim;
+    e.model_res = Some(model.clone());
+    if has_anim {
+        // show the first frame of the first sequence, like Blitz
+        h.set_anim_time(id, 0.0, 0)?;
+    }
     Ok(id)
 }
 
