@@ -38,8 +38,8 @@ End
   shadows and the rest of Fyrox are available to BASIC commands.
 * **All of Blitz3D** – every Blitz3D command: 2D and 3D graphics, custom
   meshes, animation, terrain, sprites, mirrors, cube maps, collisions,
-  picking, sound, keyboard/mouse/joysticks, files, banks, timers and TCP/UDP
-  networking.
+  picking, sound, movies, keyboard/mouse/joysticks, files, banks, timers,
+  TCP/UDP networking and multiplayer games (TCP with LAN discovery).
 * **And more** – animated glTF/FBX models, rigid-body physics (Rapier),
   gamepads, fullscreen, graphics quality presets, a language server.
 * **Windows, Linux and macOS** – the same programs and the same commands on

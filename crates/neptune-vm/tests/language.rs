@@ -597,3 +597,17 @@ fn blitz3d_language_audit() {
     // Rand/Rnd lines only check ranges, so the output is deterministic
     assert_eq!(ok(&src), expected);
 }
+
+fn warnings(src: &str) -> String {
+    let env = neptune_vm::stdlib::base_env();
+    let c = neptune_lang::compile("main.nb", src, &env, &mut neptune_lang::NoLoader);
+    c.diagnostics.render(&c.program.expect("program compiles").sources)
+}
+
+#[test]
+fn never_assigned_warning() {
+    assert!(warnings("Print speed\n").contains("'speed' is used but never assigned"));
+    // assigned from a variable whose type could not be inferred
+    let src = "While n < 3\n    If shot = 0 Then shot = n\n    n = n + 1\nWend\nPrint shot\n";
+    assert!(!warnings(src).contains("never assigned"), "{}", warnings(src));
+}

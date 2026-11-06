@@ -516,6 +516,14 @@ fn draw_overlays(h: &mut Host3D) -> Result<(), String> {
     Ok(())
 }
 
+fn movie_mut<'a>(h: &'a mut Host3D, m: i32) -> Result<&'a mut crate::movie::Movie, String> {
+    usize::try_from(m - 1)
+        .ok()
+        .and_then(|i| h.world.movies.get_mut(i))
+        .and_then(Option::as_mut)
+        .ok_or_else(|| format!("Movie {m} does not exist"))
+}
+
 fn tile_image(h: &mut Host3D, a: &[Value], masked: bool) -> Result<Value, String> {
     h.scene()?;
     let img = h.image(a[0].int())?;
@@ -2491,6 +2499,35 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     // ---- images (bbgraphics.cpp)
+    // ---- movies (bbgraphics.cpp): GIF, Motion-JPEG AVI or a folder of images
+    ("%OpenMovie$file", |h, a, _| match crate::movie::Movie::open(&a[0].str()) {
+        Ok(m) => {
+            h.world.movies.push(Some(m));
+            int(h.world.movies.len() as i32)
+        }
+        Err(e) => {
+            eprintln!("OpenMovie: {e}");
+            int(0)
+        }
+    }),
+    ("CloseMovie%movie", |h, a, _| {
+        movie_mut(h, a[0].int())?;
+        h.world.movies[a[0].int() as usize - 1] = None;
+        VOID
+    }),
+    ("%DrawMovie%movie%x=0%y=0%width=-1%height=-1", |h, a, _| {
+        h.scene()?;
+        let m = movie_mut(h, a[0].int())?;
+        let playing = m.update()?;
+        let (mw, mh, tex) = (m.width as f32, m.height as f32, m.texture.clone());
+        let w = if a[3].int() < 0 { mw } else { a[3].float() };
+        let ht = if a[4].int() < 0 { mh } else { a[4].float() };
+        h.world.canvas.image(a[1].float(), a[2].float(), w, ht, Rect::new(0.0, 0.0, 1.0, 1.0), tex);
+        int(playing as i32)
+    }),
+    ("%MovieWidth%movie", |h, a, _| int(movie_mut(h, a[0].int())?.width as i32)),
+    ("%MovieHeight%movie", |h, a, _| int(movie_mut(h, a[0].int())?.height as i32)),
+    ("%MoviePlaying%movie", |h, a, _| int(movie_mut(h, a[0].int())?.playing() as i32)),
     ("%LoadImage$file", |h, a, _| add_image(h, crate::image2d::Image2D::load(&a[0].str(), 0, 0, 0, 1))),
     ("%LoadAnimImage$file%width%height%first%count", |h, a, _| {
         let n = |i: usize| a[i].int().max(0) as u32;

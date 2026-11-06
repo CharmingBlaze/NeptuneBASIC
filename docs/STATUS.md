@@ -5,8 +5,8 @@ checked by running an example program. Run `neptune commands` for the full
 list of available commands.
 
 **Blitz3D coverage:** every Blitz3D command is available (language,
-console, files, banks, timers, networking, 2D, 3D, input, joysticks, sound,
-gamma). `crates/neptune-vm/tests/programs/blitz_audit.nb` checks the
+console, files, banks, timers, networking, multiplayer games, 2D, 3D,
+input, joysticks, sound, gamma, movies). `crates/neptune-vm/tests/programs/blitz_audit.nb` checks the
 language's Blitz3D behaviour line by line. The few places where a modern
 engine or OS cannot match 2003 hardware exactly are listed under *Design
 choices*. On top
@@ -37,6 +37,13 @@ gamepad constants, modern command names, ...).
   `TCPStreamIP/Port`, `TCPTimeouts`) and UDP (`CreateUDPStream`,
   `SendUDPMsg`, `RecvUDPMsg`, `UDPMsgIP/Port`, `UDPTimeouts`) streams that
   work with every stream command; `DottedIP`, `CountHostIPs`, `HostIP`.
+* Multiplayer games: `StartNetGame`, `HostNetGame`, `JoinNetGame`,
+  `StopNetGame`, `CreateNetPlayer`, `DeleteNetPlayer`, `NetPlayerName`,
+  `NetPlayerLocal`, `SendNetMsg`, `RecvNetMsg`, `NetMsgType/From/To/Data`,
+  with the joined (100), left (101) and host-lost (200) messages. Blitz3D
+  used DirectPlay; here the host runs a TCP server (port 47700) and games
+  are found on the local network over UDP (port 47701), so an empty
+  address in `JoinNetGame` searches the LAN.
 * Modern command names (ext) for the classic ones, such as
   `SetEntityPosition`, `LoadModel`, `UpdatePhysics` and `SetWindowTitle`
   (see `ALIASES` in `crates/neptune-runtime/src/commands.rs`).
@@ -51,7 +58,7 @@ gamepad constants, modern command names, ...).
 | Graphics quality (ext) | done | `GraphicsQuality 0-3`, `GetGraphicsQuality`, `PostEffect` (bloom, SSAO, FXAA, shadows, light scattering), `neptune run --quality low` |
 | Entities | done | `CreatePivot/Cube/Sphere/Cylinder/Cone/Plane`, `FreeEntity`, `CopyEntity`, parenting, names, `Hide/ShowEntity` |
 | Transforms | done | `Position/Move/Translate/Rotate/Turn/Scale/PointEntity`, `AlignToVector`, `EntityX/Y/Z`, `EntityPitch/Yaw/Roll`, `EntityDistance`, `EntityScaleX/Y/Z` (ext), `GetMatElement`, `TFormPoint/Vector/Normal` + `TFormedX/Y/Z`, `VectorYaw/Pitch`, `DeltaYaw/Pitch`, `EntityClass`, `LookAt`, `SetLightDirection`, `SetEntityDirection` (ext) |
-| Cameras | done | `CameraZoom`, `CameraRange`, `CameraViewport`, `CameraClsColor`, `CameraClsMode`, `CameraProjMode` 0/1/2 (orthographic), `CameraFogMode/Color/Range`, `CameraProject` |
+| Cameras | done | `CameraZoom`, `CameraRange`, `CameraViewport`, `CameraClsColor`, `CameraClsMode` (a camera that does not clear is drawn over the cameras before it), `CameraProjMode` 0/1/2 (orthographic), `CameraFogMode/Color/Range`, `CameraProject` |
 | Lights | done | directional, point, spot; `LightColor`, `LightRange`, `LightConeAngles`, `AmbientLight`, `LightShadows` (ext) |
 | Materials | done | `EntityColor`, `EntityAlpha`, `EntityAutoFade`, `EntityShininess`, `EntityBlend`, `EntityFX` (all six flags), `EntityOrder`, `WireFrame`, `EntityNormalMap` (ext) |
 | Textures | done | `LoadTexture` (colour, alpha, masked, clamp, sphere map and cube map flags), `LoadAnimTexture`, `CreateTexture`, `EntityTexture` layers 0-3 and frames, `TextureBlend`, `ScaleTexture`, `PositionTexture`, `RotateTexture`, `TextureCoords`, `TextureFilter`, `ClearTextureFilters`, `SetCubeFace`, `SetCubeMode`, `TextureWidth/Height/Name`, `ActiveTextures`, `FreeTexture` |
@@ -68,6 +75,7 @@ gamepad constants, modern command names, ...).
 | Sound | done | `LoadSound`, `FreeSound`, `LoopSound`, `SoundVolume/Pan/Pitch`, `PlaySound`, `PlayMusic`, `PlayCDTrack` (no CD audio: returns no channel), `StopChannel`, `PauseChannel`, `ResumeChannel`, `ChannelVolume/Pan/Pitch`, `ChannelPlaying`, `CreateListener`, `Load3DSound`, `EmitSound` (WAV, OGG, MP3, FLAC) |
 | 2D text | done | `Text`, `Print`/`Write` on the screen in graphics mode, `Locate`, `Color`, `GetColor`, `ClsColor`, `Cls`, `LoadFont`, `SetFont`, `FreeFont`, `FontWidth/Height`, `StringWidth/Height` |
 | 2D drawing | done | `Rect`, `Oval`, `Line`, `Plot`, `Origin`, `Viewport`, on the screen or into image and texture buffers |
+| Movies | done | `OpenMovie`, `DrawMovie`, `MovieWidth`, `MovieHeight`, `MoviePlaying`, `CloseMovie` for animated GIFs, Motion-JPEG AVI files and folders of numbered images (30 fps); no sound track |
 | 2D images | done | `LoadImage`, `LoadAnimImage`, `CreateImage`, `CopyImage`, `GrabImage`, `DrawImage`, `DrawBlock`, `DrawImageRect`, `DrawBlockRect`, `TileImage`, `TileBlock`, `MidHandle`, `HandleImage`, `AutoMidHandle`, `MaskImage`, `ScaleImage`, `ResizeImage`, `RotateImage`, `TFormImage`, `TFormFilter`, `SaveImage`, `ImagesCollide`, `ImagesOverlap`, `ImageRectCollide`, `ImageRectOverlap`, `RectsOverlap` |
 | Buffers and pixels | done | `SetBuffer`, `BackBuffer`, `FrontBuffer`, `ImageBuffer`, `TextureBuffer`, `GraphicsBuffer`, `LockBuffer`, `UnlockBuffer`, `ReadPixel(Fast)`, `WritePixel(Fast)`, `CopyPixel(Fast)`, `CopyRect`, `BufferWidth/Height`, `SaveBuffer` (the screen too), `LoadBuffer`; `Text` and every 2D drawing command work in image and texture buffers. Pixel reads come from image and texture buffers, not the screen |
 | Keyboard and mouse | done | `KeyDown/Hit`, `GetKey`, `WaitKey`, `FlushKeys`, `MouseX/Y/Z`, `MouseXSpeed/YSpeed/ZSpeed` (raw motion, so mouse-look works with a hidden pointer), `MouseDown/Hit`, `GetMouse`, `WaitMouse`, `MoveMouse`, `HidePointer`, `ShowPointer`, `FlushMouse`, `CaptureMouse` (ext) |
@@ -128,10 +136,16 @@ and windowing (see the CI workflow for the list).
   without freezing the window: the VM retries them each frame.
 * The renderer is OpenGL 3.3, so there is one graphics driver; the mode list
   offers common screen sizes (any window size works).
-* `CameraClsMode` is accepted, but each camera's view is always cleared:
-  Fyrox renders every camera into its own image, so one camera cannot draw
-  over another's picture. Use `CameraViewport` for split screens, and 2D
-  drawing or sprites for overlays.
+* A camera with `CameraClsMode` colour clearing off renders into its own
+  image, which is drawn over the screen before any 2D drawing, so it
+  overlays the cameras before it (a gun or cockpit camera, for example).
+* Blitz3D played movies through DirectShow (Windows only). NeptuneBASIC
+  plays animated GIFs, Motion-JPEG AVI files and folders of numbered images
+  on every platform without a video library; convert other video with
+  `ffmpeg -i intro.mp4 -c:v mjpeg -q:v 3 -an intro.avi`. Movies have no
+  sound: play the sound track with `PlayMusic`.
+* Multiplayer games use TCP and LAN discovery instead of DirectPlay; the
+  commands and messages are Blitz3D's.
 * `WBuffer`, `MeshCullBox`, `TerrainDetail` and `TerrainShading` are
   accepted; the GPU handles depth precision, culling and detail itself.
 * Cube maps are a strip of six faces in Blitz order (left, front, right,

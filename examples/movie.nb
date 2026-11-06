@@ -1,0 +1,50 @@
+; Movies: OpenMovie plays animated GIFs, Motion-JPEG AVI files and folders
+; of numbered images. This example first draws its own 60-frame movie into a
+; folder, then plays it over a spinning cube.
+
+Graphics3D 800, 600, 0, 2
+AppTitle "Movies"
+
+; ---- make the frames
+dir$ = "movie_frames"
+CreateDir dir
+img = CreateImage(160, 120)
+For f = 0 To 59
+    SetBuffer ImageBuffer(img)
+    ClsColor 20, 20, 60 : Cls
+    Color 255, 200, 0
+    Oval 80 + Cos(f * 6) * 50 - 15, 60 + Sin(f * 12) * 30 - 15, 30, 30
+    Color 255, 255, 255
+    Text 4, 4, "Frame " + f
+    SaveImage img, dir + "/frame" + Right("000" + f, 3) + ".png"
+Next
+SetBuffer BackBuffer()
+FreeImage img
+
+; ---- a 3D scene behind it
+camera = CreateCamera()
+PositionEntity camera, 0, 0, -4
+CreateLight()
+cube = CreateCube()
+EntityColor cube, 80, 160, 255
+
+movie = OpenMovie(dir)
+If movie = 0 Then RuntimeError "Could not open the movie"
+
+While Not KeyHit(1)
+    TurnEntity cube, 0.5, 1, 0
+    RenderWorld
+    If MoviePlaying(movie)
+        DrawMovie movie, 20, 20, MovieWidth(movie) * 2, MovieHeight(movie) * 2
+        Text 20, 270, "Playing " + MovieWidth(movie) + "x" + MovieHeight(movie) + " movie"
+    Else
+        Text 20, 20, "Movie finished - press SPACE to play it again, ESC to quit"
+        If KeyHit(57)
+            CloseMovie movie
+            movie = OpenMovie(dir)
+        EndIf
+    EndIf
+    Flip
+Wend
+CloseMovie movie
+End

@@ -175,6 +175,8 @@ pub struct World {
     pub tform_filter: bool,
     /// Result of the last `TFormPoint`/`TFormVector`/`TFormNormal`.
     pub tformed: Vector3<f32>,
+    /// `OpenMovie` movies.
+    pub movies: Vec<Option<crate::movie::Movie>>,
     /// Unused mirror cameras made at start-up (see [`MIRROR_POOL`]).
     pub mirror_pool: Vec<Handle<Node>>,
     /// `SetGamma` ramps; `gamma_dirty` asks the engine to apply them (`UpdateGamma`).
@@ -231,6 +233,7 @@ impl Default for World {
             // Blitz3D's default filter: colour + mipmapped for every texture
             texture_filters: vec![(String::new(), 1 | 8)],
             mirror_pool: Vec::new(),
+            movies: Vec::new(),
             gamma: Default::default(),
             gamma_dirty: false,
             loader_matrices: Vec::new(),

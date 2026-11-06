@@ -237,6 +237,32 @@ WriteLine client, "hello"
 Print ReadLine(conn)                 ; TCP and UDP streams use the file commands
 ```
 
+Multiplayer games use Blitz3D's commands over TCP. `JoinNetGame` with an
+empty address finds the game on the local network:
+
+```basic
+If HostNetGame("Arena") Then me = CreateNetPlayer("Host")
+; on another PC: JoinNetGame "Arena", ""
+While RecvNetMsg()
+    If NetMsgType() = 100 Then Print NetPlayerName(NetMsgFrom()) + " joined"
+Wend
+SendNetMsg 1, "hello", me
+```
+
+## Movies
+
+`OpenMovie` plays animated GIFs, Motion-JPEG AVI files and folders of
+numbered images; `DrawMovie` draws the current frame and returns 0 once the
+movie has ended.
+
+```basic
+movie = OpenMovie("intro.avi")
+While DrawMovie(movie, 0, 0, GraphicsWidth(), GraphicsHeight()) And Not KeyHit(1)
+    Flip
+Wend
+CloseMovie movie
+```
+
 ## Errors
 
 ```basic

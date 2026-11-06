@@ -50,6 +50,9 @@ struct FnCtx {
     label_spans: Vec<Span>,
     loop_depth: u32,
     inferred: HashMap<String, Ty>,
+    /// Plain variables assigned somewhere in the body (for the
+    /// "used but never assigned" warning).
+    assigned: std::collections::HashSet<String>,
     n_tmp: u32,
 }
 
@@ -403,7 +406,7 @@ impl<'a> Sema<'a> {
         for (i, f) in all_funcs.iter().enumerate() {
             hfuncs.push(self.func_body(i as FuncId, f, std::mem::take(&mut inferred[i])));
         }
-        self.f = FnCtx { is_main: true, ret: Ty::Int, inferred: main_inferred, ..Default::default() };
+        self.f = FnCtx { is_main: true, ret: Ty::Int, inferred: main_inferred, assigned: assigned_names(&prog.main), ..Default::default() };
         let mut body = Vec::new();
         self.block(&prog.main, &mut body);
         self.check_labels();
@@ -822,7 +825,7 @@ impl<'a> Sema<'a> {
 
     fn func_body(&mut self, id: FuncId, f: &ast::FuncDecl, inferred: HashMap<String, Ty>) -> HFunc {
         let info = &self.funcs[id as usize];
-        let mut ctx = FnCtx { ret: info.ret.clone(), self_ty: info.owner, inferred, ..Default::default() };
+        let mut ctx = FnCtx { ret: info.ret.clone(), self_ty: info.owner, inferred, assigned: assigned_names(&f.body), ..Default::default() };
         for (n, t, _) in &info.params {
             ctx.map.insert(n.clone(), ctx.locals.len() as u32);
             ctx.locals.push((n.clone(), t.clone()));
@@ -1411,7 +1414,7 @@ impl<'a> Sema<'a> {
                         if let Some(c) = self.consts.get(&name.name) {
                             return const_expr(c, span);
                         }
-                        if !self.classic && !self.strict && !self.f.inferred.contains_key(&name.name) {
+                        if !self.classic && !self.strict && !self.f.inferred.contains_key(&name.name) && !self.f.assigned.contains(&name.name) {
                             self.diags.warning(span, format!("variable '{}' is used but never assigned", name.name));
                         }
                     }
@@ -1912,6 +1915,33 @@ fn fold_arith(op: BinOp, l: &HKind, r: &HKind) -> Option<HKind> {
 }
 
 /// Calls `f` for each nested statement block of a statement.
+/// Names of the plain variables a body assigns to anywhere.
+fn assigned_names(body: &[Stmt]) -> std::collections::HashSet<String> {
+    fn walk(body: &[Stmt], out: &mut std::collections::HashSet<String>) {
+        fn add(v: &Var, out: &mut std::collections::HashSet<String>) {
+            if let Var::Ident { name, .. } = v {
+                out.insert(name.name.clone());
+            }
+        }
+        for s in body {
+            match &s.kind {
+                StmtKind::Assign(v, _) | StmtKind::CompoundAssign(v, _, _) => add(v, out),
+                StmtKind::For { var, .. } | StmtKind::ForEach { var, .. } => add(var, out),
+                StmtKind::ForIn { var, .. } => {
+                    out.insert(var.name.clone());
+                }
+                StmtKind::Read(vs) => vs.iter().for_each(|v| add(v, out)),
+                StmtKind::Try { var: Some(v), .. } => add(v, out),
+                _ => {}
+            }
+            for_each_block(&s.kind, |b| walk(b, out));
+        }
+    }
+    let mut out = std::collections::HashSet::new();
+    walk(body, &mut out);
+    out
+}
+
 fn for_each_block(k: &StmtKind, mut f: impl FnMut(&[Stmt])) {
     match k {
         StmtKind::If { then, els, .. } => {

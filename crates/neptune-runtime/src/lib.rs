@@ -25,6 +25,7 @@ pub mod material;
 pub mod mesh;
 pub mod mirror;
 pub mod model;
+pub mod movie;
 pub mod physics;
 pub mod pick;
 pub mod primitive;
