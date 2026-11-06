@@ -32,6 +32,7 @@ use neptune_vm::{Host, NativeCtx, Value};
 
 use crate::commands::COMMANDS;
 use crate::draw2d::Canvas2D;
+use crate::texture::TextureInfo;
 use crate::input::Input;
 use crate::transform::{WorldXform, Xform};
 
@@ -61,6 +62,8 @@ pub struct Entity {
     pub name: String,
     pub color: Color,
     pub hidden: bool,
+    /// Texture handle applied with `EntityTexture` (0 = none).
+    pub texture: i32,
 }
 
 /// Program-visible state that persists across frames.
@@ -80,6 +83,7 @@ pub struct World {
     pub ambient: Color,
     /// 2D drawing (Text, fonts, colours).
     pub canvas: Canvas2D,
+    pub textures: Vec<Option<TextureInfo>>,
 }
 
 impl Default for World {
@@ -97,6 +101,7 @@ impl Default for World {
             renders_at_flip: 0,
             ambient: Color::opaque(127, 127, 127),
             canvas: Canvas2D::default(),
+            textures: Vec::new(),
         }
     }
 }
@@ -212,6 +217,7 @@ impl<'a> Host3D<'a> {
             name: String::new(),
             color: Color::WHITE,
             hidden: false,
+            texture: 0,
         };
         let id = match self.world.free.pop() {
             Some(i) => {
@@ -327,6 +333,43 @@ impl<'a> Host3D<'a> {
         Ok(())
     }
 
+    pub fn texture(&self, id: i32) -> Result<&TextureInfo, String> {
+        usize::try_from(id - 1)
+            .ok()
+            .and_then(|i| self.world.textures.get(i))
+            .and_then(Option::as_ref)
+            .ok_or_else(|| format!("Texture {id} does not exist"))
+    }
+
+    /// Re-applies material state that depends on colour, alpha and texture,
+    /// choosing the forward (blended) render path when transparency is needed.
+    pub fn refresh_material(&mut self, id: i32) -> Result<(), String> {
+        let (color, tex_id, node) = {
+            let e = self.ent(id)?;
+            (e.color, e.texture, e.node)
+        };
+        let tex = if tex_id != 0 { self.texture(tex_id).ok().cloned() } else { None };
+        let blend = color.a < 255 || tex.as_ref().is_some_and(|t| t.needs_blending());
+        self.with_materials(id, |m| {
+            m.set_property("diffuseColor", color);
+            match &tex {
+                Some(t) => {
+                    m.bind("diffuseTexture", t.resource.clone());
+                    m.set_property("texCoordScale", fyrox::core::algebra::Vector2::new(1.0 / t.scale_u, 1.0 / t.scale_v));
+                }
+                None => {
+                    m.unbind("diffuseTexture");
+                    m.set_property("texCoordScale", fyrox::core::algebra::Vector2::new(1.0f32, 1.0));
+                }
+            }
+        })?;
+        if let Some(mesh) = self.graph()?[node].cast_mut::<Mesh>() {
+            use fyrox::scene::mesh::RenderPath;
+            mesh.set_render_path(if blend { RenderPath::Forward } else { RenderPath::Deferred });
+        }
+        Ok(())
+    }
+
     pub fn entities(&self) -> impl Iterator<Item = (i32, &Entity)> {
         self.world.entities.iter().enumerate().filter_map(|(i, e)| e.as_ref().map(|e| (i as i32 + 1, e)))
     }
@@ -382,6 +425,29 @@ pub fn light_node(kind: LightKind) -> Node {
     }
 }
 
+fn plane(size: f32) -> SurfaceData {
+    use fyrox::core::{algebra::{Vector2, Vector4}, math::TriangleDefinition};
+    use fyrox::scene::mesh::{
+        buffer::{TriangleBuffer, VertexBuffer},
+        vertex::StaticVertex,
+    };
+    let h = size / 2.0;
+    let v = |x: f32, y: f32, u: f32, t: f32| StaticVertex {
+        position: Vector3::new(x, y, 0.0),
+        normal: -Vector3::z(),
+        tex_coord: Vector2::new(u, t),
+        tangent: Vector4::default(),
+    };
+    let vertices = vec![v(-h, h, size, size), v(h, h, 0.0, size), v(h, -h, 0.0, 0.0), v(-h, -h, size, 0.0)];
+    let mut data = SurfaceData::new(
+        VertexBuffer::new(vertices.len(), vertices).expect("valid vertex layout"),
+        TriangleBuffer::new(vec![TriangleDefinition([0, 1, 2]), TriangleDefinition([0, 2, 3])]),
+    );
+    data.calculate_tangents().expect("tangents");
+    data.transform_geometry(&Matrix4::from_scaled_axis(Vector3::x() * std::f32::consts::FRAC_PI_2)).expect("transform");
+    data
+}
+
 /// Geometry for Blitz primitives, generated directly in Fyrox space with Blitz dimensions.
 pub fn primitive(kind: &str, segments: i32, solid: bool) -> SurfaceData {
     let seg = segments.clamp(3, 100) as usize;
@@ -392,8 +458,8 @@ pub fn primitive(kind: &str, segments: i32, solid: bool) -> SurfaceData {
         "cone" => SurfaceData::make_cone(seg, 1.0, 2.0, &Matrix4::new_translation(&Vector3::new(0.0, -1.0, 0.0))),
         _ => {
             // Blitz planes are infinite; approximate with a large quad facing +Y.
-            let m = Matrix4::from_scaled_axis(Vector3::x() * std::f32::consts::FRAC_PI_2) * Matrix4::new_scaling(10_000.0);
-            SurfaceData::make_quad(&m)
+            // UVs are in world units so textures repeat once per unit, like Blitz.
+            plane(10_000.0)
         }
     }
 }

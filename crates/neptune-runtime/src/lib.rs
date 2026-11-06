@@ -13,6 +13,7 @@
 pub mod commands;
 pub mod draw2d;
 pub mod input;
+pub mod texture;
 pub mod transform;
 pub mod world;
 

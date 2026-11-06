@@ -9,3 +9,5 @@ license.workspace = true
 neptune-lang.workspace = true
 neptune-vm.workspace = true
 fyrox.workspace = true
+# same version and features Fyrox already builds, so no extra compile cost
+image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "tga", "tiff", "bmp"] }

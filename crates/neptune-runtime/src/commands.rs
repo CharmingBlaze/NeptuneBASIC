@@ -7,7 +7,6 @@ use fyrox::graph::SceneGraph;
 use fyrox::scene::{
     camera::{Camera, Projection},
     light::{directional::DirectionalLight, point::PointLight, spot::SpotLight, BaseLight},
-    mesh::RenderPath,
 };
 use neptune_lang::commands::ConstVal;
 use neptune_vm::{NativeCtx, Value};
@@ -337,7 +336,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let alpha = h.ent(e)?.color.a;
         let c = Color::from_rgba(c.r, c.g, c.b, alpha);
         h.ent_mut(e)?.color = c;
-        h.with_materials(e, |m| m.set_property("diffuseColor", c))?;
+        h.refresh_material(e)?;
         VOID
     }),
     ("EntityAlpha%entity#alpha", |h, a, _| {
@@ -346,11 +345,68 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let c = h.ent(e)?.color;
         let c = Color::from_rgba(c.r, c.g, c.b, alpha);
         h.ent_mut(e)?.color = c;
-        h.with_materials(e, |m| m.set_property("diffuseColor", c))?;
-        let n = h.ent(e)?.node;
-        if let Some(mesh) = h.graph()?[n].cast_mut::<fyrox::scene::mesh::Mesh>() {
-            mesh.set_render_path(if alpha < 255 { RenderPath::Forward } else { RenderPath::Deferred });
+        h.refresh_material(e)?;
+        VOID
+    }),
+    // ---- textures
+    ("%LoadTexture$file%flags=1", |h, a, _| {
+        match crate::texture::load(&a[0].str(), a[1].int()) {
+            Ok(t) => {
+                h.world.textures.push(Some(t));
+                int(h.world.textures.len() as i32)
+            }
+            Err(_) => int(0), // Blitz returns 0 when the file can't be loaded
         }
+    }),
+    ("FreeTexture%texture", |h, a, _| {
+        let t = a[0].int();
+        h.texture(t)?;
+        h.world.textures[t as usize - 1] = None;
+        // entities keep showing the texture until re-textured, like Blitz
+        VOID
+    }),
+    ("%TextureWidth%texture", |h, a, _| int(h.texture(a[0].int())?.width as i32)),
+    ("%TextureHeight%texture", |h, a, _| int(h.texture(a[0].int())?.height as i32)),
+    ("$TextureName%texture", |h, a, _| Ok(Value::Str(h.texture(a[0].int())?.path.as_str().into()))),
+    ("ScaleTexture%texture#u_scale#v_scale", |h, a, _| {
+        let t = a[0].int();
+        h.texture(t)?;
+        let (u, v) = (a[1].float(), a[2].float());
+        if u == 0.0 || v == 0.0 {
+            return Err("ScaleTexture scale must not be zero".into());
+        }
+        if let Some(Some(info)) = h.world.textures.get_mut(t as usize - 1) {
+            info.scale_u = u;
+            info.scale_v = v;
+        }
+        let users: Vec<i32> = h.entities().filter(|(_, e)| e.texture == t).map(|(i, _)| i).collect();
+        for e in users {
+            h.refresh_material(e)?;
+        }
+        VOID
+    }),
+    ("EntityTexture%entity%texture%frame=0%index=0", |h, a, _| {
+        let (e, t) = (a[0].int(), a[1].int());
+        if a[3].int() != 0 {
+            return Err("EntityTexture: only texture layer 0 is supported so far".into());
+        }
+        if t != 0 {
+            h.texture(t)?;
+        }
+        h.ent_mut(e)?.texture = t;
+        h.refresh_material(e)?;
+        VOID
+    }),
+    // (ext) normal map for per-pixel lighting detail
+    ("EntityNormalMap%entity%texture", |h, a, _| {
+        let (e, t) = (a[0].int(), a[1].int());
+        let tex = if t != 0 { Some(h.texture(t)?.resource.clone()) } else { None };
+        h.with_materials(e, |m| match &tex {
+            Some(r) => m.bind("normalTexture", r.clone()),
+            None => {
+                m.unbind("normalTexture");
+            }
+        })?;
         VOID
     }),
     // ---- cameras

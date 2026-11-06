@@ -1,0 +1,35 @@
+; Textures: LoadTexture, EntityTexture, ScaleTexture and masking (flag 4)
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Textures"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 3, -7
+PointEntity camera, CreatePivot()
+light = CreateLight()
+RotateEntity light, 50, 30, 0
+
+checker = LoadTexture("examples/media/checker.png")
+ring = LoadTexture("examples/media/ring.png", 1 + 4)  ; colour + masked: black is see-through
+
+floor = CreatePlane()
+EntityTexture floor, checker
+ScaleTexture checker, 4, 4
+PositionEntity floor, 0, -1, 0
+
+cube = CreateCube()
+crate = LoadTexture("examples/media/checker.png")
+EntityTexture cube, crate
+
+disc = CreateCube()
+ScaleEntity disc, 1.5, 1.5, 0.01
+PositionEntity disc, 3, 0.5, 0
+EntityTexture disc, ring
+
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity cube, 0, 1, 0
+    TurnEntity disc, 0, -1.5, 0
+    RenderWorld
+    Text 10, 10, $"Texture {TextureWidth(checker)}x{TextureHeight(checker)}"
+    Flip
+Wend
+End
