@@ -40,6 +40,8 @@ pub mod camera2d;
 pub mod physics2d;
 pub mod anim2d;
 pub mod ui;
+pub mod jointmotor;
+pub mod ragdoll;
 pub mod physics;
 pub mod pick;
 pub mod primitive;

@@ -366,7 +366,14 @@ impl Host3D<'_> {
         .with_contacts_enabled(false)
         .build(self.graph()?);
         self.world.joints2d.push(Some(node.transmute()));
-        Ok(self.world.joints2d.len() as i32)
+        let id = self.world.joints2d.len() as i32;
+        let (kind, axis) = match kind {
+            1 => (crate::jointmotor::Kind::Hinge, Vector3::z()),
+            3 => (crate::jointmotor::Kind::Slider, Vector3::new(angle.to_radians().cos(), angle.to_radians().sin(), 0.0)),
+            _ => (crate::jointmotor::Kind::Other, Vector3::x()),
+        };
+        self.record_joint(id, true, kind, na, nb, axis, 1.0)?;
+        Ok(id)
     }
 
     pub fn free_joint2d(&mut self, j: i32) -> Result<(), String> {
@@ -376,6 +383,7 @@ impl Host3D<'_> {
             .ok_or_else(|| format!("Joint {j} does not exist"))?;
         self.graph()?.remove_node(node);
         self.world.joints2d[j as usize - 1] = None;
+        self.world.joint_info.remove(&(true, j));
         Ok(())
     }
 

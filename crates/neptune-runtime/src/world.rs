@@ -124,6 +124,8 @@ pub struct Entity {
     pub lod: Vec<crate::lod::Level>,
     /// (ext) `CreateEmitter` settings
     pub emitter: Option<Box<crate::particles::Settings>>,
+    /// (ext) `CreateRagdoll` ragdoll
+    pub ragdoll: Option<crate::ragdoll::RagdollState>,
     /// (ext) `EntityShader` custom material
     pub shader: Option<Box<crate::shader::CustomMaterial>>,
 }
@@ -205,6 +207,8 @@ pub struct World {
     pub anims2d: Vec<Option<crate::anim2d::Anim2D>>,
     /// (ext) UI widget state.
     pub ui: crate::ui::UiState,
+    /// (ext) Joints' starting poses for motors and `JointAngle` ((2D?, id)).
+    pub joint_info: std::collections::HashMap<(bool, i32), crate::jointmotor::JointInfo>,
     /// `LoadShader` shaders.
     pub shaders: Vec<Option<fyrox::material::shader::ShaderResource>>,
     /// Cameras with a `CameraColorGrading` table (`SetGamma` leaves them alone).
@@ -274,6 +278,7 @@ impl Default for World {
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
             shaders: Vec::new(),
+            joint_info: Default::default(),
             bodies2d: Vec::new(),
             joints2d: Vec::new(),
             physics2d_scale: crate::physics2d::DEFAULT_SCALE,
@@ -537,6 +542,7 @@ impl<'a> Host3D<'a> {
             lod: Vec::new(),
             emitter: None,
             shader: None,
+            ragdoll: None,
         };
         let id = match self.world.free.pop() {
             Some(i) => {

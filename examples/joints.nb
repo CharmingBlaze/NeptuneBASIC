@@ -1,0 +1,92 @@
+; Joint motors, limits and ragdolls (ext). Run from the project folder:
+;   neptune run examples/joints.nb
+; Space: open/shut the door   R: ragdoll the fox / get it up again
+; B: throw a ball   Esc: quit
+
+Graphics3D 1024, 640, 0, 2
+AppTitle "Joints and ragdolls"
+
+cam = CreateCamera()
+PositionEntity cam, 0, 5, -13
+RotateEntity cam, 15, 0, 0
+sun = CreateLight(1) : RotateEntity sun, 50, -30, 0 : LightShadows sun, True
+AmbientLight 90, 90, 100
+
+ground = CreateCube() : ScaleEntity ground, 20, 0.5, 20 : PositionEntity ground, 0, -0.5, 0
+EntityColor ground, 110, 140, 100
+EntityPhysics ground, PHYS_STATIC
+
+; ---- a windmill: a motor turns the sails at 60 degrees a second
+tower = CreateCube() : ScaleEntity tower, 0.3, 2.5, 0.3 : PositionEntity tower, -6, 2.5, 3
+EntityColor tower, 200, 200, 210 : EntityPhysics tower, PHYS_STATIC
+sails = CreateCube() : ScaleEntity sails, 2.2, 0.2, 0.05 : PositionEntity sails, -6, 4.5, 2.6
+EntityColor sails, 220, 80, 60 : EntityPhysics sails, PHYS_DYNAMIC
+cross = CreateCube(sails) : ScaleEntity cross, 0.09, 11, 1 : EntityColor cross, 220, 80, 60
+mill = CreateHingeJoint(tower, sails, -6, 4.5, 2.6, 0, 0, 1)
+JointMotor mill, 60, 5000
+
+; ---- a door: a spring motor swings it to a target angle
+post = CreateCube() : ScaleEntity post, 0.15, 1.5, 0.15 : PositionEntity post, -1, 1.5, 3
+EntityColor post, 90, 70, 50 : EntityPhysics post, PHYS_STATIC
+door = CreateCube() : ScaleEntity door, 0.9, 1.4, 0.08 : PositionEntity door, -0.05, 1.5, 3
+EntityColor door, 170, 110, 60 : EntityPhysics door, PHYS_DYNAMIC
+hinge = CreateHingeJoint(post, door, -1, 1.5, 3, 0, 1, 0)
+JointLimits hinge, -100, 100
+open = False
+JointTarget hinge, 0
+
+; ---- a lift on a slider joint, going up and down
+shaft = CreatePivot() : PositionEntity shaft, 3, 0.2, 3 : EntityPhysics shaft, PHYS_STATIC, SHAPE_SPHERE
+lift = CreateCube() : ScaleEntity lift, 0.9, 0.1, 0.9 : PositionEntity lift, 3, 0.2, 3
+EntityColor lift, 230, 200, 70 : EntityPhysics lift, PHYS_DYNAMIC
+slide = CreateSliderJoint(shaft, lift, 3, 0.2, 3, 0, 1, 0)
+JointLimits slide, 0, 3
+
+; ---- a robot arm held by limits while its motor pushes
+base = CreatePivot() : PositionEntity base, 6, 1, 3 : EntityPhysics base, PHYS_STATIC, SHAPE_SPHERE
+arm = CreateCube() : ScaleEntity arm, 0.8, 0.1, 0.1 : PositionEntity arm, 6.8, 1, 3
+EntityColor arm, 80, 140, 230 : EntityPhysics arm, PHYS_DYNAMIC
+elbow = CreateHingeJoint(base, arm, 6, 1, 3, 0, 0, 1)
+JointLimits elbow, -45, 45
+
+; ---- a fox that can go limp
+fox = LoadAnimMesh("examples/media/Fox.glb")
+ScaleEntity fox, 0.025, 0.025, 0.025
+PositionEntity fox, 0, 0, -3
+Animate fox, 1, 1, 2
+CreateRagdoll fox
+
+timer = MilliSecs()
+While Not KeyHit(1)
+    If KeyHit(57)
+        open = Not open
+        If open Then JointTarget hinge, 90 Else JointTarget hinge, 0
+    EndIf
+    If KeyHit(19)
+        If RagdollActive(fox)
+            RagdollEnable fox, False
+            Animate fox, 1, 1, 2
+        Else
+            RagdollEnable fox, True
+            RagdollImpulse fox, Rnd(-2, 2), 3, 2
+        EndIf
+    EndIf
+    If KeyHit(48)
+        ball = CreateSphere(12) : ScaleEntity ball, 0.3, 0.3, 0.3 : EntityColor ball, 255, 255, 255
+        PositionEntity ball, 0, 3, -10
+        EntityPhysics ball, PHYS_DYNAMIC, SHAPE_SPHERE, 2
+        ApplyImpulse ball, Rnd(-1, 1), 4, 22
+    EndIf
+    ; the lift goes up and down every three seconds, the arm swings both ways
+    phase = ((MilliSecs() - timer) / 3000) Mod 2
+    If phase = 0 Then JointTarget slide, 2.5, 4000 Else JointTarget slide, 0, 4000
+    If phase = 0 Then JointMotor elbow, 90, 2000 Else JointMotor elbow, -90, 2000
+
+    UpdateWorld
+    RenderWorld
+    Color 255, 255, 255
+    Text 10, 10, "Space: door   R: ragdoll   B: throw a ball   Esc: quit"
+    Text 10, 30, "Windmill " + Int(JointAngle(mill)) + "   door " + Int(JointAngle(hinge)) + "   lift " + Left(JointPosition(slide), 4) + "   arm " + Int(JointAngle(elbow))
+    Flip
+Wend
+End

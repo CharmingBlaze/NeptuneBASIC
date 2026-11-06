@@ -43,7 +43,7 @@ End
 * **And more** – animated glTF/FBX models, rigid-body physics (Rapier),
   gamepads, fullscreen, graphics quality presets, sky boxes, PBR materials,
   decals, soft particles, level of detail, render-to-texture, custom
-  shaders, a 2D camera, 2D physics with joints, 2D animation, UI widgets,
+  shaders, joint motors and ragdolls, a 2D camera, 2D physics with joints, 2D animation, UI widgets,
   background loading,
   saved scenes (Fyrox `.rgs`), 2D tile maps with autotiling, a language
   server.

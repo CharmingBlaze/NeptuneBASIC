@@ -81,6 +81,7 @@ gamepad constants, modern command names, ...).
 | Sprites | done | `CreateSprite`, `LoadSprite`, `SpriteViewMode` 1-4, `RotateSprite`, `ScaleSprite`, `HandleSprite`. Sprites face the first active camera |
 | Terrain | done | `CreateTerrain`, `LoadTerrain`, `TerrainSize`, `TerrainHeight`, `ModifyTerrain`, `TerrainY/X/Z`; `TerrainDetail`/`TerrainShading` are accepted (the GPU draws the full grid) |
 | Physics (ext) | done | `EntityPhysics` (dynamic, static, kinematic; box, sphere, capsule, cylinder, mesh, hull), `PhysicsGravity`, `EntityMass/Friction/Bounce/Damping/GravityScale`, `LockRotation`, `ApplyForce/Impulse/ImpulseAt/Torque/TorqueImpulse`, `SetVelocity`, `SetAngularVelocity`, `Velocity*`, `EntityTouching`, `CountContacts`, `ContactEntity`, `PhysicsRayCast`, `CreateBallJoint/HingeJoint/FixedJoint`, `FreeJoint`. Bodies move in world space: `EntityPhysics` detaches a parented entity in place, and `CopyEntity` gives copies their own body |
+| Joint motors and ragdolls (ext) | done | `CreateSliderJoint`; for hinges and sliders, 3D and 2D: `JointMotor`/`JointMotor2D` (drive at a speed), `JointTarget`/`JointTarget2D` (spring to an angle or position), `JointMotorOff`, `JointLimits`, `JointAngle`, `JointPosition` (and the `2D` versions). 3D angles follow Blitz's left-hand rule (the direction of `EntityPitch`/`EntityRoll`). `CreateRagdoll` builds limbs and joints along an animated model's skeleton; `RagdollEnable`, `RagdollActive`, `RagdollImpulse`, `FreeRagdoll` |
 | Sound | done | `LoadSound`, `FreeSound`, `LoopSound`, `SoundVolume/Pan/Pitch`, `PlaySound`, `PlayMusic`, `PlayCDTrack` (no CD audio: returns no channel), `StopChannel`, `PauseChannel`, `ResumeChannel`, `ChannelVolume/Pan/Pitch`, `ChannelPlaying`, `CreateListener`, `Load3DSound`, `EmitSound` (WAV, OGG, MP3, FLAC) |
 | 2D text | done | `Text`, `Print`/`Write` on the screen in graphics mode, `Locate`, `Color`, `GetColor`, `ClsColor`, `Cls`, `LoadFont`, `SetFont`, `FreeFont`, `FontWidth/Height`, `StringWidth/Height` |
 | 2D drawing | done | `Rect`, `Oval`, `Line`, `Plot`, `Origin`, `Viewport`, on the screen or into image and texture buffers |
@@ -198,6 +199,7 @@ and windowing (see the CI workflow for the list).
 | `examples/draw2d.nb` | 2D shapes, animated sprites, pixel collisions |
 | `examples/buffers.nb` | drawing into textures and images |
 | `examples/picking.nb` | mouse picking, 3D-to-2D labels |
+| `examples/joints.nb` | windmill on a motor, door on a spring target, lift on a slider, limited arm, a fox that goes limp and gets up |
 | `examples/platformer2d.nb` | 2D physics platformer: follow camera with zoom and tilt, animated player, crates, balls, a seesaw on a hinge, a settings panel with UI widgets |
 | `examples/tilemap.nb` | 2D tile map: paint autotiled grass and water with the mouse, scroll, save and load |
 | `examples/scenes.nb` | loading screen with background loading, then saving and loading the scene |

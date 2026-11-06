@@ -305,6 +305,25 @@ ShaderFloat mesh, "time", MilliSecs() / 1000.0
 VertexData surface, v, 0, phase, height  ; read in the shader at location 8
 ```
 
+## Joint motors and ragdolls (ext)
+
+```basic
+door = CreateHingeJoint(post, panel, x, y, z, 0, 1, 0)
+JointLimits door, -100, 100
+JointTarget door, 90                     ; swing open like a spring
+wheel = CreateHingeJoint(car, tyre, x, y, z, 1, 0, 0)
+JointMotor wheel, 360, 5000              ; one turn a second
+Print JointAngle(wheel)
+
+fox = LoadAnimMesh("fox.glb") : Animate fox
+CreateRagdoll fox
+RagdollEnable fox                        ; goes limp and falls
+RagdollImpulse fox, 0, 3, 5
+RagdollEnable fox, False : Animate fox   ; back to animation
+```
+
+The same joint commands with `2D` at the end work on 2D joints.
+
 ## 2D camera, physics, animation and UI (ext)
 
 ```basic

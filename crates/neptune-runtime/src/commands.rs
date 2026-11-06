@@ -77,13 +77,14 @@ fn look_at(h: &mut Host3D, e: i32, target: Vector3<f32>, roll: f32) -> Result<Va
 
 fn coord(h: &mut Host3D, a: &[Value], axis: usize) -> Result<Value, String> {
     let e = a[0].int();
-    let p = if a[1].int() != 0 { h.world_of(e)?.position() } else { h.ent(e)?.xf.pos };
+    // physics bodies and model bones move on their own: read the live transform
+    let p = if a[1].int() != 0 { h.world_of(e)?.position() } else { h.live_xf(h.ent(e)?).pos };
     float(p[axis])
 }
 
 fn angle(h: &mut Host3D, a: &[Value], which: usize) -> Result<Value, String> {
     let e = a[0].int();
-    let r = if a[1].int() != 0 { h.world_of(e)?.rot } else { h.ent(e)?.xf.rot };
+    let r = if a[1].int() != 0 { h.world_of(e)?.rot } else { h.live_xf(h.ent(e)?).rot };
     let (p, y, rl) = angles(&r);
     float([p, y, rl][which])
 }
@@ -2656,6 +2657,46 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.free_joint(a[0].int())?;
         VOID
     }),
+    // (ext) a slider joint moves along the axis; motors and limits for hinges and sliders
+    ("%CreateSliderJoint%entity1%entity2#x#y#z#axis_x#axis_y#axis_z", |h, a, _| {
+        int(h.create_joint(a[0].int(), a[1].int(), 4, v3(a, 2), v3(a, 5))?)
+    }),
+    ("JointMotor%joint#speed#max_force=1000", |h, a, _| {
+        h.joint_motor(a[0].int(), false, a[1].float(), a[2].float())?;
+        VOID
+    }),
+    ("JointTarget%joint#target#stiffness=1000#max_force=100000", |h, a, _| {
+        h.joint_target(a[0].int(), false, a[1].float(), a[2].float(), a[3].float())?;
+        VOID
+    }),
+    ("JointMotorOff%joint", |h, a, _| {
+        h.joint_motor_off(a[0].int(), false)?;
+        VOID
+    }),
+    ("JointLimits%joint#min#max%enable=1", |h, a, _| {
+        h.joint_limits(a[0].int(), false, a[1].float(), a[2].float(), a[3].int() != 0)?;
+        VOID
+    }),
+    ("#JointAngle%joint", |h, a, _| float(h.joint_value(a[0].int(), false)?)),
+    ("#JointPosition%joint", |h, a, _| float(h.joint_value(a[0].int(), false)?)),
+    // (ext) ragdolls for animated models (see ragdoll.rs)
+    ("CreateRagdoll%entity#thickness=1", |h, a, _| {
+        h.create_ragdoll(a[0].int(), a[1].float())?;
+        VOID
+    }),
+    ("RagdollEnable%entity%enable=1", |h, a, _| {
+        h.ragdoll_enable(a[0].int(), a[1].int() != 0)?;
+        VOID
+    }),
+    ("%RagdollActive%entity", |h, a, _| int(h.ragdoll_active(a[0].int())? as i32)),
+    ("RagdollImpulse%entity#x#y#z", |h, a, _| {
+        h.ragdoll_impulse(a[0].int(), v3(a, 1))?;
+        VOID
+    }),
+    ("FreeRagdoll%entity", |h, a, _| {
+        h.free_ragdoll(a[0].int())?;
+        VOID
+    }),
     // ---- 2D (bbgraphics.cpp)
     ("Text%x%y$string%center_x=0%center_y=0", |h, a, _| {
         let target = h.current_buffer()?;
@@ -3061,6 +3102,24 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.free_joint2d(a[0].int())?;
         VOID
     }),
+    ("JointMotor2D%joint#speed#max_force=1000", |h, a, _| {
+        h.joint_motor(a[0].int(), true, a[1].float(), a[2].float())?;
+        VOID
+    }),
+    ("JointTarget2D%joint#target#stiffness=1000#max_force=100000", |h, a, _| {
+        h.joint_target(a[0].int(), true, a[1].float(), a[2].float(), a[3].float())?;
+        VOID
+    }),
+    ("JointMotorOff2D%joint", |h, a, _| {
+        h.joint_motor_off(a[0].int(), true)?;
+        VOID
+    }),
+    ("JointLimits2D%joint#min#max%enable=1", |h, a, _| {
+        h.joint_limits(a[0].int(), true, a[1].float(), a[2].float(), a[3].int() != 0)?;
+        VOID
+    }),
+    ("#JointAngle2D%joint", |h, a, _| float(h.joint_value(a[0].int(), true)?)),
+    ("#JointPosition2D%joint", |h, a, _| float(h.joint_value(a[0].int(), true)?)),
     ("DrawBodies2D", |h, _, _| {
         h.draw_bodies2d()?;
         VOID

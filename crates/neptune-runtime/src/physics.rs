@@ -27,7 +27,7 @@ use fyrox::{
             GeometrySource, InteractionGroups, TrimeshShape,
         },
         graph::physics::{Intersection, RayCastOptions},
-        joint::{BallJoint, FixedJoint, JointBuilder, JointParams, RevoluteJoint},
+        joint::{BallJoint, FixedJoint, JointBuilder, JointParams, PrismaticJoint, RevoluteJoint},
         node::Node,
         rigidbody::{RigidBody, RigidBodyBuilder, RigidBodyType},
         transform::TransformBuilder,
@@ -255,18 +255,25 @@ impl Host3D<'_> {
         }))
     }
 
-    /// Joints: ball (kind 1), hinge (2) or fixed (3) between two bodies at a
-    /// world point; hinges turn about `axis`.
+    /// Joints: ball (kind 1), hinge (2), fixed (3) or slider (4) between two
+    /// bodies at a world point; hinges turn about `axis`, sliders move along it.
     pub fn create_joint(&mut self, a: i32, b: i32, kind: i32, at: Vector3<f32>, axis: Vector3<f32>) -> Result<i32, String> {
         let (pa, pb) = (self.phys(a)?, self.phys(b)?);
         let params = match kind {
             1 => JointParams::BallJoint(BallJoint::default()),
             2 => JointParams::RevoluteJoint(RevoluteJoint::default()),
+            4 => JointParams::PrismaticJoint(PrismaticJoint::default()),
             _ => JointParams::FixedJoint(FixedJoint),
         };
-        // a revolute joint turns about its local X axis
-        let axis_f = vec_to_fyrox(axis).try_normalize(1e-9).unwrap_or_else(Vector3::x);
-        let rot = UnitQuaternion::rotation_between(&Vector3::x(), &axis_f).unwrap_or_else(|| UnitQuaternion::from_axis_angle(&Vector3::y_axis(), std::f32::consts::PI));
+        // a revolute joint turns about its local X axis. Joint frames turned
+        // more than a quarter round misbehave in Fyrox, so an axis pointing
+        // into -X uses the opposite axis (motors and angles are flipped to match)
+        let mut axis_f = vec_to_fyrox(axis).try_normalize(1e-9).unwrap_or_else(Vector3::x);
+        let flip = axis_f.x < 0.0;
+        if flip {
+            axis_f = -axis_f;
+        }
+        let rot = UnitQuaternion::rotation_between(&Vector3::x(), &axis_f).unwrap_or_else(UnitQuaternion::identity);
         let node = JointBuilder::new(
             BaseBuilder::new()
                 .with_name("Joint")
@@ -279,7 +286,14 @@ impl Host3D<'_> {
         .build_node();
         let h = self.graph()?.add_node(node);
         self.world.joints.push(h);
-        Ok(self.world.joints.len() as i32)
+        let id = self.world.joints.len() as i32;
+        let kind = match kind {
+            2 => crate::jointmotor::Kind::Hinge,
+            4 => crate::jointmotor::Kind::Slider,
+            _ => crate::jointmotor::Kind::Other,
+        };
+        self.record_joint(id, false, kind, pa.body, pb.body, axis_f, if flip { -1.0 } else { 1.0 })?;
+        Ok(id)
     }
 
     pub fn free_joint(&mut self, j: i32) -> Result<(), String> {
@@ -290,6 +304,7 @@ impl Host3D<'_> {
         if let Some(slot) = usize::try_from(j - 1).ok().and_then(|i| self.world.joints.get_mut(i)) {
             *slot = Handle::NONE;
         }
+        self.world.joint_info.remove(&(false, j));
         Ok(())
     }
 }
