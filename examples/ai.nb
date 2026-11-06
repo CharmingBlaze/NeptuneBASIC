@@ -1,0 +1,91 @@
+; AI: a navigation mesh generated from the level, agents that find their way
+; around walls, and a behaviour tree that makes enemies patrol or chase.
+; Arrow keys move the player (yellow). Get close to an enemy and it chases you.
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - AI"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 24, -20
+LookAt camera, 0, 0, 0
+light = CreateLight()
+RotateEntity light, 60, 30, 0
+
+; the level: a floor and some walls, pickable so GenerateNavMesh can see them
+floor = CreateCube()
+ScaleEntity floor, 14, 0.1, 14
+PositionEntity floor, 0, -0.1, 0
+EntityColor floor, 70, 80, 95
+EntityPickMode floor, 2
+
+Dim walls(5)
+Data -5, -4, 0.5, 6,   5, 4, 0.5, 6,   -9, 5, 3, 0.5,   9, -5, 3, 0.5,   0, -3, 2, 0.5,   0, 10, 4, 0.5
+For i = 0 To 5
+    Read x#, z#, sx#, sz#
+    walls(i) = CreateCube()
+    ScaleEntity walls(i), sx, 1, sz
+    PositionEntity walls(i), x, 1, z
+    EntityColor walls(i), 150, 150, 160
+    EntityPickMode walls(i), 2
+Next
+
+; walkable ground every half unit; cells next to the walls are left out
+nav = GenerateNavMesh(-14, -14, 28, 28, 0.5)
+shown = NavMeshEntity(nav)
+EntityColor shown, 40, 160, 90
+EntityAlpha shown, 0.35
+
+player = CreateSphere(12)
+EntityColor player, 255, 220, 40
+PositionEntity player, 0, 0.5, -11
+
+; what enemies do: chase the player when close, otherwise patrol
+brain = BehaviorFromText("selector" + Chr(10) + "  sequence" + Chr(10) + "    if dist < 7" + Chr(10) + "    do chase" + Chr(10) + "  do patrol")
+
+Const ENEMIES = 3
+Dim enemy(ENEMIES - 1), agent(ENEMIES - 1), doing(ENEMIES - 1)   ; doing: 1 patrol, 2 chase
+For i = 0 To ENEMIES - 1
+    enemy(i) = CreateCube()
+    ScaleEntity enemy(i), 0.5, 0.5, 0.5
+    EntityColor enemy(i), 220, 60, 60
+    nose = CreateCube(enemy(i))
+    ScaleEntity nose, 0.3, 0.3, 0.6
+    PositionEntity nose, 0, 0, 1.2
+    PositionEntity enemy(i), (i - 1) * 8, 0.5, 9
+    agent(i) = CreateAgent(enemy(i), nav, 2.5, 0.6)
+    SetBehavior enemy(i), brain
+Next
+
+While Not KeyHit(KEY_ESCAPE)
+    ; the player stays on walkable ground
+    px# = EntityX(player) + (KeyDown(KEY_RIGHT) - KeyDown(KEY_LEFT)) * 0.12
+    pz# = EntityZ(player) + (KeyDown(KEY_UP) - KeyDown(KEY_DOWN)) * 0.12
+    PositionEntity player, NavMeshX(nav, px, 0, pz), 0.5, NavMeshZ(nav, px, 0, pz)
+
+    For i = 0 To ENEMIES - 1
+        SetBehaviorParam enemy(i), "dist", EntityDistance(enemy(i), player)
+        Select BehaviorAction(enemy(i))
+        Case "chase"
+            AgentSpeed agent(i), 4
+            AgentFollow agent(i), player, 1.2
+            doing(i) = 2
+        Case "patrol"
+            AgentSpeed agent(i), 2
+            If AgentArrived(agent(i)) Or doing(i) <> 1 Then
+                ; pick a new random place to walk to
+                AgentMoveTo agent(i), Rnd(-12, 12), 0, Rnd(-12, 12)
+            EndIf
+            doing(i) = 1
+        End Select
+    Next
+
+    UpdateWorld
+    RenderWorld
+    Color 255, 255, 255
+    Text 10, 10, "Arrow keys move. Enemies patrol, and chase you when you come close."
+    Text 10, 30, $"Navigation mesh: {NavMeshTriangles(nav)} triangles"
+    For i = 0 To ENEMIES - 1
+        Text 10, 50 + i * 20, $"Enemy {i + 1}: {BehaviorAction(enemy(i))}, {FormatFloat(AgentDistance(agent(i)), 1)} to go"
+    Next
+    Flip
+Wend
+End

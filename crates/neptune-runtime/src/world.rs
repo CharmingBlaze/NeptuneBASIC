@@ -215,6 +215,12 @@ pub struct World {
     pub joint_info: std::collections::HashMap<(bool, i32), crate::jointmotor::JointInfo>,
     /// (ext) `WatchAssets` state.
     pub watch: crate::assets::Watch,
+    pub navmeshes: Vec<Option<crate::ai::NavMesh>>,
+    pub paths: Vec<Option<Vec<fyrox::core::algebra::Vector3<f32>>>>,
+    pub path_grids: Vec<Option<crate::ai::PathGrid>>,
+    pub agents: Vec<Option<crate::ai::Agent>>,
+    pub behaviors: Vec<Option<crate::behavior::Tree>>,
+    pub behavior_of: std::collections::HashMap<i32, crate::behavior::Instance>,
     /// (ext) Retained GUI widgets.
     pub gui: crate::gui::GuiState,
     /// (ext) `CreateBlendSpace` blend spaces and `CreateTrack` property tracks.
@@ -295,6 +301,12 @@ impl Default for World {
             shaders: Vec::new(),
             gui: Default::default(),
             watch: Default::default(),
+            navmeshes: Vec::new(),
+            paths: Vec::new(),
+            path_grids: Vec::new(),
+            agents: Vec::new(),
+            behaviors: Vec::new(),
+            behavior_of: Default::default(),
             blend_spaces: Vec::new(),
             tracks: Vec::new(),
             joint_info: Default::default(),

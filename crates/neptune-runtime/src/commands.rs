@@ -225,6 +225,12 @@ fn pick_line(
     exclude: &[i32],
     obscurers_only: bool,
 ) -> Result<Option<crate::pick::PickHit>, String> {
+    let targets = pick_targets(h, exclude, obscurers_only)?;
+    Ok(crate::pick::pick(origin, line, radius, &targets))
+}
+
+/// The pickable entities' shapes (built once for many picks).
+pub(crate) fn pick_targets(h: &mut Host3D, exclude: &[i32], obscurers_only: bool) -> Result<Vec<(i32, crate::collision::Shape)>, String> {
     h.flush_meshes()?;
     let candidates: Vec<(i32, i32)> = h
         .entities()
@@ -235,7 +241,7 @@ fn pick_line(
     for (e, mode) in candidates {
         targets.push((e, collision_shape(h, e, mode)?));
     }
-    Ok(crate::pick::pick(origin, line, radius, &targets))
+    Ok(targets)
 }
 
 fn picked(h: &mut Host3D, hit: Option<crate::pick::PickHit>) -> Result<Value, String> {
@@ -1031,6 +1037,7 @@ pub static ALIASES: &[(&str, &str)] = &[
     ("LoadAnimModel", "LoadAnimMesh"),
     ("CopyModel", "CopyEntity"),
     ("UpdatePhysics", "UpdateWorld"),
+    ("CreateNavigationMesh", "CreateNavMesh"),
     ("SetEntityPosition", "PositionEntity"),
     ("SetCameraPosition", "PositionEntity"),
     ("SetLightPosition", "PositionEntity"),
@@ -1358,6 +1365,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.flush_meshes()?;
         h.update_animations(a[0].float())?;
         h.update_tracks(a[0].float(), ctx)?;
+        h.update_agents(a[0].float())?;
         update_world(h)?;
         VOID
     }),
@@ -3540,6 +3548,113 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let (p, q) = (h.world_of(s)?.position(), h.world_of(d)?.position());
         let hit = pick_line(h, p, q - p, 0.0, &[s, d], true)?;
         int(hit.is_none() as i32)
+    }),
+    // (ext) navigation meshes and paths (see ai.rs)
+    ("%CreateNavMesh%entity#max_slope=45", |h, a, _| int(h.create_navmesh(a[0].int(), a[1].float())?)),
+    ("%GenerateNavMesh#x#z#width#depth#cell_size=1#max_slope=45#step_height=0.5#top=1000", |h, a, _| {
+        int(h.generate_navmesh(a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].float(), a[5].float(), a[6].float(), a[7].float())?)
+    }),
+    ("%NavMeshEntity%navmesh", |h, a, _| int(h.navmesh_entity(a[0].int())?)),
+    ("%NavMeshTriangles%navmesh", |h, a, _| int(h.navmesh(a[0].int())?.mesh.triangles().len() as i32)),
+    ("#NavMeshX%navmesh#x#y#z", |h, a, _| float(h.navmesh_closest(a[0].int(), v3(a, 1))?.map_or(0.0, |p| p.x))),
+    ("#NavMeshY%navmesh#x#y#z", |h, a, _| float(h.navmesh_closest(a[0].int(), v3(a, 1))?.map_or(0.0, |p| p.y))),
+    ("#NavMeshZ%navmesh#x#y#z", |h, a, _| float(h.navmesh_closest(a[0].int(), v3(a, 1))?.map_or(0.0, |p| p.z))),
+    ("FreeNavMesh%navmesh", |h, a, _| {
+        h.free_navmesh(a[0].int())?;
+        VOID
+    }),
+    ("%FindPath%navmesh#x1#y1#z1#x2#y2#z2", |h, a, _| int(h.find_path(a[0].int(), v3(a, 1), v3(a, 4))?)),
+    ("%PathPoints%path", |h, a, _| int(h.path(a[0].int())?.len() as i32)),
+    ("#PathX%path%index", |h, a, _| float(h.path_point(a[0].int(), a[1].int())?.x)),
+    ("#PathY%path%index", |h, a, _| float(h.path_point(a[0].int(), a[1].int())?.y)),
+    ("#PathZ%path%index", |h, a, _| float(h.path_point(a[0].int(), a[1].int())?.z)),
+    ("#PathLength%path", |h, a, _| float(h.path_length(a[0].int())?)),
+    ("FreePath%path", |h, a, _| {
+        h.free_path(a[0].int())?;
+        VOID
+    }),
+    // (ext) A* on grids, for 2D and strategy games
+    ("%CreatePathGrid%width%height", |h, a, _| int(h.create_path_grid(a[0].int(), a[1].int())?)),
+    ("SetPathCost%grid%x%y#cost", |h, a, _| {
+        h.set_path_cost(a[0].int(), a[1].int(), a[2].int(), a[3].float())?;
+        VOID
+    }),
+    ("#PathCost%grid%x%y", |h, a, _| float(h.path_cost(a[0].int(), a[1].int(), a[2].int())?)),
+    ("%FindGridPath%grid%x1%y1%x2%y2%diagonal=1", |h, a, _| {
+        int(h.find_grid_path(a[0].int(), (a[1].int(), a[2].int()), (a[3].int(), a[4].int()), a[5].int() != 0)?)
+    }),
+    ("%TileMapPathGrid%map", |h, a, _| int(h.tilemap_path_grid(a[0].int())?)),
+    ("FreePathGrid%grid", |h, a, _| {
+        h.free_path_grid(a[0].int())?;
+        VOID
+    }),
+    // (ext) agents: entities that walk navigation meshes by themselves in UpdateWorld
+    ("%CreateAgent%entity%navmesh#speed=3#radius=0.5", |h, a, _| int(h.create_agent(a[0].int(), a[1].int(), a[2].float(), a[3].float())?)),
+    ("AgentMoveTo%agent#x#y#z", |h, a, _| {
+        h.agent_move_to(a[0].int(), v3(a, 1))?;
+        VOID
+    }),
+    ("AgentFollow%agent%entity#distance=1", |h, a, _| {
+        h.agent_follow(a[0].int(), a[1].int(), a[2].float())?;
+        VOID
+    }),
+    ("AgentStop%agent", |h, a, _| {
+        h.agent_stop(a[0].int())?;
+        VOID
+    }),
+    ("%AgentArrived%agent", |h, a, _| int(h.agent_mut(a[0].int())?.arrived as i32)),
+    ("#AgentDistance%agent", |h, a, _| float(h.agent_distance(a[0].int())?)),
+    ("AgentSpeed%agent#speed", |h, a, _| {
+        h.agent_mut(a[0].int())?.speed = a[1].float().max(0.0);
+        VOID
+    }),
+    ("AgentTurnSpeed%agent#degrees", |h, a, _| {
+        h.agent_mut(a[0].int())?.turn = a[1].float().max(0.0);
+        VOID
+    }),
+    ("AgentRadius%agent#radius", |h, a, _| {
+        h.agent_mut(a[0].int())?.radius = a[1].float().max(0.0);
+        VOID
+    }),
+    ("%AgentEntity%agent", |h, a, _| int(h.agent_mut(a[0].int())?.entity)),
+    ("%AgentPath%agent", |h, a, _| int(h.agent_path(a[0].int())?)),
+    ("FreeAgent%agent", |h, a, _| {
+        h.free_agent(a[0].int())?;
+        VOID
+    }),
+    // (ext) behaviour trees (see behavior.rs)
+    ("%CreateBehavior$name=\"\"", |h, a, _| int(h.add_behavior(crate::behavior::Tree { name: a[0].str().to_string(), ..Default::default() }))),
+    ("%LoadBehavior$file", |h, a, _| {
+        let file = a[0].str();
+        let text = std::fs::read_to_string(&*file).map_err(|e| format!("cannot read behavior '{file}': {e}"))?;
+        int(h.add_behavior(crate::behavior::Tree::parse(&file, &text)?))
+    }),
+    ("%BehaviorFromText$text", |h, a, _| int(h.add_behavior(crate::behavior::Tree::parse("", &a[0].str())?))),
+    ("%BehaviorSelector%behavior%parent=0", |h, a, _| int(h.behavior_mut(a[0].int())?.add(crate::behavior::Kind::Selector, "", a[1].int())?)),
+    ("%BehaviorSequence%behavior%parent=0", |h, a, _| int(h.behavior_mut(a[0].int())?.add(crate::behavior::Kind::Sequence, "", a[1].int())?)),
+    ("%BehaviorInvert%behavior%parent=0", |h, a, _| int(h.behavior_mut(a[0].int())?.add(crate::behavior::Kind::Invert, "", a[1].int())?)),
+    ("%BehaviorIf%behavior$condition%parent=0", |h, a, _| int(h.behavior_mut(a[0].int())?.add(crate::behavior::Kind::Condition, &a[1].str(), a[2].int())?)),
+    ("%BehaviorDo%behavior$action%parent=0", |h, a, _| int(h.behavior_mut(a[0].int())?.add(crate::behavior::Kind::Action, &a[1].str(), a[2].int())?)),
+    ("FreeBehavior%behavior", |h, a, _| {
+        let t = a[0].int();
+        h.behavior(t)?;
+        h.world.behaviors[t as usize - 1] = None;
+        h.world.behavior_of.retain(|_, i| i.tree != t);
+        VOID
+    }),
+    ("SetBehavior%entity%behavior", |h, a, _| {
+        h.set_behavior(a[0].int(), a[1].int())?;
+        VOID
+    }),
+    ("SetBehaviorParam%entity$name#value", |h, a, _| {
+        h.set_behavior_param(a[0].int(), &a[1].str(), a[2].float())?;
+        VOID
+    }),
+    ("#BehaviorParam%entity$name", |h, a, _| float(h.behavior_param(a[0].int(), &a[1].str())?)),
+    ("$BehaviorAction%entity", |h, a, _| Ok(Value::Str(h.behavior_action(a[0].int())?.as_str().into()))),
+    ("BehaviorResult%entity%success=1", |h, a, _| {
+        h.behavior_result(a[0].int(), a[1].int() != 0)?;
+        VOID
     }),
     ("%KeyDown%key", |h, a, _| int(h.input.key_down(a[0].int()) as i32)),
     ("%KeyHit%key", |h, a, _| int(h.input.key_hit(a[0].int()))),

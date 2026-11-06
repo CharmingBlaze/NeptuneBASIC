@@ -4,6 +4,21 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## AI and pathfinding
+
+* **Navigation meshes, paths, agents and behaviour trees** – A level's
+  walkable ground can be made into a navigation mesh, either from a mesh
+  (`CreateNavMesh`) or by sampling the level from above
+  (`GenerateNavMesh`, which leaves holes at walls and too-steep slopes).
+  `FindPath` gives the shortest way between two points. Agents
+  (`CreateAgent`) walk there by themselves (`AgentMoveTo`), follow other
+  entities (`AgentFollow`), turn as they walk and keep out of each
+  other's way. For 2D and strategy games, path grids run A* over cells
+  with costs (`CreatePathGrid`, `FindGridPath`, `TileMapPathGrid`).
+  Behaviour trees (`LoadBehavior`, `SetBehavior`, `BehaviorAction`)
+  decide what each character does, such as patrolling until the player
+  comes close and then chasing. See `examples/ai.nb`.
+
 ## Asset management
 
 * **Caching, more background loading and live reloading** – Loading a

@@ -305,6 +305,38 @@ ShaderFloat mesh, "time", MilliSecs() / 1000.0
 VertexData surface, v, 0, phase, height  ; read in the shader at location 8
 ```
 
+## AI and pathfinding (ext)
+
+A navigation mesh is the ground characters can walk on. Agents find their
+way over it by themselves; behaviour trees decide what they do.
+
+```basic
+nav = GenerateNavMesh(-50, -50, 100, 100)    ; sample pickable level geometry
+guard = CreateAgent(guardMesh, nav, 3)       ; walks 3 units a second
+AgentMoveTo guard, 20, 0, 35                 ; finds the way round walls
+
+brain = LoadBehavior("guard.txt")            ; selector / sequence / if / do
+SetBehavior guardMesh, brain
+SetBehaviorParam guardMesh, "dist", EntityDistance(guardMesh, player)
+Select BehaviorAction(guardMesh)
+Case "chase" : AgentFollow guard, player, 1.5
+Case "patrol" : If AgentArrived(guard) Then BehaviorResult guardMesh
+End Select
+```
+
+`guard.txt`:
+
+```text
+selector
+  sequence
+    if dist < 10
+    do chase
+  do patrol
+```
+
+For 2D and strategy maps, `CreatePathGrid` (or `TileMapPathGrid`) and
+`FindGridPath` run A* over cells with costs; 0 blocks a cell.
+
 ## Assets (ext)
 
 Loading the same file twice shares the decoded data, so loading in several

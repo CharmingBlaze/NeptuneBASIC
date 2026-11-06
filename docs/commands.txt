@@ -814,6 +814,55 @@ JointLimits2D: (ext) Limits a 2D hinge (degrees) or slider (pixels) joint to bet
 JointAngle2D: (ext) Returns how far a 2D hinge joint has turned since it was made, in degrees clockwise.
 JointPosition2D: (ext) Returns how far a 2D slider joint has slid since it was made, in pixels.
 
+# AI and pathfinding
+CreateNavMesh: (ext) Makes a navigation mesh (the ground characters can walk on) from entity's mesh, in world space, keeping triangles that slope at most max_slope degrees; returns its handle. Use a mesh made for walking, or a level's floor. Also called CreateNavigationMesh.
+GenerateNavMesh: (ext) Makes a navigation mesh by looking down on the pickable entities (EntityPickMode) over the area from x, z to x + width, z + depth every cell_size units: ground that slopes at most max_slope degrees is kept, and neighbouring points join when their heights differ by at most step_height, so walls and boxes become holes. top is the height to look down from. Returns its handle.
+NavMeshEntity: (ext) Creates a mesh entity showing navmesh (just above it) and returns it, for checking what is walkable; colour it with EntityColor and EntityAlpha.
+NavMeshTriangles: (ext) Returns how many triangles navmesh has.
+NavMeshX: (ext) Returns the X of the point on navmesh closest to x, y, z (use with NavMeshY and NavMeshZ to keep something on walkable ground).
+NavMeshY: (ext) Returns the Y of the point on navmesh closest to x, y, z.
+NavMeshZ: (ext) Returns the Z of the point on navmesh closest to x, y, z.
+FreeNavMesh: (ext) Frees navmesh and the agents using it.
+FindPath: (ext) Finds the shortest way over navmesh from x1, y1, z1 to x2, y2, z2 (A* with corners cut where the way is clear) and returns a path handle, or 0 if there is no way. Read it with PathPoints and PathX/Y/Z.
+PathPoints: (ext) Returns how many points path has (from FindPath, FindGridPath or AgentPath).
+PathX: (ext) Returns the X of point index (from 0) of path; for a grid path, the column.
+PathY: (ext) Returns the Y of point index (from 0) of path; for a grid path, the row.
+PathZ: (ext) Returns the Z of point index (from 0) of path.
+PathLength: (ext) Returns the length of path, along its points.
+FreePath: (ext) Frees path.
+CreatePathGrid: (ext) Creates a grid of width x height cells for A* pathfinding (2D games, strategy maps) and returns its handle. Every cell starts with cost 1.
+SetPathCost: (ext) Sets how hard cell x, y of grid is to cross: 1 normal, higher numbers slower (mud, forest), 0 blocked.
+PathCost: (ext) Returns the cost of cell x, y of grid (0 = blocked).
+FindGridPath: (ext) Finds the cheapest way over grid from cell x1, y1 to cell x2, y2 with A* and returns a path handle (PathX = column, PathY = row), or 0 if there is no way. With diagonal 1 it also moves diagonally, but never cuts past a blocked corner.
+TileMapPathGrid: (ext) Creates a path grid the size of tile map map: empty cells cost 1, cells with a tile are blocked (the same tiles TileMapBody2D makes solid). Returns its handle.
+FreePathGrid: (ext) Frees grid.
+CreateAgent: (ext) Makes entity (a top-level entity) an agent that walks over navmesh by itself at speed units a second, keeping radius away from other agents; returns its handle. Agents move in UpdateWorld, turn to face where they go, and keep their height above the navigation mesh.
+AgentMoveTo: (ext) Sends agent to x, y, z: it finds the way and walks there. AgentArrived tells when it is there.
+AgentFollow: (ext) Makes agent keep walking towards entity, stopping when within distance, and finding a new way as the entity moves. entity 0 stops following.
+AgentStop: (ext) Stops agent where it is.
+AgentArrived: (ext) Returns 1 when agent has reached where it was sent (or is close enough to what it follows) or is not going anywhere, 0 while it is walking.
+AgentDistance: (ext) Returns how far agent still has to walk along its path.
+AgentSpeed: (ext) Sets how fast agent walks, in units a second.
+AgentTurnSpeed: (ext) Sets how fast agent turns to face where it goes, in degrees a second (default 360; 0 does not turn it).
+AgentRadius: (ext) Sets how far agent keeps from other agents.
+AgentEntity: (ext) Returns the entity agent moves.
+AgentPath: (ext) Returns a copy of the path agent is walking as a path handle (free it with FreePath), or 0 if it has none.
+FreeAgent: (ext) Frees agent; its entity stays where it is.
+CreateBehavior: (ext) Creates an empty behaviour tree for decision making and returns its handle; add nodes with BehaviorSelector, BehaviorSequence, BehaviorInvert, BehaviorIf and BehaviorDo (the first node without a parent is the root).
+LoadBehavior: (ext) Loads a behaviour tree from a text file and returns its handle. Each line is a node, children indented under their parent: selector, sequence, invert, if <condition>, do <action>; a semicolon starts a comment.
+BehaviorFromText: (ext) Makes a behaviour tree from text written like a LoadBehavior file (lines separated by Chr(10)) and returns its handle.
+BehaviorSelector: (ext) Adds a selector node under parent (0 = top level) to behavior and returns its node number: it tries its children in order until one succeeds or is running, so the first that applies wins.
+BehaviorSequence: (ext) Adds a sequence node under parent to behavior and returns its node number: it runs its children in order while they succeed.
+BehaviorInvert: (ext) Adds an invert node under parent to behavior and returns its node number: its one child's success counts as failure and failure as success.
+BehaviorIf: (ext) Adds a condition node under parent to behavior and returns its node number. The condition compares parameters set with SetBehaviorParam and numbers, like "dist < 10" or "health >= max" (< <= > >= = <>), or is just a parameter name (true when not 0).
+BehaviorDo: (ext) Adds an action node under parent to behavior and returns its node number. The action is a name the program acts on when BehaviorAction returns it.
+FreeBehavior: (ext) Frees behavior and stops every character using it.
+SetBehavior: (ext) Makes entity (or any number that names a character) use behavior; 0 removes it. Each character keeps its own parameters and progress.
+SetBehaviorParam: (ext) Sets parameter name of entity's behaviour to value, for its conditions to compare (names are not case-sensitive; parameters not set are 0).
+BehaviorParam: (ext) Returns parameter name of entity's behaviour.
+BehaviorAction: (ext) Evaluates entity's behaviour tree and returns the action to do now, or "" if none. Conditions are checked every time, so a more important branch takes over as soon as it applies. Do the action every frame until it is finished, then call BehaviorResult.
+BehaviorResult: (ext) Tells entity's behaviour that the current action finished: success 1 (the default) if it worked, 0 if it failed, so sequences go on to their next step and selectors try their next choice.
+
 # Rendering effects
 CreateDecal: (ext) Creates a decal that projects texture onto the scene inside its box (size it with ScaleEntity) and returns its handle; parent is optional.
 CreateEmitter: (ext) Creates a particle emitter using texture for the particles and returns its handle; parent is optional.

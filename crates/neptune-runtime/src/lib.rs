@@ -10,7 +10,9 @@
 //! yields, a Fyrox window is opened and execution continues inside the
 //! engine loop, one BASIC frame (`RenderWorld`/`Flip`) per engine update.
 
+pub mod ai;
 pub mod anim;
+pub mod behavior;
 pub mod buffer;
 pub mod classic;
 pub mod collision;
