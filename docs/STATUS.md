@@ -35,17 +35,17 @@ time of writing, including the modern alias names).
 | Custom meshes | done | `CreateMesh`, `CreateSurface`, `GetSurface`, `CountSurfaces`, `AddVertex`, `AddTriangle`, `VertexCoords/Normal/Color/TexCoords` and getters, `UpdateNormals`, `FlipMesh`, `ScaleMesh`, `PositionMesh`, `RotateMesh`, `FitMesh`, `AddMesh`, `CopyMesh`, `ClearSurface` |
 | Brushes | done | `CreateBrush`, `LoadBrush`, `BrushColor/Alpha/Shininess/Texture/Blend/FX`, `PaintSurface/Entity/Mesh`, `GetSurfaceBrush`, `GetEntityBrush`, `FreeBrush` |
 | Models | done | `LoadMesh`/`LoadAnimMesh` for glTF (`.gltf`/`.glb`) and FBX, `CopyEntity` (animated copies are independent), `FindChild`, `CountChildren`/`GetChild` into models, `MeshWidth/Height/Depth`. Old Blitz formats (`.b3d`, `.x`, `.3ds`) are deliberately not supported: export to glTF from Blender or any modern tool |
-| Animation | done | `Animate` (loop, ping-pong, one-shot), `SetAnimTime`, `Animating`, `AnimTime`, `AnimSeq`, `AnimLength`, `ExtractAnimSeq`, `CountAnimSeqs` (ext). The `transition` blend argument is accepted but sequences switch instantly |
+| Animation | done | `Animate` (loop, ping-pong, one-shot, with `transition` blending between sequences), `SetAnimTime`, `Animating`, `AnimTime`, `AnimSeq`, `AnimLength`, `ExtractAnimSeq`, `CountAnimSeqs` (ext) |
 | Collisions | done | `EntityType`, `EntityRadius`, `EntityBox`, `Collisions` (methods 1–3, responses 1–3), `ResetEntity`, `EntityCollided`, `CountCollisions`, `CollisionX/Y/Z/NX/NY/NZ/Time/Entity`, `ClearCollisions` |
 | Picking | done | `EntityPickMode`, `LinePick`, `CameraPick`, `EntityPick`, `Picked*`, `CameraProject`, `Projected*`, `EntityVisible`, `EntityInView` |
 | Sprites | done | `CreateSprite`, `LoadSprite`, `SpriteViewMode` 1-4, `RotateSprite`, `ScaleSprite`, `HandleSprite`. Sprites face the first active camera |
 | Terrain | done | `CreateTerrain`, `LoadTerrain`, `TerrainSize`, `TerrainHeight`, `ModifyTerrain`, `TerrainY/X/Z`; `TerrainDetail`/`TerrainShading` are accepted (the GPU draws the full grid) |
-| Physics (ext) | done | `EntityPhysics` (dynamic, static, kinematic; box, sphere, capsule, cylinder, mesh, hull), `PhysicsGravity`, `EntityMass/Friction/Bounce/Damping/GravityScale`, `LockRotation`, `ApplyForce/Impulse/ImpulseAt/Torque/TorqueImpulse`, `SetVelocity`, `SetAngularVelocity`, `Velocity*`, `EntityTouching`, `CountContacts`, `ContactEntity`, `PhysicsRayCast`, `CreateBallJoint/HingeJoint/FixedJoint`, `FreeJoint`. Physics entities must not have a parent |
+| Physics (ext) | done | `EntityPhysics` (dynamic, static, kinematic; box, sphere, capsule, cylinder, mesh, hull), `PhysicsGravity`, `EntityMass/Friction/Bounce/Damping/GravityScale`, `LockRotation`, `ApplyForce/Impulse/ImpulseAt/Torque/TorqueImpulse`, `SetVelocity`, `SetAngularVelocity`, `Velocity*`, `EntityTouching`, `CountContacts`, `ContactEntity`, `PhysicsRayCast`, `CreateBallJoint/HingeJoint/FixedJoint`, `FreeJoint`. Bodies move in world space: `EntityPhysics` detaches a parented entity in place, and `CopyEntity` gives copies their own body |
 | Sound | done | `LoadSound`, `FreeSound`, `LoopSound`, `SoundVolume/Pan/Pitch`, `PlaySound`, `PlayMusic`, `StopChannel`, `PauseChannel`, `ResumeChannel`, `ChannelVolume/Pan/Pitch`, `ChannelPlaying`, `CreateListener`, `Load3DSound`, `EmitSound` (WAV, OGG, MP3, FLAC) |
 | 2D text | done | `Text`, `Color`, `ClsColor`, `Cls`, `LoadFont`, `SetFont`, `FreeFont`, `FontWidth/Height`, `StringWidth/Height` |
 | 2D drawing | done | `Rect`, `Oval`, `Line`, `Plot`, `Origin`, on the screen or into image and texture buffers |
 | 2D images | done | `LoadImage`, `LoadAnimImage`, `CreateImage`, `CopyImage`, `GrabImage`, `DrawImage`, `DrawBlock`, `DrawImageRect`, `DrawBlockRect`, `TileImage`, `TileBlock`, `MidHandle`, `HandleImage`, `AutoMidHandle`, `MaskImage`, `ScaleImage`, `ResizeImage`, `RotateImage`, `ImagesCollide`, `ImagesOverlap`, `ImageRectCollide`, `ImageRectOverlap`, `RectsOverlap` |
-| Buffers and pixels | done | `SetBuffer`, `BackBuffer`, `FrontBuffer`, `ImageBuffer`, `TextureBuffer`, `GraphicsBuffer`, `LockBuffer`, `UnlockBuffer`, `ReadPixel(Fast)`, `WritePixel(Fast)`, `CopyRect`. The screen cannot be read back, and `Text` does not draw into image or texture buffers yet |
+| Buffers and pixels | done | `SetBuffer`, `BackBuffer`, `FrontBuffer`, `ImageBuffer`, `TextureBuffer`, `GraphicsBuffer`, `LockBuffer`, `UnlockBuffer`, `ReadPixel(Fast)`, `WritePixel(Fast)`, `CopyRect`; `Text` and every 2D drawing command work in image and texture buffers. The screen itself cannot be read back (a GPU-rendered frame), so `GrabImage`/`CopyRect` read from image and texture buffers |
 | Input | done | `KeyDown/Hit`, `GetKey`, `MouseX/Y/Z`, `MouseDown/Hit`, mouse speed, flush commands |
 
 Programs work in logical pixels. On a high-DPI display, `Graphics3D 1280,720`
@@ -73,17 +73,17 @@ for older integrated GPUs; `ultra` turns everything up.
 | Item | Status |
 |---|---|
 | `neptune run/check/disasm/commands` CLI | done |
-| `neptune build`: stand-alone game folder (executable + media) | done |
-| VS Code extension: highlighting, errors on save, run (F5), build | done (`editors/vscode`) |
-| Language server (completion, hover) | not started |
+| `neptune build`: stand-alone game folder (executable + media; no console window on Windows) | done |
+| `neptune lsp`: language server (errors as you type, completion, hover, signature help, outline, go to definition) | done |
+| VS Code extension: highlighting, language server, run (F5), build | done (`editors/vscode`) |
 
-## Not done yet
+## Design choices
 
-* Blending between animation sequences (`Animate` transition argument).
-* `Text` into image and texture buffers; reading pixels from the screen.
-* Physics on parented entities, and `CopyEntity` of physics entities
-  (the copy has no body).
-* Hiding the console window of packaged games on Windows.
+* Models load from glTF (`.gltf`/`.glb`) and FBX. The old Blitz formats
+  (`.b3d`, `.x`, `.3ds`) are deliberately not supported: export to glTF
+  from Blender or any modern tool.
+* Built-in primitives are generated in Blitz space with Blitz3D's texture
+  layout, so textures read the right way round on every face.
 
 ## Examples
 

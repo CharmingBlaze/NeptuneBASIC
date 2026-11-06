@@ -1,7 +1,7 @@
 {
   "name": "neptunebasic",
   "displayName": "NeptuneBASIC",
-  "description": "Syntax highlighting, diagnostics and run commands for NeptuneBASIC (.nb) programs",
+  "description": "NeptuneBASIC (.nb): highlighting, errors as you type, completion, hover, signature help and run/build commands",
   "version": "0.1.0",
   "publisher": "neptunebasic",
   "license": "Zlib",

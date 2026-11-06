@@ -62,9 +62,11 @@ Other commands:
 * `neptune build <file>` – make a stand-alone game in `dist/<name>/`
   (executable plus the media files the program uses). Build NeptuneBASIC
   with `--release` first so the game runs at full speed.
+* `neptune lsp` – language server for editors (errors as you type,
+  completion, hover, signature help, outline, go to definition).
 * `neptune check <file>`, `neptune disasm <file>`, `neptune commands`.
 
-Editor support for VS Code (highlighting, errors on save, F5 to run) is in
+Editor support for VS Code (highlighting, the language server, F5 to run) is in
 [`editors/vscode`](editors/vscode/README.md).
 
 ## Documentation

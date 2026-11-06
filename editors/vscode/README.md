@@ -3,8 +3,12 @@
 * Syntax highlighting for `.nb` files: keywords, every runtime command,
   strings with `$"{...}"` interpolation, `;` and `'` comments, `$FF` and
   `%101` numbers.
-* Errors and warnings from `neptune check` shown in the editor when a file
-  is opened or saved.
+* Powered by the NeptuneBASIC language server (`neptune lsp`):
+  * errors and warnings as you type,
+  * completion of keywords, commands (with their signatures), constants and
+    your own functions, types, globals and labels,
+  * hover help and signature help while typing arguments,
+  * outline (document symbols) and go to definition.
 * **F5** (or the ▶ button) runs the current program in a terminal.
   *NeptuneBASIC: Run Program (Low Quality)* runs it with `--quality low`;
   *NeptuneBASIC: Build Stand-alone Game* runs `neptune build`.
@@ -22,6 +26,35 @@ Programs run from the workspace folder, so media paths behave the same as
 3. Set **neptunebasic.executable** to the full path of `neptune`
    (for example `C:\NeptuneBASIC\target\release\neptune.exe`) unless it is
    on your `PATH`.
+
+The extension has no npm dependencies. If the language server cannot be
+started it falls back to running `neptune check` when files are opened or
+saved.
+
+## Other editors
+
+Any editor with LSP support can use `neptune lsp` (stdin/stdout). For
+example, Neovim:
+
+```lua
+vim.filetype.add({ extension = { nb = "neptunebasic" } })
+vim.lsp.start({ name = "neptune", cmd = { "neptune", "lsp" }, filetypes = { "neptunebasic" } })
+```
+
+Helix (`languages.toml`):
+
+```toml
+[language-server.neptune]
+command = "neptune"
+args = ["lsp"]
+
+[[language]]
+name = "neptunebasic"
+scope = "source.neptune"
+file-types = ["nb"]
+comment-token = ";"
+language-servers = ["neptune"]
+```
 
 After adding runtime commands, regenerate the grammar from the repository
 root with `python tools/gen_grammar.py`.

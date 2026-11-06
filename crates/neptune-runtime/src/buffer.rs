@@ -130,7 +130,6 @@ impl Target<'_> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// Blends `color` over a pixel with coverage `a` (0..255).
     pub fn blend(&mut self, x: i32, y: i32, color: Rgba<u8>, a: u8) {
         if a == 0 {
@@ -169,6 +168,7 @@ impl Target<'_> {
 
     /// Copies a `w`×`h` block from `src` (at `sx, sy`) to `dx, dy`, skipping
     /// pixels equal to `mask` when given.
+    #[allow(clippy::too_many_arguments)]
     pub fn blit(&mut self, src: &RgbaImage, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32, mask: Option<[u8; 3]>) {
         for y in 0..h {
             for x in 0..w {
