@@ -179,8 +179,11 @@ pub fn smooth_normals(verts: &mut [Vert], tris: &[[u32; 3]]) {
     }
 }
 
+/// Axis-aligned bounds `(min, max)`.
+pub type Bounds = (Vector3<f32>, Vector3<f32>);
+
 /// Bounds of all vertices, or `None` if there are none.
-pub fn vertex_bounds<'a>(it: impl Iterator<Item = &'a Vert>) -> Option<(Vector3<f32>, Vector3<f32>)> {
+pub fn vertex_bounds<'a>(it: impl Iterator<Item = &'a Vert>) -> Option<Bounds> {
     let mut it = it.map(|v| v.pos);
     let first = it.next()?;
     Some(it.fold((first, first), |(lo, hi), p| (lo.inf(&p), hi.sup(&p))))
@@ -290,9 +293,9 @@ impl Host3D<'_> {
             m.surfaces().len() - 1
         };
         let s = self.add_surface_info(SurfaceInfo { entity: mesh, index, verts: Vec::new(), tris: Vec::new(), dirty: false, brush });
-        if brush != 0 {
-            self.refresh_material(mesh)?;
-        } else if self.ent(mesh)?.originals.is_empty() && self.material_is_classic(mesh)? {
+        // a painted surface, or a mesh already on the classic material, needs
+        // the new surface's material set up the same way
+        if brush != 0 || self.material_is_classic(mesh)? {
             self.refresh_material(mesh)?;
         }
         Ok(s)
@@ -361,7 +364,7 @@ impl Host3D<'_> {
         Ok(())
     }
 
-    pub fn mesh_bounds(&mut self, mesh: i32) -> Result<Option<(Vector3<f32>, Vector3<f32>)>, String> {
+    pub fn mesh_bounds(&mut self, mesh: i32) -> Result<Option<Bounds>, String> {
         let surfaces = self.all_surfaces(mesh)?;
         let infos: Vec<&SurfaceInfo> = surfaces.iter().filter_map(|&s| self.surface(s).ok()).collect();
         Ok(vertex_bounds(infos.iter().flat_map(|i| i.verts.iter())))

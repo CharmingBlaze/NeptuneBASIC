@@ -173,6 +173,37 @@ Read w, h, name$
 Data 10, 20, "first"
 ```
 
+## Modern command names
+
+Every 3D command keeps its Blitz3D name. Many also have a modern name
+(marked "(ext)" in the docs); both spellings take the same arguments:
+
+```basic
+SetWindowTitle "Game"            ; AppTitle
+player = LoadModel("hero.glb")   ; LoadMesh
+SetEntityPosition player, 0, 1, 0 ; PositionEntity
+SetLightDirection sun, 0, -1, 0  ; points a light along a vector
+UpdatePhysics                    ; UpdateWorld
+```
+
+Named constants cover the common flags: `DIRECTIONAL`, `POINT`, `SPOT`,
+`BLEND_ALPHA/MULTIPLY/ADD`, `FX_FULLBRIGHT/VERTEXCOLOR/FLAT/NOFOG/TWOSIDED/FORCEALPHA`,
+`PHYS_DYNAMIC/STATIC/KINEMATIC`, `SHAPE_BOX/SPHERE/CAPSULE/CYLINDER/MESH/HULL`,
+`QUALITY_LOW/MEDIUM/HIGH/ULTRA`, `EFFECT_BLOOM/SSAO/FXAA/SHADOWS`.
+
+## Physics (ext)
+
+```basic
+EntityPhysics ground, PHYS_STATIC              ; mesh collider for static bodies
+EntityPhysics crate, PHYS_DYNAMIC, SHAPE_BOX, 5 ; mass 5
+ApplyImpulse crate, 0, 10, 0
+If EntityTouching(crate, ground) Then ...
+door = CreateHingeJoint(post, panel, 5, 2, 0, 0, 1, 0) ; anchor and axis
+```
+
+The simulation steps every frame by itself; position, rotation and the
+other entity commands keep working on physics entities.
+
 ## Errors
 
 ```basic

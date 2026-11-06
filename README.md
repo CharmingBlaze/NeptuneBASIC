@@ -36,6 +36,14 @@ End
   compiled with a real multi-stage compiler designed for a future native backend.
 * **Fyrox underneath** – entities are Fyrox scene nodes, so PBR rendering,
   shadows and the rest of Fyrox are available to BASIC commands.
+* **Batteries included** – custom meshes, animated glTF/FBX models, terrain,
+  sprites, sound and 3D sound, rigid-body physics (Rapier), collisions,
+  picking, 2D images and pixel buffers.
+* **Runs on old and new PCs** – any OpenGL 3.3 GPU (roughly 2010 onwards).
+  `--quality low` turns off the expensive effects for older laptops;
+  `ultra` turns them all on.
+* **Modern names too** – `SetEntityPosition`, `LoadModel`,
+  `UpdatePhysics`, ... work alongside the classic Blitz3D names.
 
 ## Using it
 
@@ -47,8 +55,17 @@ cargo build --release
 target/release/neptune run examples/cube.nb
 ```
 
-Other commands: `neptune check <file>`, `neptune disasm <file>`,
-`neptune commands`.
+Other commands:
+
+* `neptune run --quality low <file>` – run with the low graphics preset
+  (also `medium`, `high`, `ultra`).
+* `neptune build <file>` – make a stand-alone game in `dist/<name>/`
+  (executable plus the media files the program uses). Build NeptuneBASIC
+  with `--release` first so the game runs at full speed.
+* `neptune check <file>`, `neptune disasm <file>`, `neptune commands`.
+
+Editor support for VS Code (highlighting, errors on save, F5 to run) is in
+[`editors/vscode`](editors/vscode/README.md).
 
 ## Documentation
 

@@ -129,6 +129,7 @@ impl Target<'_> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Copies a `w`×`h` block from `src` (at `sx, sy`) to `dx, dy`, skipping
     /// pixels equal to `mask` when given.
     pub fn blit(&mut self, src: &RgbaImage, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32, mask: Option<[u8; 3]>) {

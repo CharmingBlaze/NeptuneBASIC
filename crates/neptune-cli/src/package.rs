@@ -89,8 +89,7 @@ pub fn decode(bytes: &[u8]) -> Option<Vec<Entry>> {
         Some(s)
     };
     let mut entries = Vec::new();
-    loop {
-        let Some(key) = read() else { break };
+    while let Some(key) = read() {
         let canon = read()?;
         let text = read()?;
         entries.push(Entry { key, canon, text });

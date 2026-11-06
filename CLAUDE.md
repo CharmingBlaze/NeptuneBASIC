@@ -15,7 +15,9 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | 3D/2D/input commands | `crates/neptune-runtime/src/commands.rs` (`COMMANDS`, `ALIASES`, `constants()`) |
 | Entity table, `Host3D`, `Kind` | `crates/neptune-runtime/src/world.rs` |
 | Blitz↔Fyrox coordinate mirror | `crates/neptune-runtime/src/transform.rs` |
-| Feature modules | runtime `collision`, `pick`, `mesh`, `model`, `texture`, `material`, `classic` (fixed-function shader), `draw2d`, `image2d`, `input` |
+| Feature modules | runtime `collision`, `pick`, `mesh`, `model`, `anim`, `texture`, `material`, `classic` (fixed-function shader), `sprite`, `terrain`, `physics`, `sound`, `quality`, `buffer`, `draw2d`, `image2d`, `input` |
+| Packaging (`neptune build`) | `crates/neptune-cli/src/package.rs` |
+| VS Code extension | `editors/vscode` (regenerate grammar with `python tools/gen_grammar.py`) |
 | Language tests | `crates/neptune-vm/tests/language.rs` |
 | What's done / to do | `docs/STATUS.md` |
 | Design | `docs/ARCHITECTURE.md`, `docs/LANGUAGE.md` |
