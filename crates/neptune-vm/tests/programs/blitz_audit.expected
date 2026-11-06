@@ -1,0 +1,27 @@
+1 hex/bin 255 10 000000FF 00000000000000000000000000000101
+2 strings ello|el|6|a-b-
+3 lset [ab  ][  ab] ababab A97
+4 maths -1.0 3 2.0 3.0 3 8.0 6
+5 conv 3 4 2 1.5 1.5
+6 compare 1 1 2
+7 redim 0
+8 typed array S2 S1 1
+9 type fn 10 1
+10 handle S2
+11 insert S2 S0
+12 delete 2
+13 recursion 3628800
+14 global 2
+15 data -5 2.5 text
+16 forever exit 5
+17 select ok
+18 gosub 10
+19 goto ok
+20 local array 7
+21 const 7
+22 str concat a123
+23 float print 1.0 0.333333
+24 neg mod -1 shr 2147483644 sar -4
+25 rand 1 1
+26 nested 2
+27 atan2 45

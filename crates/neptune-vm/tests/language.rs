@@ -586,3 +586,14 @@ Print CountHostIPs("127.0.0.1") >= 1
     }
     panic!("no free port for the network test");
 }
+
+#[test]
+fn blitz3d_language_audit() {
+    // A sweep of Blitz3D syntax and built-in behaviour (typed arrays, type
+    // lists, Data, Gosub/Goto, rounding, shifts, string functions, ...).
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/programs/");
+    let src = std::fs::read_to_string(format!("{dir}blitz_audit.nb")).unwrap();
+    let expected = std::fs::read_to_string(format!("{dir}blitz_audit.expected")).unwrap().replace("\r\n", "\n");
+    // Rand/Rnd lines only check ranges, so the output is deterministic
+    assert_eq!(ok(&src), expected);
+}
