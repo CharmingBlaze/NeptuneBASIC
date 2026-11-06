@@ -106,6 +106,11 @@ fn camera_mut<'h>(h: &'h mut Host3D, e: i32) -> Result<&'h mut Camera, String> {
     h.graph()?[node].cast_mut::<Camera>().ok_or_else(|| "camera node missing".to_string())
 }
 
+fn mesh_extent(h: &mut Host3D, e: i32, axis: usize) -> Result<Value, String> {
+    let tris = h.mesh_triangles(e)?;
+    float(crate::model::bounds(&tris).map_or(0.0, |(lo, hi)| hi[axis] - lo[axis]))
+}
+
 fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
     usize::try_from(f - 1)
         .ok()
@@ -225,6 +230,13 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.graph()?.link_nodes(light, pivot);
         int(id)
     }),
+    ("%LoadMesh$file%parent=0", |h, a, _| int(crate::model::load_mesh(h, &a[0].str(), a[1].int())?)),
+    ("%LoadAnimMesh$file%parent=0", |h, a, _| int(crate::model::load_mesh(h, &a[0].str(), a[1].int())?)),
+    ("%CopyEntity%entity%parent=0", |h, a, _| int(h.copy_entity(a[0].int(), a[1].int())?)),
+    ("#MeshWidth%mesh", |h, a, _| mesh_extent(h, a[0].int(), 0)),
+    ("#MeshHeight%mesh", |h, a, _| mesh_extent(h, a[0].int(), 1)),
+    ("#MeshDepth%mesh", |h, a, _| mesh_extent(h, a[0].int(), 2)),
+    ("%CountMeshTriangles%mesh", |h, a, _| int(h.mesh_triangles(a[0].int())?.len() as i32)), // (ext)
     ("FreeEntity%entity", |h, a, _| {
         h.free_entity(a[0].int())?;
         VOID

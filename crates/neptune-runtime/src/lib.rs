@@ -13,6 +13,7 @@
 pub mod commands;
 pub mod draw2d;
 pub mod input;
+pub mod model;
 pub mod texture;
 pub mod transform;
 pub mod world;
@@ -180,7 +181,7 @@ impl Plugin for NeptunePlugin {
             return Ok(());
         };
         let result = {
-            let mut host = Host3D::graphics(&mut st.world, &mut st.input, scene);
+            let mut host = Host3D::graphics(&mut st.world, &mut st.input, scene, context.resource_manager.clone());
             vm.run(&mut host)
         };
         // show the 2D frame published by Flip

@@ -1,0 +1,32 @@
+; Loading models (glTF / FBX) and copying entities
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Models"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 4, -9
+LookAt camera, 0, 1, 0
+light = CreateLight()
+RotateEntity light, 50, -30, 0
+
+ground = CreatePlane()
+EntityColor ground, 70, 110, 70
+
+pyramid = LoadMesh("examples/media/pyramid.gltf")
+If pyramid = 0 Then RuntimeError "could not load pyramid.gltf"
+
+; copies share geometry; colouring one leaves the others alone
+For i = 1 To 4
+    copy = CopyEntity(pyramid)
+    PositionEntity copy, i * 3 - 7.5, 0, 3
+    EntityColor copy, 60 * i, 120, 255 - 50 * i
+Next
+PositionEntity pyramid, 0, 0, -1
+
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity pyramid, 0, 1, 0
+    RenderWorld
+    Text 10, 10, $"Pyramid size: {MeshWidth(pyramid)} x {MeshHeight(pyramid)} x {MeshDepth(pyramid)}"
+    Text 10, 30, $"Triangles: {CountMeshTriangles(pyramid)}"
+    Flip
+Wend
+End

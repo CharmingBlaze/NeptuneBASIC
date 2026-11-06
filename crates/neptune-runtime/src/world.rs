@@ -64,6 +64,9 @@ pub struct Entity {
     pub hidden: bool,
     /// Texture handle applied with `EntityTexture` (0 = none).
     pub texture: i32,
+    /// False while the entity's materials are shared (loaded models, copies);
+    /// they are cloned before the first per-entity change.
+    pub own_materials: bool,
 }
 
 /// Program-visible state that persists across frames.
@@ -121,15 +124,40 @@ pub struct Host3D<'a> {
     pub world: &'a mut World,
     pub input: &'a mut Input,
     scene: Option<&'a mut Scene>,
+    resources: Option<fyrox::asset::manager::ResourceManager>,
 }
 
 impl<'a> Host3D<'a> {
     /// Host for the console phase (before `Graphics3D`).
     pub fn console(world: &'a mut World, input: &'a mut Input) -> Self {
-        Host3D { world, input, scene: None }
+        Host3D { world, input, scene: None, resources: None }
     }
-    pub fn graphics(world: &'a mut World, input: &'a mut Input, scene: &'a mut Scene) -> Self {
-        Host3D { world, input, scene: Some(scene) }
+    pub fn graphics(
+        world: &'a mut World,
+        input: &'a mut Input,
+        scene: &'a mut Scene,
+        resources: fyrox::asset::manager::ResourceManager,
+    ) -> Self {
+        Host3D { world, input, scene: Some(scene), resources: Some(resources) }
+    }
+
+    pub fn resources(&self) -> Option<fyrox::asset::manager::ResourceManager> {
+        self.resources.clone()
+    }
+
+    /// Returns a predicate that is true for the nodes of every entity except
+    /// `id`; used to keep subtree walks inside one entity.
+    pub fn other_entity_nodes(&self, id: i32) -> impl Fn(Handle<Node>) -> bool {
+        let set: std::collections::HashSet<Handle<Node>> =
+            self.entities().filter(|(i, _)| *i != id).map(|(_, e)| e.node).collect();
+        move |h| set.contains(&h)
+    }
+
+    /// Triangles of an entity's own meshes in its local Blitz space.
+    pub fn mesh_triangles(&mut self, id: i32) -> Result<Vec<[Vector3<f32>; 3]>, String> {
+        let node = self.ent(id)?.node;
+        let skip = self.other_entity_nodes(id);
+        Ok(crate::model::triangles(self.graph()?, node, &skip))
     }
 
     pub fn has_graphics(&self) -> bool {
@@ -206,8 +234,15 @@ impl<'a> Host3D<'a> {
         if parent != 0 {
             self.ent(parent)?;
         }
-        let graph = self.graph()?;
-        let handle = graph.add_node(node);
+        let handle = self.graph()?.add_node(node);
+        self.attach_entity(handle, kind, parent)
+    }
+
+    /// Registers an existing scene node as a new entity.
+    pub fn attach_entity(&mut self, handle: Handle<Node>, kind: Kind, parent: i32) -> Result<i32, String> {
+        if parent != 0 {
+            self.ent(parent)?;
+        }
         let entity = Entity {
             node: handle,
             kind,
@@ -218,6 +253,7 @@ impl<'a> Host3D<'a> {
             color: Color::WHITE,
             hidden: false,
             texture: 0,
+            own_materials: true,
         };
         let id = match self.world.free.pop() {
             Some(i) => {
@@ -302,16 +338,68 @@ impl<'a> Host3D<'a> {
     }
 
     /// Applies `f` to the material of every surface of a mesh entity.
+    /// Applies `f` to the material of every surface of an entity's meshes
+    /// (including the meshes inside a loaded model, but not child entities).
     pub fn with_materials(&mut self, id: i32, mut f: impl FnMut(&mut Material)) -> Result<(), String> {
-        let node = self.ent(id)?.node;
+        let (node, own) = {
+            let e = self.ent(id)?;
+            (e.node, e.own_materials)
+        };
+        let skip = self.other_entity_nodes(id);
         let graph = self.graph()?;
-        if let Some(mesh) = graph[node].cast_mut::<Mesh>() {
-            for s in mesh.surfaces_mut() {
-                let mut m = s.material().data_ref();
-                f(&mut m);
+        let mut stack = vec![node];
+        while let Some(n) = stack.pop() {
+            stack.extend(graph[n].children().iter().copied().filter(|c| !skip(*c)));
+            if let Some(mesh) = graph[n].cast_mut::<Mesh>() {
+                for s in mesh.surfaces_mut() {
+                    if !own {
+                        let copy = s.material().data_ref().clone();
+                        s.set_material(MaterialResource::new_ok(Uuid::new_v4(), ResourceKind::Embedded, copy));
+                    }
+                    let mut m = s.material().data_ref();
+                    f(&mut m);
+                }
             }
         }
+        self.ent_mut(id)?.own_materials = true;
         Ok(())
+    }
+
+    /// Copies an entity and its child entities (`CopyEntity`).
+    pub fn copy_entity(&mut self, id: i32, parent: i32) -> Result<i32, String> {
+        let (node, kind, xf, name, color, hidden, texture, children) = {
+            let e = self.ent(id)?;
+            (e.node, e.kind, e.xf, e.name.clone(), e.color, e.hidden, e.texture, e.children.clone())
+        };
+        let child_nodes: std::collections::HashSet<Handle<Node>> =
+            children.iter().filter_map(|&c| self.ent(c as i32).ok().map(|e| e.node)).collect();
+        // the light node of a light entity is a plain child, so it is copied along
+        let graph = self.graph()?;
+        let new_node = crate::model::copy_tree(graph, node, &|h| child_nodes.contains(&h));
+        let kind = match kind {
+            Kind::Light { kind: lk, .. } => {
+                let light = graph[new_node].children().first().copied().unwrap_or_default();
+                Kind::Light { kind: lk, light }
+            }
+            k => k,
+        };
+        let new = self.attach_entity(new_node, kind, parent)?;
+        {
+            let e = self.ent_mut(new)?;
+            e.xf = xf;
+            e.name = name;
+            e.color = color;
+            e.hidden = hidden;
+            e.texture = texture;
+            e.own_materials = false;
+        }
+        // the copy shares materials with the original, so neither owns them now
+        self.ent_mut(id)?.own_materials = false;
+        self.sync(new)?;
+        for c in children {
+            self.copy_entity(c as i32, new)?;
+        }
+        Ok(new)
     }
 
     /// Recomputes a camera's vertical field of view from its Blitz zoom.
