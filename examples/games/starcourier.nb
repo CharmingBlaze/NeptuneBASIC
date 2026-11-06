@@ -1,0 +1,370 @@
+; STAR COURIER - a complete 2D game in NeptuneBASIC.
+; Run from the repository root: neptune run examples/games/starcourier.nb
+;
+; Fly up the trade lane, grab cargo coins and blast raiders.
+; Keyboard: arrows/WASD move, Space fires, P pauses, Escape quits.
+; Gamepad: left stick or d-pad moves, A fires, Start pauses.
+;
+; Shows: Types and lists, a fixed-rate game loop with CreateTimer, game
+; states, images drawn at start-up with CreateImage, animated images,
+; pixel-perfect collisions, particles, sound with pitch changes, fonts,
+; gamepads and a high score saved to a file.
+
+Graphics 960, 720
+SetWindowTitle "Star Courier"
+SeedRnd MilliSecs()
+
+Const STATE_TITLE = 0, STATE_PLAY = 1, STATE_OVER = 2
+Const HISCORE_FILE$ = "starcourier.hi"
+
+; ---------------------------------------------------------------- media
+Global shipImg = LoadImage("examples/media/ship.png")
+MidHandle shipImg
+Global coinImg = LoadAnimImage("examples/media/coin.png", 32, 32, 0, 4)
+MidHandle coinImg
+Global blip = LoadSound("examples/media/blip.wav")
+If shipImg = 0 Or coinImg = 0 Or blip = 0 Then RuntimeError "run this from the repository root (media not found)"
+
+; raider ship drawn into an image at start-up
+Global raiderImg = CreateImage(36, 28)
+SetBuffer ImageBuffer(raiderImg)
+ClsColor 0, 0, 0
+Cls
+Color 200, 50, 60
+Oval 0, 4, 36, 18
+Color 255, 120, 80
+Rect 14, 0, 8, 28
+Color 255, 230, 120
+Oval 13, 8, 10, 10
+SetBuffer BackBuffer()
+MidHandle raiderImg
+
+Global bigFont = LoadFont("Arial", 56, True)
+Global smallFont = LoadFont("Arial", 20)
+
+; ---------------------------------------------------------------- types
+Type Star
+    Field x#, y#, speed#
+End Type
+
+Type Bullet
+    Field x#, y#, vy#
+    Field hostile
+End Type
+
+Type Raider
+    Field x#, y#, baseX#, phase#
+    Field speed#, hp, fireTimer
+End Type
+
+Type Coin
+    Field x#, y#, frame#
+End Type
+
+Type Spark
+    Field x#, y#, vx#, vy#, life#
+    Field r, g, b
+End Type
+
+; ---------------------------------------------------------------- state
+Global state = STATE_TITLE
+Global score, lives, level, hiscore
+Global px#, py#, cooldown, invulnerable
+Global spawnTimer, coinTimer, paused
+; attract mode: after a few idle seconds on the title the computer plays
+Global demo, titleTime
+
+hiscore = LoadHiscore()
+For i = 1 To 120
+    s.Star = New Star
+    s\x = Rnd(0, 960) : s\y = Rnd(0, 720) : s\speed = Rnd(0.5, 4)
+Next
+
+Function LoadHiscore()
+    f = ReadFile(HISCORE_FILE)
+    If f = 0 Then Return 0
+    best = ReadInt(f)
+    CloseFile f
+    Return best
+End Function
+
+Function SaveHiscore(best)
+    f = WriteFile(HISCORE_FILE)
+    If f Then WriteInt f, best : CloseFile f
+End Function
+
+Function NewGame()
+    Delete Each Bullet
+    Delete Each Raider
+    Delete Each Coin
+    Delete Each Spark
+    score = 0 : lives = 3 : level = 1
+    px = 480 : py = 620 : cooldown = 0 : invulnerable = 120
+    spawnTimer = 60 : coinTimer = 200 : paused = False
+    state = STATE_PLAY
+    demo = False
+End Function
+
+Function StartDemo()
+    NewGame()
+    demo = True
+End Function
+
+; autopilot for the attract mode: chase the nearest coin, dodge raiders
+Function DemoSteer#(axis)
+    tx# = 480 : ty# = 600
+    best# = 999999
+    For c.Coin = Each Coin
+        d# = (c\x - px) ^ 2 + (c\y - py) ^ 2
+        If d < best Then best = d : tx = c\x : ty = Clamp(c\y + 80, 300, 680)
+    Next
+    For r.Raider = Each Raider
+        If Abs(r\x - px) < 70 And r\y < py And r\y > py - 260 Then tx = px + IIf(r\x > px, -200, 200)
+    Next
+    If axis = 0 Then Return Clamp((tx - px) / 40.0, -1, 1)
+    Return Clamp((ty - py) / 40.0, -1, 1)
+End Function
+
+Function Burst(x#, y#, count, r, g, b)
+    For i = 1 To count
+        sp.Spark = New Spark
+        a# = Rnd(0, 360) : v# = Rnd(1, 6)
+        sp\x = x : sp\y = y : sp\vx = Cos(a) * v : sp\vy = Sin(a) * v
+        sp\life = Rnd(20, 45) : sp\r = r : sp\g = g : sp\b = b
+    Next
+End Function
+
+Function Beep(hz)
+    ch = PlaySound(blip)
+    ChannelPitch ch, hz
+End Function
+
+; one fixed game tick of play
+Function UpdatePlay()
+    ; --- input (keyboard and gamepad)
+    dx# = JoyX() : dy# = JoyY()
+    If demo Then dx = DemoSteer(0) : dy = DemoSteer(1)
+    If KeyDown(KEY_LEFT) Or KeyDown(KEY_A) Or JoyDown(JOY_LEFT) Then dx = -1
+    If KeyDown(KEY_RIGHT) Or KeyDown(KEY_D) Or JoyDown(JOY_RIGHT) Then dx = 1
+    If KeyDown(KEY_UP) Or KeyDown(KEY_W) Or JoyDown(JOY_UP) Then dy = -1
+    If KeyDown(KEY_DOWN) Or KeyDown(KEY_S) Or JoyDown(JOY_DOWN) Then dy = 1
+    px = Clamp(px + dx * 7, 20, 940)
+    py = Clamp(py + dy * 6, 60, 700)
+    cooldown = cooldown - 1
+    If (KeyDown(KEY_SPACE) Or JoyDown(JOY_A) Or demo) And cooldown <= 0 Then
+        For side = -1 To 1 Step 2
+            b.Bullet = New Bullet
+            b\x = px + side * 10 : b\y = py - 14 : b\vy = -14
+        Next
+        cooldown = 8
+        Beep 30000
+    EndIf
+    If invulnerable > 0 Then invulnerable = invulnerable - 1
+
+    ; --- spawning: faster as the level rises
+    spawnTimer = spawnTimer - 1
+    If spawnTimer <= 0 Then
+        r.Raider = New Raider
+        r\baseX = Rnd(60, 900) : r\x = r\baseX : r\y = -30
+        r\phase = Rnd(0, 360) : r\speed = Rnd(1.5, 2.5) + level * 0.3
+        r\hp = 1 + level / 3 : r\fireTimer = Rand(40, 120)
+        spawnTimer = Max(14, 55 - level * 4)
+    EndIf
+    coinTimer = coinTimer - 1
+    If coinTimer <= 0 Then
+        c.Coin = New Coin
+        c\x = Rnd(40, 920) : c\y = -20
+        coinTimer = Rand(120, 260)
+    EndIf
+
+    ; --- bullets
+    For b.Bullet = Each Bullet
+        b\y = b\y + b\vy
+        If b\y < -20 Or b\y > 740 Then
+            Delete b
+        ElseIf b\hostile And invulnerable = 0 And RectsOverlap(b\x - 3, b\y - 6, 6, 12, px - 10, py - 10, 20, 20) Then
+            Delete b
+            HitPlayer()
+        EndIf
+    Next
+
+    ; --- raiders
+    For r.Raider = Each Raider
+        r\y = r\y + r\speed
+        r\phase = r\phase + 3
+        r\x = r\baseX + Sin(r\phase) * 60
+        r\fireTimer = r\fireTimer - 1
+        If r\fireTimer <= 0 Then
+            e.Bullet = New Bullet
+            e\x = r\x : e\y = r\y + 14 : e\vy = 6 + level * 0.5 : e\hostile = True
+            r\fireTimer = Rand(70, 150)
+        EndIf
+        dead = False
+        For b.Bullet = Each Bullet
+            If Not b\hostile And ImageRectCollide(raiderImg, r\x, r\y, 0, b\x - 2, b\y - 6, 4, 12) Then
+                Delete b
+                r\hp = r\hp - 1
+                If r\hp <= 0 Then dead = True : Exit
+            EndIf
+        Next
+        If dead Then
+            Burst r\x, r\y, 30, 255, 160, 60
+            score = score + 100
+            If score / 1500 + 1 > level Then level = level + 1
+            Beep 12000
+            Delete r
+        ElseIf invulnerable = 0 And ImagesCollide(shipImg, px, py, 0, raiderImg, r\x, r\y, 0) Then
+            Burst r\x, r\y, 30, 255, 80, 60
+            Delete r
+            HitPlayer()
+        ElseIf r\y > 760 Then
+            Delete r
+        EndIf
+    Next
+
+    ; --- cargo coins
+    For c.Coin = Each Coin
+        c\y = c\y + 2.5
+        c\frame = c\frame + 0.2
+        If c\frame >= 4 Then c\frame = 0
+        If ImagesCollide(shipImg, px, py, 0, coinImg, c\x, c\y, Int(Floor(c\frame))) Then
+            score = score + 50
+            Burst c\x, c\y, 15, 255, 230, 80
+            Beep 44000
+            Delete c
+        ElseIf c\y > 760 Then
+            Delete c
+        EndIf
+    Next
+End Function
+
+Function HitPlayer()
+    lives = lives - 1
+    Burst px, py, 60, 120, 200, 255
+    Beep 6000
+    invulnerable = 120
+    If lives <= 0 Then
+        state = STATE_OVER
+        If score > hiscore And Not demo Then hiscore = score : SaveHiscore(hiscore)
+    EndIf
+End Function
+
+Function UpdateWorld2D()
+    For s.Star = Each Star
+        s\y = s\y + s\speed * IIf(state = STATE_PLAY, 1.5, 0.6)
+        If s\y > 720 Then s\y = 0 : s\x = Rnd(0, 960)
+    Next
+    For sp.Spark = Each Spark
+        sp\x = sp\x + sp\vx : sp\y = sp\y + sp\vy
+        sp\vx = sp\vx * 0.96 : sp\vy = sp\vy * 0.96
+        sp\life = sp\life - 1
+        If sp\life <= 0 Then Delete sp
+    Next
+End Function
+
+Function DrawWorld2D()
+    For s.Star = Each Star
+        k = 60 + s\speed * 45
+        Color k, k, k + 30
+        Plot s\x, s\y
+    Next
+    For c.Coin = Each Coin
+        DrawImage coinImg, c\x, c\y, Int(Floor(c\frame))
+    Next
+    For r.Raider = Each Raider
+        DrawImage raiderImg, r\x, r\y
+    Next
+    For b.Bullet = Each Bullet
+        If b\hostile Then Color 255, 90, 90 Else Color 255, 255, 120
+        Rect b\x - 2, b\y - 6, 4, 12
+    Next
+    For sp.Spark = Each Spark
+        Color sp\r, sp\g, sp\b
+        Rect sp\x, sp\y, 2, 2
+    Next
+    If state = STATE_PLAY Then
+        ; blink while invulnerable
+        If invulnerable = 0 Or (invulnerable / 6) Mod 2 = 0 Then DrawImage shipImg, px, py
+    EndIf
+End Function
+
+Function CentreText(y, txt$)
+    Text 480, y, txt, True, True
+End Function
+
+; ---------------------------------------------------------------- main loop
+timer = CreateTimer(60)
+While Not KeyHit(KEY_ESCAPE)
+    ; run as many fixed ticks as time has passed (steady speed on any PC)
+    ticks = WaitTimer(timer)
+    For t = 1 To Min(ticks, 4)
+        Select state
+            Case STATE_TITLE
+                titleTime = titleTime + 1
+                If KeyHit(KEY_SPACE) Or KeyHit(KEY_ENTER) Or JoyHit(JOY_A) Or JoyHit(JOY_START) Then
+                    NewGame()
+                ElseIf titleTime > 240 Then
+                    StartDemo()
+                EndIf
+            Case STATE_PLAY
+                If demo Then
+                    ; any key or button ends the demo
+                    If GetKey() Or GetJoy() Or GetMouse() Or KeyHit(KEY_SPACE) Then
+                        state = STATE_TITLE : titleTime = 0 : demo = False
+                    EndIf
+                ElseIf KeyHit(KEY_P) Or JoyHit(JOY_START) Then
+                    paused = Not paused
+                EndIf
+                If state = STATE_PLAY And Not paused Then UpdatePlay()
+            Case STATE_OVER
+                If demo Or KeyHit(KEY_SPACE) Or KeyHit(KEY_ENTER) Or JoyHit(JOY_A) Or JoyHit(JOY_START) Then
+                    state = STATE_TITLE : titleTime = 0 : demo = False
+                EndIf
+        End Select
+        If Not paused Then UpdateWorld2D()
+    Next
+
+    ClsColor 6, 8, 20
+    Cls
+    DrawWorld2D()
+    If smallFont Then SetFont smallFont
+    Color 255, 255, 255
+    Select state
+        Case STATE_TITLE
+            If bigFont Then SetFont bigFont
+            Color 120, 220, 255
+            CentreText 250, "STAR COURIER"
+            If smallFont Then SetFont smallFont
+            Color 255, 255, 255
+            CentreText 340, "Grab the cargo, dodge the raiders"
+            CentreText 400, "Press Space or (A) to launch"
+            Color 255, 220, 120
+            CentreText 470, $"High score: {hiscore}"
+        Case STATE_PLAY
+            Text 16, 12, $"SCORE {score}"
+            Text 16, 38, $"LEVEL {level}"
+            hi$ = $"HI {Max(hiscore, score)}"
+            Text 944 - StringWidth(hi), 12, hi
+            For i = 1 To lives
+                DrawImage shipImg, 960 - i * 36, 60
+            Next
+            If demo Then
+                Color 120, 220, 255
+                CentreText 680, "DEMO - press any key"
+            EndIf
+            If paused Then
+                Color 255, 255, 120
+                CentreText 360, "PAUSED - P or Start to continue"
+            EndIf
+        Case STATE_OVER
+            If bigFont Then SetFont bigFont
+            Color 255, 90, 90
+            CentreText 280, "GAME OVER"
+            If smallFont Then SetFont smallFont
+            Color 255, 255, 255
+            CentreText 360, $"Score {score}   High score {hiscore}"
+            CentreText 410, "Press Space or (A) for the title screen"
+    End Select
+    Flip
+Wend
+End

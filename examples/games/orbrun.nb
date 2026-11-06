@@ -1,0 +1,313 @@
+; ORB RUN - a complete 3D game in NeptuneBASIC.
+; Run from the repository root: neptune run examples/games/orbrun.nb
+;
+; Guide the fox over the hills and collect every glowing orb before time
+; runs out. Keep away from the rolling boulders.
+; Keyboard: arrows/WASD move, Shift runs, Escape quits.
+; Gamepad: left stick moves, hold A to run.
+;
+; Shows: an animated glTF model with blended Animate transitions,
+; terrain with TerrainY, sprites, fog, additive glowing materials, a
+; follow camera, distance checks, sound, a 2D HUD over 3D, game states,
+; a fixed-rate loop and a best time saved to a file.
+
+Graphics3D 1280, 720
+SetWindowTitle "Orb Run"
+SeedRnd MilliSecs()
+
+Const STATE_TITLE = 0, STATE_PLAY = 1, STATE_WON = 2, STATE_LOST = 3
+Const ORB_COUNT = 12, TIME_LIMIT = 120, BEST_FILE$ = "orbrun.best"
+Const SEQ_IDLE = 0, SEQ_WALK = 1, SEQ_RUN = 2
+
+; ---------------------------------------------------------------- world
+Global camera = CreateCamera()
+CameraRange camera, 0.1, 300
+CameraClsColor camera, 140, 180, 230
+CameraFogMode camera, 1
+CameraFogColor camera, 140, 180, 230
+CameraFogRange camera, 30, 110
+
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.5, -1, 0.4
+LightShadows light, True
+AmbientLight 90, 90, 100
+
+Global land = CreateTerrain(64)
+ScaleEntity land, 2, 18, 2
+PositionEntity land, -64, 0, -64
+For x = 0 To 64
+    For z = 0 To 64
+        ModifyTerrain land, x, z, 0.35 + 0.25 * Sin(x * 11) * Cos(z * 9) + 0.1 * Sin((x + 2 * z) * 17)
+    Next
+Next
+grass = LoadTexture("examples/media/checker.png")
+ScaleTexture grass, 3, 3
+EntityTexture land, grass
+EntityColor land, 110, 190, 100
+
+For i = 1 To 70
+    tree = LoadSprite("examples/media/tree.png", 1 + 4)
+    SpriteViewMode tree, 3
+    ScaleSprite tree, 1.2, 2.4
+    tx# = Rnd(-58, 58) : tz# = Rnd(-58, 58)
+    PositionEntity tree, tx, TerrainY(land, tx, 0, tz) + 2.2, tz
+Next
+
+Global fox = LoadAnimMesh("examples/media/Fox.glb")
+If fox = 0 Then RuntimeError "run this from the repository root (media not found)"
+ScaleEntity fox, 0.02, 0.02, 0.02
+Global pickup = LoadSound("examples/media/blip.wav")
+
+; ---------------------------------------------------------------- types
+Type Orb
+    Field ent
+    Field baseY#
+    Field phase#
+End Type
+
+Type Boulder
+    Field ent
+    Field x#, z#, dx#, dz#
+End Type
+
+; ---------------------------------------------------------------- state
+Global state = STATE_TITLE
+Global heading#, speed#, collected, startTime, finishTime, lives, hurtTimer
+Global best = LoadBest()
+Global camYaw#
+; attract mode: after a few idle seconds on the title the fox plays itself
+Global demo, idleTime
+
+Function LoadBest()
+    f = ReadFile(BEST_FILE)
+    If f = 0 Then Return 0
+    t = ReadInt(f)
+    CloseFile f
+    Return t
+End Function
+
+Function Ground#(x#, z#)
+    Return TerrainY(land, x, 0, z)
+End Function
+
+Function NewGame()
+    For i = 1 To ORB_COUNT
+        o.Orb = New Orb
+        o\ent = CreateSphere(12)
+        ScaleEntity o\ent, 0.6, 0.6, 0.6
+        EntityColor o\ent, 255, 200, 60
+        EntityBlend o\ent, BLEND_ADD
+        EntityFX o\ent, FX_FULLBRIGHT
+        x# = Rnd(-50, 50) : z# = Rnd(-50, 50)
+        o\baseY = Ground(x, z) + 1.4
+        o\phase = Rnd(0, 360)
+        PositionEntity o\ent, x, o\baseY, z
+    Next
+    For i = 1 To 6
+        b.Boulder = New Boulder
+        b\ent = CreateSphere(10)
+        ScaleEntity b\ent, 1.3, 1.3, 1.3
+        EntityColor b\ent, 120, 100, 90
+        EntityShininess b\ent, 0.2
+        b\x = Rnd(-50, 50) : b\z = Rnd(-50, 50)
+        a# = Rnd(0, 360)
+        b\dx = Cos(a) * 0.12 : b\dz = Sin(a) * 0.12
+    Next
+    PositionEntity fox, 0, Ground(0, 0), 0
+    heading = 0 : speed = 0 : collected = 0 : lives = 3 : hurtTimer = 0
+    startTime = MilliSecs()
+    Animate fox, 1, 1, SEQ_IDLE, 10
+    state = STATE_PLAY
+End Function
+
+Function ClearLevel()
+    For o.Orb = Each Orb
+        FreeEntity o\ent
+        Delete o
+    Next
+    For b.Boulder = Each Boulder
+        FreeEntity b\ent
+        Delete b
+    Next
+End Function
+
+Function UpdatePlay()
+    ; --- steering: keyboard or gamepad
+    turn# = JoyX() : push# = -JoyY()
+    If demo Then
+        ; head for the nearest orb
+        nearest# = 999999 : want# = heading
+        For o.Orb = Each Orb
+            d# = EntityDistance(fox, o\ent)
+            If d < nearest Then nearest = d : want = VectorYaw(EntityX(o\ent) - EntityX(fox), 0, EntityZ(o\ent) - EntityZ(fox))
+        Next
+        diff# = want - heading
+        While diff > 180 : diff = diff - 360 : Wend
+        While diff < -180 : diff = diff + 360 : Wend
+        turn = Clamp(-diff / 20, -1, 1)
+        push = 1
+    EndIf
+    If KeyDown(KEY_LEFT) Or KeyDown(KEY_A) Then turn = -1
+    If KeyDown(KEY_RIGHT) Or KeyDown(KEY_D) Then turn = 1
+    If KeyDown(KEY_UP) Or KeyDown(KEY_W) Then push = 1
+    If KeyDown(KEY_DOWN) Or KeyDown(KEY_S) Then push = -0.5
+    running = KeyDown(KEY_LSHIFT) Or KeyDown(KEY_RSHIFT) Or JoyDown(JOY_A) Or demo
+    heading = heading - turn * 3
+    target# = push * IIf(running, 0.32, 0.16)
+    speed = Lerp(speed, target, 0.15)
+
+    ; --- move over the terrain, staying inside the world
+    x# = EntityX(fox) + Sin(-heading) * speed
+    z# = EntityZ(fox) + Cos(heading) * speed
+    x = Clamp(x, -60, 60) : z = Clamp(z, -60, 60)
+    PositionEntity fox, x, Ground(x, z), z
+    RotateEntity fox, 0, heading, 0
+
+    ; --- animation follows speed, blending between sequences
+    want = SEQ_IDLE
+    If Abs(speed) > 0.2 Then want = SEQ_RUN ElseIf Abs(speed) > 0.02 Then want = SEQ_WALK
+    If AnimSeq(fox) <> want Then Animate fox, 1, 1, want, 12
+
+    ; --- orbs bob and spin; collect when close
+    For o.Orb = Each Orb
+        o\phase = o\phase + 3
+        PositionEntity o\ent, EntityX(o\ent), o\baseY + Sin(o\phase) * 0.3, EntityZ(o\ent)
+        TurnEntity o\ent, 0, 2, 0
+        If EntityDistance(fox, o\ent) < 1.8 Then
+            ch = PlaySound(pickup)
+            ChannelPitch ch, 22050 + collected * 3000
+            FreeEntity o\ent
+            Delete o
+            collected = collected + 1
+        EndIf
+    Next
+    If collected = ORB_COUNT Then
+        finishTime = (MilliSecs() - startTime) / 1000
+        If Not demo And (best = 0 Or finishTime < best) Then
+            best = finishTime
+            f = WriteFile(BEST_FILE)
+            If f Then WriteInt f, best : CloseFile f
+        EndIf
+        Animate fox, 1, 1, SEQ_IDLE, 15
+        state = STATE_WON
+    EndIf
+
+    ; --- boulders roll around and bounce off the edges
+    If hurtTimer > 0 Then hurtTimer = hurtTimer - 1
+    For b.Boulder = Each Boulder
+        b\x = b\x + b\dx : b\z = b\z + b\dz
+        If Abs(b\x) > 58 Then b\dx = -b\dx
+        If Abs(b\z) > 58 Then b\dz = -b\dz
+        PositionEntity b\ent, b\x, Ground(b\x, b\z) + 1.3, b\z
+        TurnEntity b\ent, b\dz * 40, 0, -b\dx * 40
+        If hurtTimer = 0 And EntityDistance(fox, b\ent) < 2.2 Then
+            lives = lives - 1
+            hurtTimer = 90
+            ; knock the fox away from the boulder
+            nx# = EntityX(fox) - b\x : nz# = EntityZ(fox) - b\z
+            d# = Max(Sqr(nx * nx + nz * nz), 0.01)
+            PositionEntity fox, EntityX(fox) + nx / d * 3, EntityY(fox), EntityZ(fox) + nz / d * 3
+            speed = 0
+            If lives <= 0 Then state = STATE_LOST : Animate fox, 1, 1, SEQ_IDLE, 15
+        EndIf
+    Next
+    If (MilliSecs() - startTime) / 1000 >= TIME_LIMIT Then state = STATE_LOST : Animate fox, 1, 1, SEQ_IDLE, 15
+End Function
+
+Function UpdateCamera()
+    ; follow behind the fox, smoothly
+    camYaw = camYaw + (heading - camYaw) * 0.08
+    fx# = EntityX(fox) : fz# = EntityZ(fox)
+    cx# = fx - Sin(-camYaw) * 9
+    cz# = fz - Cos(camYaw) * 9
+    cy# = Max(EntityY(fox) + 4.5, Ground(cx, cz) + 2)
+    PositionEntity camera, Lerp(EntityX(camera), cx, 0.15), Lerp(EntityY(camera), cy, 0.15), Lerp(EntityZ(camera), cz, 0.15)
+    CameraLookAt camera, fx, EntityY(fox) + 1.2, fz
+End Function
+
+Function Centre(y, txt$)
+    Text GraphicsWidth() / 2, y, txt, True, True
+End Function
+
+; ---------------------------------------------------------------- main loop
+font = LoadFont("Arial", 22)
+bigFont = LoadFont("Arial", 64, True)
+PositionEntity camera, 0, 10, -14
+Animate fox, 1, 1, SEQ_IDLE
+timer = CreateTimer(60)
+While Not KeyHit(KEY_ESCAPE)
+    ticks = WaitTimer(timer)
+    For t = 1 To Min(ticks, 4)
+        Select state
+            Case STATE_TITLE, STATE_WON, STATE_LOST
+                ; slow turn around the fox until the player starts
+                heading = heading + 0.3
+                idleTime = idleTime + 1
+                If KeyHit(KEY_SPACE) Or KeyHit(KEY_ENTER) Or JoyHit(JOY_A) Or JoyHit(JOY_START) Then
+                    ClearLevel()
+                    NewGame()
+                    demo = False
+                ElseIf idleTime > 300 Then
+                    ClearLevel()
+                    NewGame()
+                    demo = True
+                EndIf
+            Case STATE_PLAY
+                If demo And (GetKey() Or GetJoy() Or GetMouse() Or KeyHit(KEY_SPACE)) Then
+                    ClearLevel()
+                    state = STATE_TITLE : demo = False : idleTime = 0
+                Else
+                    UpdatePlay()
+                    If state <> STATE_PLAY Then idleTime = 0
+                EndIf
+        End Select
+        UpdateCamera()
+        UpdateWorld
+    Next
+
+    RenderWorld
+    If font Then SetFont font
+    Select state
+        Case STATE_TITLE
+            If bigFont Then SetFont bigFont
+            Color 255, 240, 160
+            Centre 220, "ORB RUN"
+            If font Then SetFont font
+            Color 255, 255, 255
+            Centre 310, $"Collect all {ORB_COUNT} orbs in {TIME_LIMIT} seconds. Dodge the boulders."
+            Centre 360, "Arrows/WASD or left stick to move, Shift or (A) to run"
+            Centre 420, "Press Space or (A) to start"
+            If best Then Centre 480, $"Best time: {best} s"
+        Case STATE_PLAY
+            Color 255, 255, 255
+            Text 20, 16, $"ORBS {collected}/{ORB_COUNT}"
+            Text 20, 44, $"TIME {TIME_LIMIT - (MilliSecs() - startTime) / 1000}"
+            Text 20, 72, $"LIVES {lives}"
+            If demo Then
+                Color 255, 240, 160
+                Centre 690, "DEMO - press any key"
+            EndIf
+            If hurtTimer > 60 Then
+                Color 255, 80, 80
+                Centre 120, "OUCH!"
+            EndIf
+        Case STATE_WON
+            If bigFont Then SetFont bigFont
+            Color 160, 255, 160
+            Centre 250, "ALL ORBS!"
+            If font Then SetFont font
+            Color 255, 255, 255
+            Centre 330, $"Time {finishTime} s   Best {best} s"
+            Centre 380, "Press Space or (A) to play again"
+        Case STATE_LOST
+            If bigFont Then SetFont bigFont
+            Color 255, 120, 120
+            Centre 250, "OUT OF LUCK"
+            If font Then SetFont font
+            Color 255, 255, 255
+            Centre 330, $"Orbs {collected}/{ORB_COUNT}"
+            Centre 380, "Press Space or (A) to try again"
+    End Select
+    Flip
+Wend
+End
