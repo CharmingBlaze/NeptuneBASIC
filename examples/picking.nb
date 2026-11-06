@@ -1,0 +1,50 @@
+; Picking: click objects with the mouse, see labels projected from 3D to 2D.
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Picking"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 6, -12
+LookAt camera, 0, 0, 0
+light = CreateLight()
+RotateEntity light, 50, 20, 0
+
+ground = CreatePlane()
+EntityColor ground, 60, 70, 90
+EntityPickMode ground, 2
+
+Dim shapes(5)
+For i = 0 To 5
+    If i Mod 2 = 0 Then shapes(i) = CreateCube() Else shapes(i) = CreateSphere(12)
+    PositionEntity shapes(i), (i - 2.5) * 3, 1, 0
+    EntityColor shapes(i), 200, 200, 200
+    EntityPickMode shapes(i), 2
+    NameEntity shapes(i), $"Shape {i + 1}"
+Next
+
+marker = CreateSphere(8)
+ScaleEntity marker, 0.15, 0.15, 0.15
+EntityColor marker, 255, 230, 0
+selected = 0
+
+While Not KeyHit(KEY_ESCAPE)
+    hit = CameraPick(camera, MouseX(), MouseY())
+    If hit Then PositionEntity marker, PickedX(), PickedY(), PickedZ()
+    If MouseHit(MOUSE_LEFT) And hit <> ground Then selected = hit
+
+    For i = 0 To 5
+        If shapes(i) = selected Then EntityColor shapes(i), 255, 120, 40 Else EntityColor shapes(i), 200, 200, 200
+        TurnEntity shapes(i), 0, 0.5, 0
+    Next
+
+    RenderWorld
+    For i = 0 To 5
+        CameraProject camera, EntityX(shapes(i)), EntityY(shapes(i)) + 1.6, EntityZ(shapes(i))
+        Color 255, 255, 255
+        Text ProjectedX(), ProjectedY(), EntityName(shapes(i)), True, True
+    Next
+    Color 255, 230, 0
+    If hit Then Text 10, 10, $"Pointing at {IIf(hit = ground, "ground", EntityName(hit))}  ({FormatFloat(PickedX(), 1)}, {FormatFloat(PickedY(), 1)}, {FormatFloat(PickedZ(), 1)})"
+    Text 10, 30, "Click a shape to select it"
+    Flip
+Wend
+End

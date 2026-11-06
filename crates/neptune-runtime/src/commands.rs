@@ -204,6 +204,92 @@ fn update_world(h: &mut Host3D) -> Result<(), String> {
     Ok(())
 }
 
+/// Picks along `origin .. origin + line` against pickable entities.
+/// `exclude` entities are ignored; `obscurers_only` restricts to obscurers.
+fn pick_line(
+    h: &mut Host3D,
+    origin: Vector3<f32>,
+    line: Vector3<f32>,
+    radius: f32,
+    exclude: &[i32],
+    obscurers_only: bool,
+) -> Result<Option<crate::pick::PickHit>, String> {
+    let candidates: Vec<(i32, i32)> = h
+        .entities()
+        .filter(|(i, e)| e.pick_mode != 0 && !e.hidden && !exclude.contains(i) && (!obscurers_only || e.obscurer))
+        .map(|(i, e)| (i, e.pick_mode))
+        .collect();
+    let mut targets = Vec::with_capacity(candidates.len());
+    for (e, mode) in candidates {
+        targets.push((e, collision_shape(h, e, mode)?));
+    }
+    Ok(crate::pick::pick(origin, line, radius, &targets))
+}
+
+fn picked(h: &mut Host3D, hit: Option<crate::pick::PickHit>) -> Result<Value, String> {
+    h.world.picked = hit;
+    int(hit.map_or(0, |p| p.entity))
+}
+
+/// Camera parameters: world transform, tan of the half field of view
+/// horizontally and vertically, and far range.
+fn camera_params(h: &mut Host3D, cam: i32) -> Result<(crate::transform::WorldXform, f32, f32, f32), String> {
+    let Kind::Camera { zoom } = h.ent(cam)?.kind else { return Err(format!("Entity {cam} is not a camera")) };
+    let far = camera_mut(h, cam)?.projection().z_far();
+    let aspect = h.world.width as f32 / h.world.height.max(1) as f32;
+    let tx = 1.0 / zoom.max(1e-4);
+    Ok((h.world_of(cam)?, tx, tx / aspect, far))
+}
+
+/// World-space ray through a screen pixel, as origin and full-length line.
+fn camera_ray(h: &mut Host3D, cam: i32, sx: f32, sy: f32) -> Result<(Vector3<f32>, Vector3<f32>), String> {
+    let (w, tx, ty, far) = camera_params(h, cam)?;
+    let (sw, sh) = (h.world.width as f32, h.world.height as f32);
+    let d = Vector3::new((2.0 * sx / sw - 1.0) * tx, (1.0 - 2.0 * sy / sh) * ty, 1.0);
+    Ok((w.position(), w.rot * d * far))
+}
+
+/// Screen position of a world point, or `None` if it is behind the camera.
+fn camera_project(h: &mut Host3D, cam: i32, p: Vector3<f32>) -> Result<Option<(f32, f32, f32)>, String> {
+    let (w, tx, ty, _) = camera_params(h, cam)?;
+    let c = w.rot.transpose() * (p - w.position());
+    if c.z <= 1e-4 {
+        return Ok(None);
+    }
+    let (sw, sh) = (h.world.width as f32, h.world.height as f32);
+    Ok(Some((sw / 2.0 * (1.0 + c.x / (c.z * tx)), sh / 2.0 * (1.0 - c.y / (c.z * ty)), c.z)))
+}
+
+fn add_image(h: &mut Host3D, img: Result<crate::image2d::Image2D, String>) -> Result<Value, String> {
+    match img {
+        Ok(mut img) => {
+            if h.world.auto_mid_handle {
+                img.handle = ((img.frame_w / 2) as f32, (img.frame_h / 2) as f32);
+            }
+            h.world.images.push(Some(img));
+            int(h.world.images.len() as i32)
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            int(0) // Blitz returns 0 when an image can't be loaded
+        }
+    }
+}
+
+/// `DrawImage`/`DrawBlock`; args are image, x, y, frame.
+fn draw_image(h: &mut Host3D, a: &[Value], masked: bool, sub: Option<Rect<f32>>) -> Result<Value, String> {
+    let img = h.image(a[0].int())?;
+    let uv = img.uv(a[3].int().max(0) as u32, sub)?;
+    let (x, y) = img.top_left(a[1].float(), a[2].float());
+    let (w, ht) = match sub {
+        Some(r) => (r.w() * img.scale.0, r.h() * img.scale.1),
+        None => img.size(),
+    };
+    let tex = if masked { img.masked.clone() } else { img.block.clone() };
+    h.world.canvas.image(x, y, w, ht, uv, tex);
+    VOID
+}
+
 fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
     usize::try_from(f - 1)
         .ok()
@@ -632,6 +718,110 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         }
         VOID
     }),
+    ("Origin%x%y", |h, a, _| {
+        h.world.canvas.origin = (a[0].float(), a[1].float());
+        VOID
+    }),
+    ("Rect%x%y%width%height%solid=1", |h, a, _| {
+        h.world.canvas.rect(a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].int() != 0);
+        VOID
+    }),
+    ("Oval%x%y%width%height%solid=1", |h, a, _| {
+        h.world.canvas.oval(a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].int() != 0);
+        VOID
+    }),
+    ("Line%x1%y1%x2%y2", |h, a, _| {
+        h.world.canvas.line(a[0].float(), a[1].float(), a[2].float(), a[3].float());
+        VOID
+    }),
+    ("Plot%x%y", |h, a, _| {
+        h.world.canvas.rect(a[0].float(), a[1].float(), 1.0, 1.0, true);
+        VOID
+    }),
+    // ---- images (bbgraphics.cpp)
+    ("%LoadImage$file", |h, a, _| add_image(h, crate::image2d::Image2D::load(&a[0].str(), 0, 0, 0, 1))),
+    ("%LoadAnimImage$file%width%height%first%count", |h, a, _| {
+        let n = |i: usize| a[i].int().max(0) as u32;
+        add_image(h, crate::image2d::Image2D::load(&a[0].str(), n(1), n(2), n(3), n(4)))
+    }),
+    ("FreeImage%image", |h, a, _| {
+        h.image(a[0].int())?;
+        h.world.images[a[0].int() as usize - 1] = None;
+        VOID
+    }),
+    ("DrawImage%image%x%y%frame=0", |h, a, _| draw_image(h, a, true, None)),
+    ("DrawBlock%image%x%y%frame=0", |h, a, _| draw_image(h, a, false, None)),
+    ("DrawImageRect%image%x%y%rect_x%rect_y%rect_width%rect_height%frame=0", |h, a, _| {
+        let r = Rect::new(a[3].float(), a[4].float(), a[5].float(), a[6].float());
+        let args = [a[0].clone(), a[1].clone(), a[2].clone(), a[7].clone()];
+        draw_image(h, &args, true, Some(r))
+    }),
+    ("DrawBlockRect%image%x%y%rect_x%rect_y%rect_width%rect_height%frame=0", |h, a, _| {
+        let r = Rect::new(a[3].float(), a[4].float(), a[5].float(), a[6].float());
+        let args = [a[0].clone(), a[1].clone(), a[2].clone(), a[7].clone()];
+        draw_image(h, &args, false, Some(r))
+    }),
+    ("%ImageWidth%image", |h, a, _| int(h.image(a[0].int())?.size().0.round() as i32)),
+    ("%ImageHeight%image", |h, a, _| int(h.image(a[0].int())?.size().1.round() as i32)),
+    ("%ImageXHandle%image", |h, a, _| int(h.image(a[0].int())?.handle.0 as i32)),
+    ("%ImageYHandle%image", |h, a, _| int(h.image(a[0].int())?.handle.1 as i32)),
+    ("%ImageFrames%image", |h, a, _| int(h.image(a[0].int())?.frames as i32)), // (ext)
+    ("HandleImage%image%x%y", |h, a, _| {
+        h.image_mut(a[0].int())?.handle = (a[1].float(), a[2].float());
+        VOID
+    }),
+    ("MidHandle%image", |h, a, _| {
+        let img = h.image_mut(a[0].int())?;
+        img.handle = ((img.frame_w / 2) as f32, (img.frame_h / 2) as f32);
+        VOID
+    }),
+    ("AutoMidHandle%enable", |h, a, _| {
+        h.world.auto_mid_handle = a[0].int() != 0;
+        VOID
+    }),
+    ("MaskImage%image%red%green%blue", |h, a, _| {
+        let c = |i: usize| a[i].int().clamp(0, 255) as u8;
+        let mask = [c(1), c(2), c(3)];
+        h.image_mut(a[0].int())?.set_mask(mask);
+        VOID
+    }),
+    ("ScaleImage%image#x_scale#y_scale", |h, a, _| {
+        h.image_mut(a[0].int())?.scale = (a[1].float(), a[2].float());
+        VOID
+    }),
+    ("ResizeImage%image#width#height", |h, a, _| {
+        let img = h.image_mut(a[0].int())?;
+        img.scale = (a[1].float() / img.frame_w as f32, a[2].float() / img.frame_h as f32);
+        VOID
+    }),
+    ("%RectsOverlap%x1%y1%width1%height1%x2%y2%width2%height2", |_, a, _| {
+        let f = |i: usize| a[i].float();
+        int(crate::image2d::rects_overlap((f(0), f(1), f(2), f(3)), (f(4), f(5), f(6), f(7))) as i32)
+    }),
+    ("%ImagesOverlap%image1%x1%y1%image2%x2%y2", |h, a, _| {
+        let r = |img: &crate::image2d::Image2D, x: f32, y: f32| {
+            let (l, t) = img.top_left(x, y);
+            let (w, ht) = img.size();
+            (l, t, w, ht)
+        };
+        let ra = r(h.image(a[0].int())?, a[1].float(), a[2].float());
+        let rb = r(h.image(a[3].int())?, a[4].float(), a[5].float());
+        int(crate::image2d::rects_overlap(ra, rb) as i32)
+    }),
+    ("%ImagesCollide%image1%x1%y1%frame1%image2%x2%y2%frame2", |h, a, _| {
+        let (ia, ib) = (h.image(a[0].int())?, h.image(a[4].int())?);
+        let hit = crate::image2d::images_collide(
+            ia, a[1].float(), a[2].float(), a[3].int().max(0) as u32,
+            ib, a[5].float(), a[6].float(), a[7].int().max(0) as u32,
+        );
+        int(hit as i32)
+    }),
+    ("%ImageRectOverlap%image%x%y%rect_x%rect_y%rect_width%rect_height", |h, a, _| {
+        let img = h.image(a[0].int())?;
+        let (l, t) = img.top_left(a[1].float(), a[2].float());
+        let (w, ht) = img.size();
+        int(crate::image2d::rects_overlap((l, t, w, ht), (a[3].float(), a[4].float(), a[5].float(), a[6].float())) as i32)
+    }),
     ("%LoadFont$fontname%height=12%bold=0%italic=0%underline=0", |h, a, _| {
         match load_font(&a[0].str(), a[1].float(), a[2].int() != 0, a[3].int() != 0) {
             Ok(f) => {
@@ -728,6 +918,63 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("#CollisionNZ%entity%index", |h, a, _| contact(h, a, |c| c.normal.z)),
     ("#CollisionTime%entity%index", |h, a, _| contact(h, a, |c| c.time)),
     ("%CollisionEntity%entity%index", |h, a, _| int(nth_contact(h, a)?.entity)),
+    // ---- picking
+    ("EntityPickMode%entity%pick_geometry%obscurer=1", |h, a, _| {
+        let mode = a[1].int();
+        if !(0..=3).contains(&mode) {
+            return Err(format!("EntityPickMode geometry must be 0-3, got {mode}"));
+        }
+        let e = h.ent_mut(a[0].int())?;
+        e.pick_mode = mode;
+        e.obscurer = a[2].int() != 0;
+        VOID
+    }),
+    ("%LinePick#x#y#z#dx#dy#dz#radius=0", |h, a, _| {
+        let hit = pick_line(h, v3(a, 0), v3(a, 3), a[6].float(), &[], false)?;
+        picked(h, hit)
+    }),
+    ("%EntityPick%entity#range", |h, a, _| {
+        let e = a[0].int();
+        let w = h.world_of(e)?;
+        let dir = w.rot * Vector3::z() * a[1].float();
+        let hit = pick_line(h, w.position(), dir, 0.0, &[e], false)?;
+        picked(h, hit)
+    }),
+    ("%CameraPick%camera#viewport_x#viewport_y", |h, a, _| {
+        let cam = a[0].int();
+        let (origin, dir) = camera_ray(h, cam, a[1].float(), a[2].float())?;
+        let hit = pick_line(h, origin, dir, 0.0, &[cam], false)?;
+        picked(h, hit)
+    }),
+    ("#PickedX", |h, _, _| float(h.world.picked.map_or(0.0, |p| p.point.x))),
+    ("#PickedY", |h, _, _| float(h.world.picked.map_or(0.0, |p| p.point.y))),
+    ("#PickedZ", |h, _, _| float(h.world.picked.map_or(0.0, |p| p.point.z))),
+    ("#PickedNX", |h, _, _| float(h.world.picked.map_or(0.0, |p| p.normal.x))),
+    ("#PickedNY", |h, _, _| float(h.world.picked.map_or(0.0, |p| p.normal.y))),
+    ("#PickedNZ", |h, _, _| float(h.world.picked.map_or(0.0, |p| p.normal.z))),
+    ("#PickedTime", |h, _, _| float(h.world.picked.map_or(0.0, |p| p.time))),
+    ("%PickedEntity", |h, _, _| int(h.world.picked.map_or(0, |p| p.entity))),
+    ("%PickedTriangle", |h, _, _| int(h.world.picked.map_or(0, |p| p.triangle.max(0)))),
+    ("%PickedSurface", |h, _, _| int(h.world.picked.map_or(0, |p| (p.triangle >= 0) as i32))),
+    ("CameraProject%camera#x#y#z", |h, a, _| {
+        h.world.projected = camera_project(h, a[0].int(), v3(a, 1))?.unwrap_or((0.0, 0.0, 0.0));
+        VOID
+    }),
+    ("#ProjectedX", |h, _, _| float(h.world.projected.0)),
+    ("#ProjectedY", |h, _, _| float(h.world.projected.1)),
+    ("#ProjectedZ", |h, _, _| float(h.world.projected.2)),
+    ("%EntityInView%entity%camera", |h, a, _| {
+        let p = h.world_of(a[0].int())?.position();
+        let (w, ht) = (h.world.width as f32, h.world.height as f32);
+        let inside = camera_project(h, a[1].int(), p)?.is_some_and(|(x, y, _)| x >= 0.0 && y >= 0.0 && x < w && y < ht);
+        int(inside as i32)
+    }),
+    ("%EntityVisible%src_entity%dest_entity", |h, a, _| {
+        let (s, d) = (a[0].int(), a[1].int());
+        let (p, q) = (h.world_of(s)?.position(), h.world_of(d)?.position());
+        let hit = pick_line(h, p, q - p, 0.0, &[s, d], true)?;
+        int(hit.is_none() as i32)
+    }),
     ("%KeyDown%key", |h, a, _| int(h.input.key_down(a[0].int()) as i32)),
     ("%KeyHit%key", |h, a, _| int(h.input.key_hit(a[0].int()))),
     ("%GetKey", |h, _, _| int(h.input.get_key())),

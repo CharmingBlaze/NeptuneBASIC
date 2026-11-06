@@ -381,6 +381,15 @@ fn performance_smoke() {
 }
 
 #[test]
+fn interpolation_with_nested_strings() {
+    let out = ok(r#"
+name$ = "x"
+Print $"[{IIf(name = "x", "yes", "no")}] {{literal}} {Upper("ab") + "}"}"
+"#);
+    assert_eq!(out, "[yes] {literal} AB}\n");
+}
+
+#[test]
 fn enums() {
     let src = r#"
 Enum State

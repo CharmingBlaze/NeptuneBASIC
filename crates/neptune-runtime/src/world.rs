@@ -77,6 +77,10 @@ pub struct Entity {
     pub last_pos: Option<Vector3<f32>>,
     /// Contacts found by the last `UpdateWorld`.
     pub contacts: Vec<crate::collision::Contact>,
+    /// `EntityPickMode`: 0 none, 1 sphere, 2 polygon, 3 box.
+    pub pick_mode: i32,
+    /// Whether this entity blocks `EntityVisible` line-of-sight checks.
+    pub obscurer: bool,
 }
 
 /// Program-visible state that persists across frames.
@@ -97,6 +101,13 @@ pub struct World {
     /// 2D drawing (Text, fonts, colours).
     pub canvas: Canvas2D,
     pub textures: Vec<Option<TextureInfo>>,
+    pub images: Vec<Option<crate::image2d::Image2D>>,
+    /// `AutoMidHandle`: new images get a centred handle.
+    pub auto_mid_handle: bool,
+    /// Result of the last pick command.
+    pub picked: Option<crate::pick::PickHit>,
+    /// Result of the last `CameraProject`.
+    pub projected: (f32, f32, f32),
     /// `Collisions` rules: (source type, destination type, method, response).
     pub collision_rules: Vec<(i32, i32, i32, crate::collision::Response)>,
 }
@@ -117,6 +128,10 @@ impl Default for World {
             ambient: Color::opaque(127, 127, 127),
             canvas: Canvas2D::default(),
             textures: Vec::new(),
+            images: Vec::new(),
+            auto_mid_handle: false,
+            picked: None,
+            projected: (0.0, 0.0, 0.0),
             collision_rules: Vec::new(),
         }
     }
@@ -272,6 +287,8 @@ impl<'a> Host3D<'a> {
             col_box: None,
             last_pos: None,
             contacts: Vec::new(),
+            pick_mode: 0,
+            obscurer: false,
         };
         let id = match self.world.free.pop() {
             Some(i) => {
@@ -391,7 +408,7 @@ impl<'a> Host3D<'a> {
         };
         let src_col = {
             let e = self.ent(id)?;
-            (e.col_type, e.radius, e.col_box)
+            (e.col_type, e.radius, e.col_box, e.pick_mode, e.obscurer)
         };
         let child_nodes: std::collections::HashSet<Handle<Node>> =
             children.iter().filter_map(|&c| self.ent(c as i32).ok().map(|e| e.node)).collect();
@@ -417,6 +434,8 @@ impl<'a> Host3D<'a> {
             e.col_type = src_col.0;
             e.radius = src_col.1;
             e.col_box = src_col.2;
+            e.pick_mode = src_col.3;
+            e.obscurer = src_col.4;
         }
         // the copy shares materials with the original, so neither owns them now
         self.ent_mut(id)?.own_materials = false;
@@ -444,6 +463,22 @@ impl<'a> Host3D<'a> {
             }
         }
         Ok(())
+    }
+
+    pub fn image(&self, id: i32) -> Result<&crate::image2d::Image2D, String> {
+        usize::try_from(id - 1)
+            .ok()
+            .and_then(|i| self.world.images.get(i))
+            .and_then(Option::as_ref)
+            .ok_or_else(|| format!("Image {id} does not exist"))
+    }
+
+    pub fn image_mut(&mut self, id: i32) -> Result<&mut crate::image2d::Image2D, String> {
+        usize::try_from(id - 1)
+            .ok()
+            .and_then(|i| self.world.images.get_mut(i))
+            .and_then(Option::as_mut)
+            .ok_or_else(|| format!("Image {id} does not exist"))
     }
 
     pub fn texture(&self, id: i32) -> Result<&TextureInfo, String> {

@@ -13,8 +13,10 @@
 pub mod collision;
 pub mod commands;
 pub mod draw2d;
+pub mod image2d;
 pub mod input;
 pub mod model;
+pub mod pick;
 pub mod texture;
 pub mod transform;
 pub mod world;
@@ -187,7 +189,8 @@ impl Plugin for NeptunePlugin {
         };
         // show the 2D frame published by Flip
         if let Some(items) = st.world.canvas.published.take() {
-            st.overlay.show(context.user_interfaces.first_mut(), &items, st.scale);
+            let screen = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32) * st.scale;
+            st.overlay.show(context.user_interfaces.first_mut(), &items, st.scale, screen);
         }
         // apply window requests made by the program
         if let GraphicsContext::Initialized(g) = &*context.graphics_context {

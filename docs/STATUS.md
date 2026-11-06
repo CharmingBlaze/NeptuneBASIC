@@ -2,7 +2,7 @@
 
 What works today, what is partial, and what is not started. Every item marked
 **done** has automated tests or was checked by running an example program.
-Run `neptune commands` for the full list of available commands (188 at the
+Run `neptune commands` for the full list of available commands (235 at the
 time of writing).
 
 ## Language and compiler: done
@@ -31,9 +31,10 @@ time of writing).
 | Models | partial | `LoadMesh`/`LoadAnimMesh` for glTF and FBX via Fyrox, `MeshWidth/Height/Depth`, `CountMeshTriangles` (ext). Blitz `.b3d`/`.x`/`.3ds` files are not supported. No animation playback or `FindChild` yet |
 | Collisions | done | `EntityType`, `EntityRadius`, `EntityBox`, `Collisions` (methods 1–3, responses 1–3), `ResetEntity`, `EntityCollided`, `CountCollisions`, `CollisionX/Y/Z/NX/NY/NZ/Time/Entity`, `ClearCollisions` |
 | 2D text | done | `Text`, `Color`, `ClsColor`, `Cls`, `LoadFont` (files or installed system fonts), `SetFont`, `FreeFont`, `FontWidth/Height`, `StringWidth/Height` |
-| 2D drawing | not started | `Rect`, `Line`, `Oval`, `Plot`, images |
+| 2D drawing | done | `Rect`, `Oval`, `Line`, `Plot`, `Origin`; drawn in program order with text and images |
+| 2D images | partial | `LoadImage`, `LoadAnimImage`, `DrawImage`, `DrawBlock`, `DrawImageRect`, `MidHandle`, `HandleImage`, `AutoMidHandle`, `MaskImage`, `ScaleImage`, `ResizeImage`, `ImagesCollide` (pixel-perfect), `ImagesOverlap`, `RectsOverlap`; no `CreateImage`, image buffers or `RotateImage` yet |
 | Input | done | `KeyDown/Hit`, `GetKey`, `MouseX/Y/Z`, `MouseDown/Hit`, mouse speed, flush commands |
-| Picking | not started | `LinePick`, `CameraPick`, `EntityPick`, `PickedX/Y/Z` |
+| Picking | done | `EntityPickMode`, `LinePick` (with radius), `CameraPick`, `EntityPick`, `PickedX/Y/Z/NX/NY/NZ/Time/Entity/Triangle`, `CameraProject`, `ProjectedX/Y/Z`, `EntityVisible`, `EntityInView` |
 | Custom meshes | not started | `CreateMesh`, `CreateSurface`, `AddVertex`, `AddTriangle` |
 | Sound | not started | Fyrox has a sound engine ready to expose |
 | Physics | not started | Fyrox's Rapier physics, as (ext) commands |
@@ -61,3 +62,5 @@ and `Text` coordinates all use the same units.
 | `examples/textures.nb` | textures, tiling, masking |
 | `examples/models.nb` | glTF loading, `CopyEntity` |
 | `examples/collisions.nb` | gravity, sliding, ramps, jumping |
+| `examples/draw2d.nb` | 2D shapes, animated sprites, pixel collisions |
+| `examples/picking.nb` | mouse picking, 3D-to-2D labels |

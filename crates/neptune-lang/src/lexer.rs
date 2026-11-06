@@ -189,7 +189,23 @@ pub fn lex(src: &str, file: FileId, base: usize, diags: &mut Diagnostics) -> Vec
             let interp = c == b'$';
             i += if interp { 2 } else { 1 };
             let s = i;
-            while i < b.len() && b[i] != b'"' && b[i] != b'\n' {
+            // Inside `{...}` holes of an interpolated string, quotes start
+            // nested string literals instead of ending the string.
+            let mut depth = 0;
+            while i < b.len() && b[i] != b'\n' && (b[i] != b'"' || depth > 0) {
+                match b[i] {
+                    b'{' if interp && depth == 0 && b.get(i + 1) == Some(&b'{') => i += 1,
+                    b'}' if interp && depth == 0 && b.get(i + 1) == Some(&b'}') => i += 1,
+                    b'{' if interp => depth += 1,
+                    b'}' if interp && depth > 0 => depth -= 1,
+                    b'"' => {
+                        i += 1;
+                        while i < b.len() && b[i] != b'"' && b[i] != b'\n' {
+                            i += 1;
+                        }
+                    }
+                    _ => {}
+                }
                 i += 1;
             }
             let text = src[s..i].to_string();

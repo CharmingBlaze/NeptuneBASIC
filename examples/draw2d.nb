@@ -1,0 +1,60 @@
+; 2D drawing: shapes, animated sprites, handles and pixel-perfect collisions.
+; Arrow keys / WASD move the ship. Escape quits.
+Graphics 800, 600
+AppTitle "NeptuneBASIC - 2D"
+
+ship = LoadImage("examples/media/ship.png")
+MidHandle ship
+coin = LoadAnimImage("examples/media/coin.png", 32, 32, 0, 4)
+MidHandle coin
+
+Type Coin
+    Field x#, y#, frame#
+End Type
+
+SeedRnd 42
+For i = 1 To 12
+    c.Coin = New Coin
+    c\x = Rnd(60, 740)
+    c\y = Rnd(60, 400)
+    c\frame = Rnd(0, 3.9)
+Next
+
+px# = 400 : py# = 520
+score = 0
+While Not KeyHit(KEY_ESCAPE)
+    If KeyDown(KEY_LEFT) Or KeyDown(KEY_A) Then px -= 4
+    If KeyDown(KEY_RIGHT) Or KeyDown(KEY_D) Then px += 4
+    If KeyDown(KEY_UP) Or KeyDown(KEY_W) Then py -= 4
+    If KeyDown(KEY_DOWN) Or KeyDown(KEY_S) Then py += 4
+    px = Clamp(px, 16, 784) : py = Clamp(py, 16, 584)
+
+    Cls
+    ; background grid
+    Color 30, 40, 70
+    For x = 0 To 800 Step 40 : Line x, 0, x, 600 : Next
+    For y = 0 To 600 Step 40 : Line 0, y, 800, y : Next
+
+    ; a few shapes
+    Color 200, 60, 60 : Rect 20, 440, 120, 60
+    Color 255, 255, 255 : Rect 20, 440, 120, 60, False
+    Color 60, 200, 90 : Oval 660, 440, 120, 60
+    Color 255, 255, 255 : Oval 660, 440, 120, 60, False
+
+    For c.Coin = Each Coin
+        c\frame = (c\frame + 0.15) Mod 4
+        DrawImage coin, c\x, c\y, Int(Floor(c\frame))
+        If ImagesCollide(ship, px, py, 0, coin, c\x, c\y, Int(Floor(c\frame))) Then
+            score += 1
+            Delete c
+        End If
+    Next
+    DrawImage ship, px, py
+
+    Color 255, 220, 80
+    Text 10, 10, $"Score: {score}"
+    Color 180, 180, 180
+    Text 400, 580, "Arrow keys / WASD to collect the coins", True, True
+    Flip
+Wend
+End

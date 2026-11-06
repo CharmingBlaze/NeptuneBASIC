@@ -1,0 +1,211 @@
+//! 2D images (`LoadImage`, `DrawImage`, `ImagesCollide`, ...).
+//!
+//! An image keeps its pixels in memory (for masking and pixel-perfect
+//! collisions) and two GPU textures: one with the mask colour made
+//! transparent (`DrawImage`) and one without (`DrawBlock`). Like Blitz3D,
+//! the default mask colour is black.
+
+use fyrox::{
+    asset::untyped::ResourceKind,
+    core::{math::Rect, uuid::Uuid},
+    resource::texture::{
+        Texture, TextureKind, TextureMagnificationFilter, TextureMinificationFilter, TexturePixelKind, TextureResource,
+    },
+};
+use image::RgbaImage;
+
+#[derive(Debug, Clone)]
+pub struct Image2D {
+    pixels: RgbaImage,
+    /// Size of one frame.
+    pub frame_w: u32,
+    pub frame_h: u32,
+    /// First frame index within the source image, and frame count.
+    first: u32,
+    pub frames: u32,
+    /// Hot spot subtracted from draw positions.
+    pub handle: (f32, f32),
+    /// Drawing scale (`ScaleImage` / `ResizeImage`).
+    pub scale: (f32, f32),
+    mask: [u8; 3],
+    pub masked: TextureResource,
+    pub block: TextureResource,
+}
+
+fn make_texture(img: &RgbaImage) -> TextureResource {
+    let mut tex = Texture::from_bytes(
+        TextureKind::Rectangle { width: img.width(), height: img.height() },
+        TexturePixelKind::RGBA8,
+        img.as_raw().clone(),
+    )
+    .expect("RGBA buffer matches its size");
+    // no mipmaps: plain linear filtering keeps 2D images sharp and visible
+    tex.set_minification_filter(TextureMinificationFilter::Linear);
+    tex.set_magnification_filter(TextureMagnificationFilter::Linear);
+    TextureResource::new_ok(Uuid::new_v4(), ResourceKind::Embedded, tex)
+}
+
+fn apply_mask(img: &RgbaImage, mask: [u8; 3]) -> RgbaImage {
+    let mut out = img.clone();
+    for p in out.pixels_mut() {
+        if p[0] == mask[0] && p[1] == mask[1] && p[2] == mask[2] {
+            p[3] = 0;
+        }
+    }
+    out
+}
+
+impl Image2D {
+    /// Builds an image from pixels, split into `frames` frames of `fw`×`fh`
+    /// starting at frame `first` (all zero = one frame covering the image).
+    pub fn new(pixels: RgbaImage, fw: u32, fh: u32, first: u32, frames: u32) -> Result<Image2D, String> {
+        let (w, h) = pixels.dimensions();
+        let (fw, fh) = if fw == 0 || fh == 0 { (w, h) } else { (fw, fh) };
+        if fw > w || fh > h || w == 0 || h == 0 {
+            return Err(format!("frame size {fw}x{fh} does not fit image {w}x{h}"));
+        }
+        let available = (w / fw) * (h / fh);
+        let frames = if frames == 0 { available - first.min(available) } else { frames };
+        if first + frames > available {
+            return Err(format!("image has {available} frames of {fw}x{fh}, asked for {first}..{}", first + frames));
+        }
+        let mask = [0, 0, 0];
+        Ok(Image2D {
+            masked: make_texture(&apply_mask(&pixels, mask)),
+            block: make_texture(&pixels),
+            pixels,
+            frame_w: fw,
+            frame_h: fh,
+            first,
+            frames: frames.max(1),
+            handle: (0.0, 0.0),
+            scale: (1.0, 1.0),
+            mask,
+        })
+    }
+
+    pub fn load(path: &str, fw: u32, fh: u32, first: u32, frames: u32) -> Result<Image2D, String> {
+        let img = image::open(path).map_err(|e| format!("cannot load image '{path}': {e}"))?;
+        Image2D::new(img.to_rgba8(), fw, fh, first, frames)
+    }
+
+    pub fn set_mask(&mut self, mask: [u8; 3]) {
+        self.mask = mask;
+        self.masked = make_texture(&apply_mask(&self.pixels, mask));
+    }
+
+    /// Displayed size (frame size times scale).
+    pub fn size(&self) -> (f32, f32) {
+        (self.frame_w as f32 * self.scale.0, self.frame_h as f32 * self.scale.1)
+    }
+
+    fn frame_origin(&self, frame: u32) -> Result<(u32, u32), String> {
+        if frame >= self.frames {
+            return Err(format!("image frame {frame} out of range (image has {} frames)", self.frames));
+        }
+        let cols = self.pixels.width() / self.frame_w;
+        let idx = self.first + frame;
+        Ok(((idx % cols) * self.frame_w, (idx / cols) * self.frame_h))
+    }
+
+    /// Texture coordinates of a sub-rectangle of a frame.
+    pub fn uv(&self, frame: u32, sub: Option<Rect<f32>>) -> Result<Rect<f32>, String> {
+        let (ox, oy) = self.frame_origin(frame)?;
+        let (w, h) = (self.pixels.width() as f32, self.pixels.height() as f32);
+        let r = sub.unwrap_or_else(|| Rect::new(0.0, 0.0, self.frame_w as f32, self.frame_h as f32));
+        Ok(Rect::new((ox as f32 + r.x()) / w, (oy as f32 + r.y()) / h, r.w() / w, r.h() / h))
+    }
+
+    /// Is the pixel at frame-local `(x, y)` solid (inside and not the mask colour)?
+    pub fn solid(&self, frame: u32, x: i32, y: i32) -> bool {
+        if x < 0 || y < 0 || x >= self.frame_w as i32 || y >= self.frame_h as i32 {
+            return false;
+        }
+        let Ok((ox, oy)) = self.frame_origin(frame) else { return false };
+        let p = self.pixels.get_pixel(ox + x as u32, oy + y as u32);
+        p[3] != 0 && [p[0], p[1], p[2]] != self.mask
+    }
+
+    /// Top-left corner when drawn at `(x, y)`.
+    pub fn top_left(&self, x: f32, y: f32) -> (f32, f32) {
+        (x - self.handle.0 * self.scale.0, y - self.handle.1 * self.scale.1)
+    }
+}
+
+/// Axis-aligned rectangle overlap (Blitz `RectsOverlap`).
+pub fn rects_overlap(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// Pixel-perfect collision of two image frames drawn at the given positions
+/// (scale is ignored, as in Blitz).
+pub fn images_collide(a: &Image2D, ax: f32, ay: f32, af: u32, b: &Image2D, bx: f32, by: f32, bf: u32) -> bool {
+    let (ax, ay) = (ax - a.handle.0, ay - a.handle.1);
+    let (bx, by) = (bx - b.handle.0, by - b.handle.1);
+    let ra = (ax, ay, a.frame_w as f32, a.frame_h as f32);
+    let rb = (bx, by, b.frame_w as f32, b.frame_h as f32);
+    if !rects_overlap(ra, rb) {
+        return false;
+    }
+    let (x0, y0) = (ax.max(bx).floor() as i32, ay.max(by).floor() as i32);
+    let (x1, y1) = ((ax + ra.2).min(bx + rb.2).ceil() as i32, (ay + ra.3).min(by + rb.3).ceil() as i32);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            if a.solid(af, x - ax as i32, y - ay as i32) && b.solid(bf, x - bx as i32, y - by as i32) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 4x2 image: two 2x2 frames; frame 0 has one solid pixel at (1,1), frame 1 is solid.
+    fn sheet() -> Image2D {
+        let mut px = RgbaImage::new(4, 2);
+        for p in px.pixels_mut() {
+            *p = image::Rgba([0, 0, 0, 255]);
+        }
+        px.put_pixel(1, 1, image::Rgba([255, 0, 0, 255]));
+        for y in 0..2 {
+            for x in 2..4 {
+                px.put_pixel(x, y, image::Rgba([0, 255, 0, 255]));
+            }
+        }
+        Image2D::new(px, 2, 2, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn frames_and_uvs() {
+        let s = sheet();
+        assert_eq!(s.frames, 2);
+        let uv = s.uv(1, None).unwrap();
+        assert_eq!((uv.x(), uv.y(), uv.w(), uv.h()), (0.5, 0.0, 0.5, 1.0));
+        assert!(s.uv(2, None).is_err());
+        assert!(Image2D::new(RgbaImage::new(4, 2), 3, 3, 0, 0).is_err());
+    }
+
+    #[test]
+    fn mask_and_pixel_collisions() {
+        let s = sheet();
+        assert!(!s.solid(0, 0, 0)); // black is masked by default
+        assert!(s.solid(0, 1, 1));
+        assert!(s.solid(1, 0, 0));
+        // frame 0's only solid pixel is at (1,1)
+        assert!(images_collide(&s, 0.0, 0.0, 0, &s, 1.0, 1.0, 1));
+        assert!(!images_collide(&s, 0.0, 0.0, 0, &s, -1.0, -1.0, 1)); // overlaps only masked pixels
+        assert!(!images_collide(&s, 0.0, 0.0, 1, &s, 5.0, 0.0, 1));
+        let mut m = sheet();
+        m.set_mask([255, 0, 0]);
+        assert!(m.solid(0, 0, 0) && !m.solid(0, 1, 1));
+    }
+
+    #[test]
+    fn rect_overlap() {
+        assert!(rects_overlap((0.0, 0.0, 10.0, 10.0), (5.0, 5.0, 10.0, 10.0)));
+        assert!(!rects_overlap((0.0, 0.0, 10.0, 10.0), (10.0, 0.0, 5.0, 5.0)));
+    }
+}
