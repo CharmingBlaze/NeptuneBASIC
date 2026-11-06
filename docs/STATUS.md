@@ -29,7 +29,10 @@ gamepad constants, modern command names, ...).
   (`ReadDir`, `NextFile`, `CloseDir`), banks (`CreateBank`, `Peek*`/`Poke*`,
   `ReadBytes`/`WriteBytes`, `CopyBank`, `ResizeBank`), timers (`CreateTimer`,
   `WaitTimer`, `FreeTimer`), system (`SystemProperty`, `SetEnv`, `ExecFile`,
-  `CallDLL` on Windows, `CommandLine`).
+  `CallDLL` with `.dll`/`.so`/`.dylib` libraries, `CommandLine`).
+* Plugins: shared libraries in a `plugins` folder add typed commands and
+  constants (C interface in `sdk/neptune_plugin.h`, Rust helper crate in
+  `sdk/rust`); see [PLUGINS.md](PLUGINS.md).
 * Networking: TCP (`OpenTCPStream`, `CreateTCPServer`, `AcceptTCPStream`,
   `TCPStreamIP/Port`, `TCPTimeouts`) and UDP (`CreateUDPStream`,
   `SendUDPMsg`, `RecvUDPMsg`, `UDPMsgIP/Port`, `UDPTimeouts`) streams that
@@ -66,7 +69,7 @@ gamepad constants, modern command names, ...).
 | 2D text | done | `Text`, `Print`/`Write` on the screen in graphics mode, `Locate`, `Color`, `GetColor`, `ClsColor`, `Cls`, `LoadFont`, `SetFont`, `FreeFont`, `FontWidth/Height`, `StringWidth/Height` |
 | 2D drawing | done | `Rect`, `Oval`, `Line`, `Plot`, `Origin`, `Viewport`, on the screen or into image and texture buffers |
 | 2D images | done | `LoadImage`, `LoadAnimImage`, `CreateImage`, `CopyImage`, `GrabImage`, `DrawImage`, `DrawBlock`, `DrawImageRect`, `DrawBlockRect`, `TileImage`, `TileBlock`, `MidHandle`, `HandleImage`, `AutoMidHandle`, `MaskImage`, `ScaleImage`, `ResizeImage`, `RotateImage`, `TFormImage`, `TFormFilter`, `SaveImage`, `ImagesCollide`, `ImagesOverlap`, `ImageRectCollide`, `ImageRectOverlap`, `RectsOverlap` |
-| Buffers and pixels | done | `SetBuffer`, `BackBuffer`, `FrontBuffer`, `ImageBuffer`, `TextureBuffer`, `GraphicsBuffer`, `LockBuffer`, `UnlockBuffer`, `ReadPixel(Fast)`, `WritePixel(Fast)`, `CopyPixel(Fast)`, `CopyRect`, `BufferWidth/Height`, `SaveBuffer` (the screen too, on Windows), `LoadBuffer`; `Text` and every 2D drawing command work in image and texture buffers. Pixel reads come from image and texture buffers, not the screen |
+| Buffers and pixels | done | `SetBuffer`, `BackBuffer`, `FrontBuffer`, `ImageBuffer`, `TextureBuffer`, `GraphicsBuffer`, `LockBuffer`, `UnlockBuffer`, `ReadPixel(Fast)`, `WritePixel(Fast)`, `CopyPixel(Fast)`, `CopyRect`, `BufferWidth/Height`, `SaveBuffer` (the screen too), `LoadBuffer`; `Text` and every 2D drawing command work in image and texture buffers. Pixel reads come from image and texture buffers, not the screen |
 | Keyboard and mouse | done | `KeyDown/Hit`, `GetKey`, `WaitKey`, `FlushKeys`, `MouseX/Y/Z`, `MouseXSpeed/YSpeed/ZSpeed` (raw motion, so mouse-look works with a hidden pointer), `MouseDown/Hit`, `GetMouse`, `WaitMouse`, `MoveMouse`, `HidePointer`, `ShowPointer`, `FlushMouse`, `CaptureMouse` (ext) |
 | Joysticks and gamepads | done | `JoyType`, `JoyDown`, `JoyHit`, `GetJoy`, `WaitJoy`, `FlushJoy`, `JoyX/Y/Z/U/V`, `JoyPitch/Yaw/Roll`, `JoyHat`, `JoyXDir/YDir/ZDir/UDir/VDir`, `CountJoys` and `JOY_A`... constants (ext); Xbox, PlayStation and generic controllers through gilrs |
 
@@ -96,8 +99,23 @@ for older integrated GPUs; `ultra` turns everything up.
 |---|---|
 | `neptune run/check/disasm/commands` CLI | done |
 | `neptune build`: stand-alone game folder (executable + media; no console window on Windows) | done |
+| `neptune plugins`: list loaded plugins and plugin folders | done |
 | `neptune lsp`: language server (errors as you type, completion, hover, signature help, outline, go to definition) | done |
 | VS Code extension: highlighting, language server, run (F5), build | done (`editors/vscode`) |
+
+## Platforms
+
+Windows, Linux and macOS. Everything is written once for all three: the
+renderer is OpenGL 3.3 through Fyrox, gamepads go through gilrs, plugins and
+`CallDLL` load `.dll`, `.so` or `.dylib` files, screenshots read the game's
+own frame, and errors of packaged games appear in a dialog box (a message box
+on Windows, zenity/kdialog on Linux, an alert on macOS). The CI workflow
+(`.github/workflows/ci.yml`) builds and tests on all three, including a
+plugin round trip and packaging a game. `neptune build` packages a game for
+the platform it runs on; build on each platform you ship to.
+
+On Linux, building needs the usual development packages for sound, gamepads
+and windowing (see the CI workflow for the list).
 
 ## Design choices
 
@@ -122,8 +140,7 @@ for older integrated GPUs; `ultra` turns everything up.
   world upside down. The first four mirrors use cameras made before the
   program's own, so their reflections are ready in the same frame; more
   mirrors work but lag one frame.
-* Screen captures (`SaveBuffer BackBuffer()`) and `CallDLL` are Windows
-  only. Audio CDs (`PlayCDTrack`) are not supported.
+* Audio CDs (`PlayCDTrack`) are not supported.
 
 ## Examples
 

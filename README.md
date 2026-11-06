@@ -42,6 +42,10 @@ End
   networking.
 * **And more** – animated glTF/FBX models, rigid-body physics (Rapier),
   gamepads, fullscreen, graphics quality presets, a language server.
+* **Windows, Linux and macOS** – the same programs and the same commands on
+  all three, tested in CI on each.
+* **Plugins** – add your own typed commands in Rust, C or C++ as shared
+  libraries; see [docs/PLUGINS.md](docs/PLUGINS.md).
 * **Runs on old and new PCs** – any OpenGL 3.3 GPU (roughly 2010 onwards).
   `--quality low` turns off the expensive effects for older laptops;
   `ultra` turns them all on.
@@ -65,6 +69,7 @@ Other commands:
 * `neptune build <file>` – make a stand-alone game in `dist/<name>/`
   (executable plus the media files the program uses). Build NeptuneBASIC
   with `--release` first so the game runs at full speed.
+* `neptune plugins` – list loaded plugins and their commands.
 * `neptune lsp` – language server for editors (errors as you type,
   completion, hover, signature help, outline, go to definition).
 * `neptune check <file>`, `neptune disasm <file>`, `neptune commands`.
@@ -88,6 +93,7 @@ neptune run examples/games/orbrun.nb
 * [Language reference](docs/LANGUAGE.md)
 * [Architecture](docs/ARCHITECTURE.md)
 * [Implementation status](docs/STATUS.md)
+* [Plugins](docs/PLUGINS.md)
 
 ## License
 

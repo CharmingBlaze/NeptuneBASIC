@@ -17,6 +17,8 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | Blitz↔Fyrox coordinate mirror | `crates/neptune-runtime/src/transform.rs` |
 | Feature modules | runtime `collision`, `pick`, `mesh`, `model`, `anim`, `texture`, `material`, `classic` (fixed-function shader), `sprite`, `terrain`, `physics`, `sound`, `quality`, `buffer`, `draw2d`, `image2d`, `input`, `joy` (gamepads), `keyanim`, `mirror`, `screenshot`, `primitive` |
 | Networking (TCP/UDP) | `crates/neptune-vm/src/net.rs` |
+| Plugins (registry, C ABI) and shared-library loading | `crates/neptune-vm/src/{plugin,dynlib}.rs`; SDK in `sdk/` (C header, `neptune-plugin` crate, examples) |
+| CI (Windows, Linux, macOS) | `.github/workflows/ci.yml` |
 | Packaging (`neptune build`) | `crates/neptune-cli/src/package.rs` |
 | Language server (`neptune lsp`) | `crates/neptune-cli/src/lsp.rs` (+ `json.rs`) |
 | Primitive shapes | `crates/neptune-runtime/src/primitive.rs` |
@@ -33,6 +35,8 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 - `cargo test -p neptune-vm` runs the language tests without building Fyrox. Use it for compiler/VM work.
 
 ## Hard rules
+
+- Everything must work on Windows, Linux and macOS. No platform-only features: when OS code is needed, write it for all three (see `dynlib.rs`, `screenshot.rs`, `report` in the CLI).
 
 - `neptune-lang` and `neptune-vm` must never depend on Fyrox or `neptune-runtime`.
 - Match Blitz3D command names, argument order, defaults and return values exactly. Commands Blitz3D never had are extensions and are marked `(ext)` in comments and docs.

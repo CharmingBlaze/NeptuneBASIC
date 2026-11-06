@@ -252,6 +252,19 @@ pub fn build(main: &str, out: Option<&str>, console: bool) -> Result<PathBuf, St
     for (f, n) in &copied {
         println!("  media {} ({} KB)", f.display(), n.div_ceil(1024));
     }
+    // plugins go into the game's own plugins folder
+    let loaded = neptune_vm::plugin::loaded();
+    if !loaded.is_empty() {
+        let dir = out_dir.join("plugins");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        for (path, _) in loaded {
+            let p = Path::new(&path);
+            if let Some(name) = p.file_name() {
+                std::fs::copy(p, dir.join(name)).map_err(|e| format!("cannot copy plugin '{path}': {e}"))?;
+                println!("  plugin {}", name.to_string_lossy());
+            }
+        }
+    }
     Ok(target)
 }
 

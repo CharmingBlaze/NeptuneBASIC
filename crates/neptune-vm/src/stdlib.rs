@@ -225,40 +225,33 @@ fn poke(c: &mut Core, a: &[Value], bytes: &[u8]) -> Result<Value, String> {
     VOID
 }
 /// `CallDLL`: calls `int proc(void* in, int in_size, void* out, int out_size)`
-/// exported by a DLL, passing two banks (Blitz3D's userlib-free interface).
-#[cfg(windows)]
+/// exported by a shared library (`.dll`, `.so` or `.dylib`), passing two
+/// banks (Blitz3D's userlib-free interface). Plugins are the better way to
+/// add commands; this stays for old programs.
 fn call_dll(dll: &str, proc_name: &str, input: &mut [u8], output: &mut [u8]) -> Result<i32, String> {
-    use std::ffi::CString;
-    use std::os::raw::{c_char, c_void};
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn LoadLibraryA(name: *const c_char) -> *mut c_void;
-        fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
-    }
+    use std::ffi::c_void;
+    use std::sync::{Mutex, OnceLock};
+    // libraries stay loaded, like Blitz3D
+    static LIBS: OnceLock<Mutex<Vec<crate::dynlib::Library>>> = OnceLock::new();
+    let libs = LIBS.get_or_init(Default::default);
+    let mut libs = libs.lock().unwrap();
+    let idx = match libs.iter().position(|l| l.path == dll) {
+        Some(i) => i,
+        None => {
+            libs.push(crate::dynlib::Library::open(dll)?);
+            libs.len() - 1
+        }
+    };
+    let f = libs[idx].symbol(proc_name).ok_or_else(|| format!("library '{dll}' has no procedure '{proc_name}'"))?;
     type Proc = unsafe extern "system" fn(*mut c_void, i32, *mut c_void, i32) -> i32;
-    let dll_c = CString::new(dll).map_err(|_| "bad DLL name".to_string())?;
-    let proc_c = CString::new(proc_name).map_err(|_| "bad procedure name".to_string())?;
-    // SAFETY: the program asked for this DLL procedure with Blitz3D's documented
+    // SAFETY: the program asked for this procedure with Blitz3D's documented
     // signature; the bank pointers stay valid for the duration of the call.
     unsafe {
-        let module = LoadLibraryA(dll_c.as_ptr());
-        if module.is_null() {
-            return Err(format!("cannot load DLL '{dll}'"));
-        }
-        let f = GetProcAddress(module, proc_c.as_ptr());
-        if f.is_null() {
-            return Err(format!("DLL '{dll}' has no procedure '{proc_name}'"));
-        }
-        let f: Proc = std::mem::transmute(f);
+        let f: Proc = std::mem::transmute::<*mut c_void, Proc>(f);
         let (ip, il) = if input.is_empty() { (std::ptr::null_mut(), 0) } else { (input.as_mut_ptr().cast(), input.len() as i32) };
         let (op, ol) = if output.is_empty() { (std::ptr::null_mut(), 0) } else { (output.as_mut_ptr().cast(), output.len() as i32) };
         Ok(f(ip, il, op, ol))
     }
-}
-
-#[cfg(not(windows))]
-fn call_dll(_: &str, _: &str, _: &mut [u8], _: &mut [u8]) -> Result<i32, String> {
-    Err("CallDLL is only available on Windows".into())
 }
 
 /// Opens a file or folder with the program the system associates with it.
@@ -852,13 +845,26 @@ pub fn constants() -> Vec<(String, ConstVal)> {
     vec![("PI2".to_string(), ConstVal::Float(std::f32::consts::TAU))]
 }
 
-/// Environment with the standard library; hosts append their own commands.
+/// Environment with the standard library and loaded plugins; hosts append
+/// their own commands.
 pub fn base_env() -> Env {
-    Env { commands: COMMANDS.iter().map(|(s, _)| parse_sig(s)).collect(), constants: constants() }
+    let mut commands: Vec<_> = COMMANDS.iter().map(|(s, _)| parse_sig(s)).collect();
+    commands.extend(crate::plugin::command_sigs());
+    let mut constants = constants();
+    constants.extend(crate::plugin::constants());
+    Env { commands, constants }
+}
+
+/// Number of commands the VM runs itself: the standard library and plugins.
+pub fn core_count() -> usize {
+    COMMANDS.len() + crate::plugin::count()
 }
 
 pub(crate) fn call(id: u32, args: &[Value], core: &mut Core, ctx: &mut NativeCtx) -> Result<Value, String> {
-    (COMMANDS[id as usize].1)(args, core, ctx)
+    match COMMANDS.get(id as usize) {
+        Some(c) => (c.1)(args, core, ctx),
+        None => crate::plugin::call(id as usize - COMMANDS.len(), args),
+    }
 }
 
 /// (date "DD Mon YYYY", time "HH:MM:SS") in UTC, computed without extra dependencies.

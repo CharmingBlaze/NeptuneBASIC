@@ -1,0 +1,11 @@
+Print Greet("ci")
+Print AddInts(2, 40)
+Print Average(3, 4)
+Print Fib(20)
+Print ReverseText("abc")
+Print HELLO_VERSION
+Try
+    Print Fib(99)
+Catch e$
+    Print "caught: " + e
+End Try

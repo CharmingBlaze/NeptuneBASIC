@@ -118,7 +118,7 @@ pub struct Vm {
 impl Vm {
     /// Creates a VM for a program compiled against [`stdlib::base_env`] (plus host commands).
     pub fn new(prog: Program) -> Vm {
-        let n_core = stdlib::COMMANDS.len() as u32;
+        let n_core = stdlib::core_count() as u32;
         assert!(
             prog.natives.len() >= n_core as usize
                 && prog.natives[..n_core as usize]

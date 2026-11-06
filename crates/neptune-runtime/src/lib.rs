@@ -55,6 +55,21 @@ use neptune_vm::{base_env, Status, Vm};
 use crate::input::Input;
 use crate::world::{Host3D, World};
 
+/// Lower-case names of every built-in command (standard library and
+/// runtime, including modern aliases); plugins cannot replace these.
+pub fn builtin_names() -> std::collections::HashSet<String> {
+    let mut names: std::collections::HashSet<String> =
+        neptune_vm::stdlib::COMMANDS.iter().map(|(s, _)| parse_sig(s).name).collect();
+    names.extend(commands::table().iter().map(|(s, _)| parse_sig(s).name));
+    names
+}
+
+/// Loads plugins from the usual folders (once) and returns any problems.
+pub fn load_plugins() -> Vec<String> {
+    let names = builtin_names();
+    neptune_vm::plugin::load_default(&|n| names.contains(n))
+}
+
 /// Compiler environment: standard library followed by the 3D runtime commands.
 pub fn env() -> Env {
     let mut env = base_env();
@@ -223,9 +238,8 @@ impl Plugin for NeptunePlugin {
         // a screenshot asked for last frame: the frame now on screen
         if let Some(path) = st.world.pending_screenshot.take() {
             if let GraphicsContext::Initialized(g) = &*context.graphics_context {
-                let pos = g.window.inner_position().unwrap_or_default();
                 let size = g.window.inner_size();
-                let r = screenshot::capture(pos.x, pos.y, size.width, size.height).and_then(|img| screenshot::save(&img, &path));
+                let r = screenshot::capture(g.renderer.graphics_server(), size.width, size.height).and_then(|img| screenshot::save(&img, &path));
                 if let Err(e) = r {
                     eprintln!("SaveBuffer: {e}");
                 }
