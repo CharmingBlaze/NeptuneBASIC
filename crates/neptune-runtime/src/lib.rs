@@ -11,6 +11,7 @@
 //! engine loop, one BASIC frame (`RenderWorld`/`Flip`) per engine update.
 
 pub mod anim;
+pub mod buffer;
 pub mod classic;
 pub mod collision;
 pub mod commands;

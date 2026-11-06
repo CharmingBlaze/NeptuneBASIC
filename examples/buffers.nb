@@ -1,0 +1,69 @@
+; Drawing into textures and images: SetBuffer, CreateTexture, CreateImage,
+; WritePixel, CopyRect, RotateImage, TileImage.
+; Run from the repository root: neptune run examples/buffers.nb
+
+Graphics3D 1280, 720
+SetWindowTitle "Buffers"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 0, -5
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.3, -0.5, 1
+
+; a texture painted every frame and shown on a cube
+canvas = CreateTexture(128, 128)
+cube = CreateCube()
+EntityTexture cube, canvas
+PositionEntity cube, 1.5, 0, 0
+
+; an image built from drawing commands
+badge = CreateImage(96, 96)
+SetBuffer ImageBuffer(badge)
+ClsColor 0, 0, 0
+Cls
+Color 255, 200, 40
+Oval 0, 0, 96, 96
+Color 40, 40, 160
+Rect 28, 28, 40, 40
+Color 255, 255, 255
+Line 0, 48, 95, 48
+For i = 0 To 95 Step 4
+    WritePixel i, 10, $FFFF0000
+Next
+SetBuffer BackBuffer()
+spun = CopyImage(badge)
+MidHandle spun
+RotateImage spun, 30
+
+; a scrolling grid: black pixels are masked, so the 3D view shows through
+tile = CreateImage(32, 32)
+SetBuffer ImageBuffer(tile)
+ClsColor 0, 0, 0
+Cls
+Color 60, 80, 120
+Rect 0, 0, 32, 2
+Rect 0, 0, 2, 32
+SetBuffer BackBuffer()
+CameraClsColor camera, 25, 30, 45
+
+t# = 0
+While Not KeyDown(KEY_ESCAPE)
+    t = t + 2
+    ; repaint the cube texture: a bouncing dot leaving trails
+    SetBuffer TextureBuffer(canvas)
+    Color 0, 0, 0
+    Rect 0, 0, 128, 8
+    Color 255, 255 * (Sin(t) + 1) / 2, 80
+    Oval 64 + Cos(t * 1.3) * 50 - 8, 64 + Sin(t) * 50 - 8, 16, 16
+    SetBuffer BackBuffer()
+    TurnEntity cube, 0.4, 0.8, 0
+
+    RenderWorld
+    TileImage tile, t / 4, 0
+    DrawImage badge, 80, 200
+    DrawImage spun, 380, 248
+    Text 10, 10, "CreateTexture painted live | CreateImage + drawing | RotateImage | TileImage"
+    Text 10, 30, $"pixel at 0,10 in badge = {Hex(ReadPixel(0, 10, ImageBuffer(badge)))}"
+    Flip
+Wend
+End

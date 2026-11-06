@@ -139,6 +139,8 @@ pub struct World {
     pub sounds: Vec<Option<crate::sound::SoundInfo>>,
     /// Channel number → sound node (stale handles mean the channel ended).
     pub channels: Vec<Handle<Node>>,
+    /// Current drawing buffer (`SetBuffer`), see `buffer.rs`.
+    pub buffer: i32,
     /// Renderer quality (ext); `quality_dirty` asks the engine to apply it.
     pub quality: crate::quality::Quality,
     pub quality_dirty: bool,
@@ -180,6 +182,7 @@ impl Default for World {
             sounds: Vec::new(),
             channels: Vec::new(),
             joints: Vec::new(),
+            buffer: crate::buffer::BACK,
             quality: Default::default(),
             // apply the starting level once the window exists
             quality_dirty: true,
@@ -647,6 +650,14 @@ impl<'a> Host3D<'a> {
             .and_then(|i| self.world.images.get_mut(i))
             .and_then(Option::as_mut)
             .ok_or_else(|| format!("Image {id} does not exist"))
+    }
+
+    pub fn texture_mut(&mut self, id: i32) -> Result<&mut TextureInfo, String> {
+        usize::try_from(id - 1)
+            .ok()
+            .and_then(|i| self.world.textures.get_mut(i))
+            .and_then(Option::as_mut)
+            .ok_or_else(|| format!("Texture {id} does not exist"))
     }
 
     pub fn texture(&self, id: i32) -> Result<&TextureInfo, String> {

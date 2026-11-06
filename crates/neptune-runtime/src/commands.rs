@@ -303,6 +303,13 @@ fn add_image(h: &mut Host3D, img: Result<crate::image2d::Image2D, String>) -> Re
 
 /// `DrawImage`/`DrawBlock`; args are image, x, y, frame.
 fn draw_image(h: &mut Host3D, a: &[Value], masked: bool, sub: Option<Rect<f32>>) -> Result<Value, String> {
+    if h.image(a[0].int())?.dirty {
+        h.image_mut(a[0].int())?.commit();
+    }
+    let target = h.current_buffer()?;
+    if target != crate::buffer::Buffer::Screen {
+        return blit_image(h, a, masked, sub, target);
+    }
     let img = h.image(a[0].int())?;
     let uv = img.uv(a[3].int().max(0) as u32, sub)?;
     let (x, y) = img.top_left(a[1].float(), a[2].float());
@@ -410,6 +417,86 @@ fn velocity(h: &mut Host3D, e: i32, angular: bool, axis: usize) -> Result<Value,
     // both conversions are their own inverse
     let v = if angular { angular_to_fyrox(b.ang_vel()) } else { vec_to_fyrox(b.lin_vel()) };
     float(v[axis])
+}
+
+/// `DrawImage`/`DrawBlock` into an image or texture buffer.
+fn blit_image(h: &mut Host3D, a: &[Value], masked: bool, sub: Option<Rect<f32>>, target: crate::buffer::Buffer) -> Result<Value, String> {
+    let img = h.image(a[0].int())?;
+    let frame = a[3].int().max(0) as u32;
+    let (fx, fy, fw, fh) = img.frame_rect(frame)?;
+    let (sx, sy, w, ht) = match sub {
+        Some(r) => (fx + r.x() as i32, fy + r.y() as i32, r.w() as i32, r.h() as i32),
+        None => (fx, fy, fw, fh),
+    };
+    let (x, y) = img.top_left(a[1].float(), a[2].float());
+    let (ox, oy) = h.world.canvas.origin;
+    let mask = masked.then(|| img.mask());
+    let src = img.pixels().clone();
+    h.with_target(target, |t| t.blit(&src, sx, sy, w, ht, (x + ox) as i32, (y + oy) as i32, mask))?;
+    VOID
+}
+
+/// Runs a 2D shape on the current buffer: the screen layer or software pixels.
+fn draw2d(h: &mut Host3D, screen: impl FnOnce(&mut crate::draw2d::Canvas2D), pixels: impl FnOnce(&mut crate::buffer::Target, image::Rgba<u8>, (i32, i32))) -> Result<Value, String> {
+    let target = h.current_buffer()?;
+    if target == crate::buffer::Buffer::Screen {
+        h.scene()?;
+        screen(&mut h.world.canvas);
+    } else {
+        let c = h.world.canvas.color;
+        let color = image::Rgba([c.r, c.g, c.b, 255]);
+        let (ox, oy) = h.world.canvas.origin;
+        h.with_target(target, |t| pixels(t, color, (ox as i32, oy as i32)))?;
+    }
+    VOID
+}
+
+/// Resolves an optional buffer argument (0 = the current buffer).
+fn buffer_arg(h: &Host3D, b: i32) -> Result<crate::buffer::Buffer, String> {
+    if b == 0 {
+        h.current_buffer()
+    } else {
+        crate::buffer::decode(b)
+    }
+}
+
+/// `TileImage`/`TileBlock`: repeats an image over the whole screen.
+fn tile_image(h: &mut Host3D, a: &[Value], masked: bool) -> Result<Value, String> {
+    h.scene()?;
+    let img = h.image(a[0].int())?;
+    let uv = img.uv(a[3].int().max(0) as u32, None)?;
+    let (w, ht) = img.size();
+    if w < 1.0 || ht < 1.0 {
+        return VOID;
+    }
+    let tex = if masked { img.masked.clone() } else { img.block.clone() };
+    let (sw, sh) = (h.world.width as f32, h.world.height as f32);
+    let (ox, oy) = (a[1].float().rem_euclid(w) - w, a[2].float().rem_euclid(ht) - ht);
+    let mut y = oy;
+    while y < sh {
+        let mut x = ox;
+        while x < sw {
+            h.world.canvas.image(x - h.world.canvas.origin.0, y - h.world.canvas.origin.1, w, ht, uv, tex.clone());
+            x += w;
+        }
+        y += ht;
+    }
+    VOID
+}
+
+fn write_pixel(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
+    let b = buffer_arg(h, a[3].int())?;
+    let (x, y, c) = (a[0].int(), a[1].int(), crate::buffer::argb_to_rgba(a[2].int()));
+    if b == crate::buffer::Buffer::Screen {
+        h.scene()?;
+        let old = h.world.canvas.color;
+        h.world.canvas.color = Color::opaque(c[0], c[1], c[2]);
+        h.world.canvas.rect(x as f32, y as f32, 1.0, 1.0, true);
+        h.world.canvas.color = old;
+    } else {
+        h.with_target(b, |t| t.plot(x, y, c))?;
+    }
+    VOID
 }
 
 fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
@@ -606,6 +693,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.scene()?;
         h.flush_meshes()?;
         h.face_sprites()?;
+        h.commit_buffers()?;
         // A program that renders repeatedly without Flip still needs frames shown.
         if h.world.renders > h.world.renders_at_flip {
             h.world.canvas.flip();
@@ -624,6 +712,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("Flip%vwait=1", |h, _, ctx| {
         h.scene()?;
+        h.commit_buffers()?;
         // Flip ends the frame: publish the 2D layer and let the engine render.
         h.world.canvas.flip();
         h.world.renders_at_flip = h.world.renders;
@@ -1159,6 +1248,11 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
             Err(_) => int(0), // Blitz returns 0 when the file can't be loaded
         }
     }),
+    ("%CreateTexture%width%height%flags=1%frames=1", |h, a, _| {
+        let t = crate::texture::TextureInfo::blank(a[0].int().max(0) as u32, a[1].int().max(0) as u32, a[2].int())?;
+        h.world.textures.push(Some(t));
+        int(h.world.textures.len() as i32)
+    }),
     ("FreeTexture%texture", |h, a, _| {
         let t = a[0].int();
         h.texture(t)?;
@@ -1592,6 +1686,15 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("Cls", |h, _, _| {
+        let target = h.current_buffer()?;
+        if target != crate::buffer::Buffer::Screen {
+            let c = h.world.canvas.cls_color;
+            h.with_target(target, |t| {
+                let (w, ht) = (t.w, t.h);
+                t.rect(0, 0, w, ht, true, image::Rgba([c.r, c.g, c.b, 255]));
+            })?;
+            return VOID;
+        }
         h.world.canvas.items.clear();
         // without a camera, Cls is what defines the background
         if !h.entities().any(|(_, e)| matches!(e.kind, Kind::Camera { .. })) {
@@ -1605,19 +1708,91 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("Rect%x%y%width%height%solid=1", |h, a, _| {
-        h.world.canvas.rect(a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].int() != 0);
-        VOID
+        let (x, y, w, ht, solid) = (a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].int() != 0);
+        draw2d(h, |c| c.rect(x, y, w, ht, solid), |t, col, (ox, oy)| t.rect(x as i32 + ox, y as i32 + oy, w as i32, ht as i32, solid, col))
     }),
     ("Oval%x%y%width%height%solid=1", |h, a, _| {
-        h.world.canvas.oval(a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].int() != 0);
-        VOID
+        let (x, y, w, ht, solid) = (a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].int() != 0);
+        draw2d(h, |c| c.oval(x, y, w, ht, solid), |t, col, (ox, oy)| t.oval(x as i32 + ox, y as i32 + oy, w as i32, ht as i32, solid, col))
     }),
     ("Line%x1%y1%x2%y2", |h, a, _| {
-        h.world.canvas.line(a[0].float(), a[1].float(), a[2].float(), a[3].float());
-        VOID
+        let (x1, y1, x2, y2) = (a[0].float(), a[1].float(), a[2].float(), a[3].float());
+        draw2d(h, |c| c.line(x1, y1, x2, y2), |t, col, (ox, oy)| t.line(x1 as i32 + ox, y1 as i32 + oy, x2 as i32 + ox, y2 as i32 + oy, col))
     }),
     ("Plot%x%y", |h, a, _| {
-        h.world.canvas.rect(a[0].float(), a[1].float(), 1.0, 1.0, true);
+        let (x, y) = (a[0].float(), a[1].float());
+        draw2d(h, |c| c.rect(x, y, 1.0, 1.0, true), |t, col, (ox, oy)| t.plot(x as i32 + ox, y as i32 + oy, col))
+    }),
+    // ---- buffers and pixels
+    ("%BackBuffer", |_, _, _| int(crate::buffer::BACK)),
+    ("%FrontBuffer", |_, _, _| int(crate::buffer::FRONT)),
+    ("%GraphicsBuffer", |h, _, _| int(h.world.buffer)),
+    ("%ImageBuffer%image%frame=0", |h, a, _| {
+        let (i, f) = (a[0].int(), a[1].int());
+        h.image(i)?.frame_rect(f.max(0) as u32)?;
+        int(crate::buffer::image_buffer(i, f))
+    }),
+    ("%TextureBuffer%texture%frame=0", |h, a, _| {
+        h.texture(a[0].int())?;
+        int(crate::buffer::texture_buffer(a[0].int()))
+    }),
+    ("SetBuffer%buffer", |h, a, _| {
+        let b = a[0].int();
+        crate::buffer::decode(b)?;
+        h.world.buffer = b;
+        VOID
+    }),
+    ("LockBuffer%buffer=0", |h, a, _| {
+        buffer_arg(h, a[0].int())?;
+        VOID
+    }),
+    ("UnlockBuffer%buffer=0", |h, a, _| {
+        buffer_arg(h, a[0].int())?;
+        h.commit_buffers()?;
+        VOID
+    }),
+    ("%ReadPixel%x%y%buffer=0", |h, a, _| {
+        let b = buffer_arg(h, a[2].int())?;
+        if b == crate::buffer::Buffer::Screen {
+            return int(0); // the screen cannot be read back
+        }
+        let (x, y) = (a[0].int(), a[1].int());
+        int(crate::buffer::rgba_to_argb(h.with_target(b, |t| t.get(x, y))?))
+    }),
+    ("%ReadPixelFast%x%y%buffer=0", |h, a, _| {
+        let b = buffer_arg(h, a[2].int())?;
+        if b == crate::buffer::Buffer::Screen {
+            return int(0);
+        }
+        let (x, y) = (a[0].int(), a[1].int());
+        int(crate::buffer::rgba_to_argb(h.with_target(b, |t| t.get(x, y))?))
+    }),
+    ("WritePixel%x%y%argb%buffer=0", |h, a, _| write_pixel(h, a)),
+    ("WritePixelFast%x%y%argb%buffer=0", |h, a, _| write_pixel(h, a)),
+    ("CopyRect%src_x%src_y%width%height%dest_x%dest_y%src_buffer=0%dest_buffer=0", |h, a, _| {
+        let (src, dst) = (buffer_arg(h, a[6].int())?, buffer_arg(h, a[7].int())?);
+        if src == crate::buffer::Buffer::Screen {
+            return Err("CopyRect cannot read from the screen; copy from an image or texture buffer".into());
+        }
+        let n = |i: usize| a[i].int();
+        let block = h.with_target(src, |t| {
+            let mut out = image::RgbaImage::new(n(2).max(0) as u32, n(3).max(0) as u32);
+            for y in 0..n(3).max(0) {
+                for x in 0..n(2).max(0) {
+                    out.put_pixel(x as u32, y as u32, t.get(n(0) + x, n(1) + y));
+                }
+            }
+            out
+        })?;
+        if dst == crate::buffer::Buffer::Screen {
+            // show it on the screen layer through a temporary image
+            let img = crate::image2d::Image2D::new(block, 0, 0, 0, 1)?;
+            let (w, ht) = img.size();
+            h.world.canvas.image(n(4) as f32, n(5) as f32, w, ht, Rect::new(0.0, 0.0, 1.0, 1.0), img.block.clone());
+        } else {
+            let (w, ht) = (block.width() as i32, block.height() as i32);
+            h.with_target(dst, |t| t.blit(&block, 0, 0, w, ht, n(4), n(5), None))?;
+        }
         VOID
     }),
     // ---- images (bbgraphics.cpp)
@@ -1642,6 +1817,55 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let r = Rect::new(a[3].float(), a[4].float(), a[5].float(), a[6].float());
         let args = [a[0].clone(), a[1].clone(), a[2].clone(), a[7].clone()];
         draw_image(h, &args, false, Some(r))
+    }),
+    ("%CreateImage%width%height%frames=1", |h, a, _| {
+        add_image(h, crate::image2d::Image2D::blank(a[0].int().max(0) as u32, a[1].int().max(0) as u32, a[2].int().max(1) as u32))
+    }),
+    ("%CopyImage%image", |h, a, _| {
+        let c = h.image(a[0].int())?.duplicate();
+        h.world.images.push(Some(c));
+        int(h.world.images.len() as i32)
+    }),
+    ("GrabImage%image%x%y%frame=0", |h, a, _| {
+        let src = h.current_buffer()?;
+        if src == crate::buffer::Buffer::Screen {
+            return Err("GrabImage cannot read the screen; SetBuffer to an image or texture buffer first".into());
+        }
+        let (i, x, y, f) = (a[0].int(), a[1].int(), a[2].int(), a[3].int().max(0) as u32);
+        let (_, _, w, ht) = h.image(i)?.frame_rect(f)?;
+        let block = h.with_target(src, |t| {
+            let mut out = image::RgbaImage::new(w as u32, ht as u32);
+            for yy in 0..ht {
+                for xx in 0..w {
+                    out.put_pixel(xx as u32, yy as u32, t.get(x + xx, y + yy));
+                }
+            }
+            out
+        })?;
+        h.with_target(crate::buffer::Buffer::Image { id: i, frame: f }, |t| t.blit(&block, 0, 0, w, ht, 0, 0, None))?;
+        VOID
+    }),
+    ("RotateImage%image#angle", |h, a, _| {
+        h.image_mut(a[0].int())?.rotate(a[1].float())?;
+        VOID
+    }),
+    ("TileImage%image%x=0%y=0%frame=0", |h, a, _| tile_image(h, a, true)),
+    ("TileBlock%image%x=0%y=0%frame=0", |h, a, _| tile_image(h, a, false)),
+    ("%ImageRectCollide%image%x%y%frame%rect_x%rect_y%rect_width%rect_height", |h, a, _| {
+        let img = h.image(a[0].int())?;
+        let (l, t) = (a[1].float() - img.handle.0, a[2].float() - img.handle.1);
+        let frame = a[3].int().max(0) as u32;
+        let (rx, ry, rw, rh) = (a[4].float(), a[5].float(), a[6].float(), a[7].float());
+        let mut hit = false;
+        'outer: for y in ry.max(t).floor() as i32..(ry + rh).min(t + img.frame_h as f32).ceil() as i32 {
+            for x in rx.max(l).floor() as i32..(rx + rw).min(l + img.frame_w as f32).ceil() as i32 {
+                if img.solid(frame, x - l as i32, y - t as i32) {
+                    hit = true;
+                    break 'outer;
+                }
+            }
+        }
+        int(hit as i32)
     }),
     ("%ImageWidth%image", |h, a, _| int(h.image(a[0].int())?.size().0.round() as i32)),
     ("%ImageHeight%image", |h, a, _| int(h.image(a[0].int())?.size().1.round() as i32)),

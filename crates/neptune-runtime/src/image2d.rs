@@ -30,6 +30,8 @@ pub struct Image2D {
     mask: [u8; 3],
     pub masked: TextureResource,
     pub block: TextureResource,
+    /// Pixels changed through an image buffer and not yet uploaded.
+    pub dirty: bool,
 }
 
 fn make_texture(img: &RgbaImage) -> TextureResource {
@@ -81,7 +83,93 @@ impl Image2D {
             handle: (0.0, 0.0),
             scale: (1.0, 1.0),
             mask,
+            dirty: false,
         })
+    }
+
+    /// `CreateImage`: a blank (black) image with `frames` frames side by side.
+    pub fn blank(w: u32, h: u32, frames: u32) -> Result<Image2D, String> {
+        if w == 0 || h == 0 || w > 16384 || h > 16384 {
+            return Err(format!("image size {w}x{h} is not allowed"));
+        }
+        let frames = frames.max(1);
+        let px = RgbaImage::from_pixel(w * frames, h, image::Rgba([0, 0, 0, 255]));
+        Image2D::new(px, w, h, 0, frames)
+    }
+
+    /// An independent copy with its own textures (`CopyImage`).
+    pub fn duplicate(&self) -> Image2D {
+        let mut c = Image2D::new(self.pixels.clone(), self.frame_w, self.frame_h, self.first, self.frames).expect("same layout");
+        c.handle = self.handle;
+        c.scale = self.scale;
+        c.set_mask(self.mask);
+        c
+    }
+
+    pub fn pixels(&self) -> &RgbaImage {
+        &self.pixels
+    }
+
+    pub fn pixels_mut(&mut self) -> &mut RgbaImage {
+        &mut self.pixels
+    }
+
+    pub fn mask(&self) -> [u8; 3] {
+        self.mask
+    }
+
+    /// Pixel rectangle `(x, y, w, h)` of a frame within the image.
+    pub fn frame_rect(&self, frame: u32) -> Result<(i32, i32, i32, i32), String> {
+        let (x, y) = self.frame_origin(frame)?;
+        Ok((x as i32, y as i32, self.frame_w as i32, self.frame_h as i32))
+    }
+
+    /// Uploads changed pixels to both GPU textures.
+    pub fn commit(&mut self) {
+        self.dirty = false;
+        let masked = apply_mask(&self.pixels, self.mask);
+        for (tex, px) in [(&self.block, &self.pixels), (&self.masked, &masked)] {
+            let mut t = tex.data_ref();
+            let mut m = t.modify();
+            let bytes = m.data_mut();
+            if bytes.len() == px.as_raw().len() {
+                bytes.copy_from_slice(px.as_raw());
+            }
+        }
+    }
+
+    /// `RotateImage`: rotates the pixels of a single-frame image (degrees,
+    /// clockwise on screen) into a canvas big enough to hold them, keeping
+    /// the handle on the same pixel.
+    pub fn rotate(&mut self, degrees: f32) -> Result<(), String> {
+        if self.frames != 1 || self.pixels.width() != self.frame_w || self.pixels.height() != self.frame_h {
+            return Err("RotateImage works on single-frame images".into());
+        }
+        let (w, h) = (self.frame_w as f32, self.frame_h as f32);
+        let (s, c) = degrees.to_radians().sin_cos();
+        let nw = (w * c.abs() + h * s.abs()).ceil().max(1.0);
+        let nh = (w * s.abs() + h * c.abs()).ceil().max(1.0);
+        let fill = image::Rgba([self.mask[0], self.mask[1], self.mask[2], 255]);
+        let mut out = RgbaImage::from_pixel(nw as u32, nh as u32, fill);
+        let (cx, cy, ncx, ncy) = (w / 2.0, h / 2.0, nw / 2.0, nh / 2.0);
+        for y in 0..nh as u32 {
+            for x in 0..nw as u32 {
+                // inverse-rotate each destination pixel centre into the source
+                let (dx, dy) = (x as f32 + 0.5 - ncx, y as f32 + 0.5 - ncy);
+                let (sx, sy) = (dx * c + dy * s + cx, -dx * s + dy * c + cy);
+                if sx >= 0.0 && sy >= 0.0 && sx < w && sy < h {
+                    out.put_pixel(x, y, *self.pixels.get_pixel(sx as u32, sy as u32));
+                }
+            }
+        }
+        let (hx, hy) = (self.handle.0 - cx, self.handle.1 - cy);
+        let handle = (hx * c - hy * s + ncx, hx * s + hy * c + ncy);
+        let mut r = Image2D::new(out, 0, 0, 0, 1)?;
+        r.handle = handle;
+        r.scale = self.scale;
+        r.set_mask(self.mask);
+        *self = r;
+        Ok(())
     }
 
     pub fn load(path: &str, fw: u32, fh: u32, first: u32, frames: u32) -> Result<Image2D, String> {

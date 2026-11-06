@@ -37,6 +37,12 @@ pub struct TextureInfo {
     /// `TextureCoords`: UV set 0 or 1.
     pub coords: i32,
     pub path: String,
+    /// CPU copy of the pixels while the texture is drawn to (`TextureBuffer`).
+    pub pixels: Option<image::RgbaImage>,
+    /// Pixels changed and not yet uploaded.
+    pub dirty: bool,
+    /// The GPU texture is a plain RGBA8 texture made here, updated in place.
+    pub owned: bool,
 }
 
 impl TextureInfo {
@@ -70,7 +76,57 @@ impl TextureInfo {
             blend: 2,
             coords: 0,
             path,
+            pixels: None,
+            dirty: false,
+            owned: false,
         }
+    }
+
+    /// `CreateTexture`: a blank texture that programs draw into.
+    pub fn blank(w: u32, h: u32, flag_bits: i32) -> Result<Self, String> {
+        if w == 0 || h == 0 || w > 8192 || h > 8192 {
+            return Err(format!("texture size {w}x{h} is not allowed"));
+        }
+        let px = image::RgbaImage::from_pixel(w, h, image::Rgba([0, 0, 0, 255]));
+        let mut t = TextureInfo::from_resource(rgba_texture(&px, flag_bits), w, h, flag_bits, String::new());
+        t.pixels = Some(px);
+        t.owned = true;
+        Ok(t)
+    }
+
+    /// Makes sure the CPU pixel copy exists (read from the file the first time).
+    pub fn ensure_pixels(&mut self) -> Result<(), String> {
+        if self.pixels.is_none() {
+            let px = if self.path.is_empty() {
+                image::RgbaImage::new(self.width.max(1), self.height.max(1))
+            } else {
+                image::open(&self.path).map_err(|e| format!("cannot read texture '{}': {e}", self.path))?.to_rgba8()
+            };
+            self.pixels = Some(px);
+        }
+        Ok(())
+    }
+
+    /// Uploads changed pixels. Returns true if the GPU resource was replaced
+    /// (materials using it must be refreshed).
+    pub fn commit(&mut self) -> bool {
+        self.dirty = false;
+        let Some(px) = &self.pixels else { return false };
+        let px = if self.flags & flags::MASKED != 0 { masked(px) } else { px.clone() };
+        if self.owned {
+            let mut t = self.resource.data_ref();
+            let mut m = t.modify();
+            let bytes = m.data_mut();
+            if bytes.len() == px.as_raw().len() {
+                bytes.copy_from_slice(px.as_raw());
+                return false;
+            }
+        }
+        self.resource = rgba_texture(&px, self.flags);
+        self.width = px.width();
+        self.height = px.height();
+        self.owned = true;
+        true
     }
 }
 
@@ -98,6 +154,32 @@ pub fn load(path: &str, flag_bits: i32) -> Result<TextureInfo, String> {
         flag_bits,
         path.to_string(),
     ))
+}
+
+/// A plain RGBA8 texture (no mipmaps, so it can be updated in place).
+fn rgba_texture(px: &image::RgbaImage, flag_bits: i32) -> TextureResource {
+    use fyrox::resource::texture::{TextureMagnificationFilter, TextureMinificationFilter, TexturePixelKind};
+    let mut tex = Texture::from_bytes(TextureKind::Rectangle { width: px.width(), height: px.height() }, TexturePixelKind::RGBA8, px.as_raw().clone())
+        .expect("RGBA buffer matches its size");
+    tex.set_minification_filter(TextureMinificationFilter::Linear);
+    tex.set_magnification_filter(TextureMagnificationFilter::Linear);
+    if flag_bits & flags::CLAMP_U != 0 {
+        tex.set_s_wrap_mode(TextureWrapMode::ClampToEdge);
+    }
+    if flag_bits & flags::CLAMP_V != 0 {
+        tex.set_t_wrap_mode(TextureWrapMode::ClampToEdge);
+    }
+    TextureResource::new_ok(Uuid::new_v4(), ResourceKind::Embedded, tex)
+}
+
+fn masked(px: &image::RgbaImage) -> image::RgbaImage {
+    let mut out = px.clone();
+    for p in out.pixels_mut() {
+        if p[0] == 0 && p[1] == 0 && p[2] == 0 {
+            p[3] = 0;
+        }
+    }
+    out
 }
 
 /// Re-encodes an image with black pixels made fully transparent.
