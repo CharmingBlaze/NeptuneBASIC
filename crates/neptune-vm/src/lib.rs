@@ -11,6 +11,7 @@
 
 pub mod dynlib;
 pub mod net;
+pub mod netgame;
 pub mod plugin;
 pub mod stdlib;
 pub mod value;

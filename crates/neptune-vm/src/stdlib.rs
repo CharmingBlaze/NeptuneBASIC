@@ -58,6 +58,10 @@ pub struct Core {
     udp_ms: u32,
     /// Results of the last `CountHostIPs`.
     host_ips: Vec<i32>,
+    /// The multiplayer game (`HostNetGame`, `JoinNetGame`, ...) and the last
+    /// message `RecvNetMsg` returned.
+    net: Option<crate::netgame::NetGame>,
+    net_msg: crate::netgame::Msg,
     /// Lines returned by `Input` when set (tests/embedding); otherwise stdin.
     pub input_lines: Option<std::collections::VecDeque<String>>,
 }
@@ -86,6 +90,8 @@ impl Core {
             tcp_accept_ms: 0,
             udp_ms: 0,
             host_ips: Vec::new(),
+            net: None,
+            net_msg: crate::netgame::Msg { kind: 0, from: 0, to: 0, data: String::new() },
             input_lines: None,
         }
     }
@@ -827,6 +833,83 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
         }
         VOID
     }),
+    // ---- multiplayer games (bbnet: DirectPlay in Blitz3D, TCP here)
+    ("%StartNetGame", |_, c, _| {
+        // join a game on the local network, or host one if there is none
+        if let Some(addr) = crate::netgame::NetGame::find("", std::time::Duration::from_millis(1500)) {
+            if let Some(g) = crate::netgame::NetGame::join("", &addr.to_string()) {
+                c.net = Some(g);
+                return ok_int(1);
+            }
+        }
+        match crate::netgame::NetGame::host("NeptuneBASIC", crate::netgame::DEFAULT_PORT) {
+            Some(g) => {
+                c.net = Some(g);
+                ok_int(2)
+            }
+            None => ok_int(0),
+        }
+    }),
+    ("%HostNetGame$game_name", |a, c, _| match crate::netgame::NetGame::host(&a[0].str(), crate::netgame::DEFAULT_PORT) {
+        Some(g) => {
+            c.net = Some(g);
+            ok_int(2)
+        }
+        None => ok_int(0),
+    }),
+    ("%JoinNetGame$game_name$server_ip", |a, c, _| {
+        let (name, ip) = (a[0].str().to_string(), a[1].str().to_string());
+        // no address: look for the game on the local network
+        let addr = if ip.is_empty() {
+            match crate::netgame::NetGame::find(&name, std::time::Duration::from_secs(2)) {
+                Some(addr) => addr.to_string(),
+                None => return ok_int(0),
+            }
+        } else {
+            ip
+        };
+        match crate::netgame::NetGame::join(&name, &addr) {
+            Some(g) => {
+                c.net = Some(g);
+                ok_int(1)
+            }
+            None => ok_int(0),
+        }
+    }),
+    ("StopNetGame", |_, c, _| {
+        c.net = None;
+        VOID
+    }),
+    ("%CreateNetPlayer$name", |a, c, _| {
+        let g = c.net.as_mut().ok_or("no net game: use HostNetGame or JoinNetGame first")?;
+        ok_int(g.create_player(&a[0].str()))
+    }),
+    ("DeleteNetPlayer%player", |a, c, _| {
+        if let Some(g) = c.net.as_mut() {
+            g.delete_player(a[0].int());
+        }
+        VOID
+    }),
+    ("$NetPlayerName%player", |a, c, _| ok_s(c.net.as_ref().map(|g| g.player_name(a[0].int())).unwrap_or_default())),
+    ("%NetPlayerLocal%player", |a, c, _| ok_int(c.net.as_ref().is_some_and(|g| g.is_local(a[0].int())) as i32)),
+    ("%SendNetMsg%type$data%from_player%to_player=0%reliable=1", |a, c, _| {
+        let Some(g) = c.net.as_mut() else { return ok_int(0) };
+        ok_int(g.send(a[0].int(), &a[1].str(), a[2].int(), a[3].int()) as i32)
+    }),
+    ("%RecvNetMsg", |_, c, _| {
+        let Some(g) = c.net.as_mut() else { return ok_int(0) };
+        match g.recv() {
+            Some(m) => {
+                c.net_msg = m;
+                ok_int(1)
+            }
+            None => ok_int(0),
+        }
+    }),
+    ("%NetMsgType", |_, c, _| ok_int(c.net_msg.kind)),
+    ("%NetMsgFrom", |_, c, _| ok_int(c.net_msg.from)),
+    ("%NetMsgTo", |_, c, _| ok_int(c.net_msg.to)),
+    ("$NetMsgData", |_, c, _| ok_s(c.net_msg.data.as_str())),
     ("$DottedIP%ip", |a, _, _| ok_s(crate::net::dotted(a[0].int()))),
     ("%CountHostIPs$host_name", |a, c, _| {
         let ips = crate::net::host_ips(&a[0].str());
