@@ -118,6 +118,14 @@ pub struct Entity {
     pub pick_mode: i32,
     /// Whether this entity blocks `EntityVisible` line-of-sight checks.
     pub obscurer: bool,
+    /// (ext) PBR settings (`EntityMetallic`, ...)
+    pub pbr: Option<Box<crate::pbr::Pbr>>,
+    /// (ext) `EntityLOD` levels
+    pub lod: Vec<crate::lod::Level>,
+    /// (ext) `CreateEmitter` settings
+    pub emitter: Option<Box<crate::particles::Settings>>,
+    /// (ext) `EntityShader` custom material
+    pub shader: Option<Box<crate::shader::CustomMaterial>>,
 }
 
 /// Program-visible state that persists across frames.
@@ -183,6 +191,12 @@ pub struct World {
     pub loading_textures: Vec<crate::loading::PendingTexture>,
     pub failed_meshes: std::collections::HashSet<Handle<Node>>,
     pub failed_textures: std::collections::HashSet<i32>,
+    /// Cameras drawing into textures (`CameraToTexture`).
+    pub texture_cameras: Vec<crate::camerafx::TextureCamera>,
+    /// `LoadShader` shaders.
+    pub shaders: Vec<Option<fyrox::material::shader::ShaderResource>>,
+    /// Cameras with a `CameraColorGrading` table (`SetGamma` leaves them alone).
+    pub graded_cameras: std::collections::HashSet<Handle<Node>>,
     /// `CreateTileMap` tile maps.
     pub tilemaps: Vec<Option<crate::tilemap::TileMap>>,
     /// Unused mirror cameras made at start-up (see [`MIRROR_POOL`]).
@@ -247,6 +261,9 @@ impl Default for World {
             failed_meshes: Default::default(),
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
+            shaders: Vec::new(),
+            texture_cameras: Vec::new(),
+            graded_cameras: Default::default(),
             gamma: Default::default(),
             gamma_dirty: false,
             loader_matrices: Vec::new(),
@@ -496,6 +513,10 @@ impl<'a> Host3D<'a> {
             contacts: Vec::new(),
             pick_mode: 0,
             obscurer: false,
+            pbr: None,
+            lod: Vec::new(),
+            emitter: None,
+            shader: None,
         };
         let id = match self.world.free.pop() {
             Some(i) => {

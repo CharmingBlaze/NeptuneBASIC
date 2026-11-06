@@ -41,7 +41,9 @@ End
   picking, sound, movies, keyboard/mouse/joysticks, files, banks, timers,
   TCP/UDP networking and multiplayer games (TCP with LAN discovery).
 * **And more** – animated glTF/FBX models, rigid-body physics (Rapier),
-  gamepads, fullscreen, graphics quality presets, background loading,
+  gamepads, fullscreen, graphics quality presets, sky boxes, PBR materials,
+  decals, soft particles, level of detail, render-to-texture, custom
+  shaders, background loading,
   saved scenes (Fyrox `.rgs`), 2D tile maps with autotiling, a language
   server.
 * **Windows, Linux and macOS** – the same programs and the same commands on

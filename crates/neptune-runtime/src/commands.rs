@@ -605,6 +605,29 @@ fn save_scene(h: &mut Host3D, entities: &[i32], path: &str) -> Result<Value, Str
     }
 }
 
+fn pbr(h: &mut Host3D, e: i32, f: impl FnOnce(&mut crate::pbr::Pbr)) -> Result<Value, String> {
+    f(h.pbr_mut(e)?);
+    h.refresh_material(e)?;
+    VOID
+}
+
+fn pbr_map(h: &mut Host3D, a: &[Value], f: impl FnOnce(&mut crate::pbr::Pbr, i32)) -> Result<Value, String> {
+    let t = a[1].int();
+    if t != 0 {
+        h.texture(t)?;
+    }
+    pbr(h, a[0].int(), |p| f(p, t))
+}
+
+fn emitter(h: &mut Host3D, e: i32, f: impl FnOnce(&mut crate::particles::Settings)) -> Result<Value, String> {
+    h.modify_emitter(e, f)?;
+    VOID
+}
+
+fn rgba(a: &[Value]) -> [u8; 4] {
+    [1, 2, 3, 4].map(|i| a[i].int().clamp(0, 255) as u8)
+}
+
 fn movie_mut<'a>(h: &'a mut Host3D, m: i32) -> Result<&'a mut crate::movie::Movie, String> {
     usize::try_from(m - 1)
         .ok()
@@ -736,6 +759,8 @@ fn align_to_vector(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
 /// `EntityAutoFade` and `CaptureWorld` tweening, before each render.
 fn before_render(h: &mut Host3D, tween: f32) -> Result<(), String> {
     h.update_mirrors()?;
+    h.update_lods()?;
+    h.update_render_targets()?;
     // put tweened nodes back to their real transforms
     for e in std::mem::take(&mut h.world.tweened) {
         if h.ent(e).is_ok() {
@@ -1324,6 +1349,11 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         ctx.request_yield();
         VOID
     }),
+    // (ext) a cube map texture as the sky; 0 removes it
+    ("SkyBox%texture", |h, a, _| {
+        h.skybox(a[0].int())?;
+        VOID
+    }),
     ("AmbientLight#red#green#blue", |h, a, _| {
         let c = color(a, 0);
         h.world.ambient = c;
@@ -1412,6 +1442,12 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.edit_vertex(a[0].int(), a[1].int(), |v| v.color = c)?;
         VOID
     }),
+    // (ext) extra per-vertex values for custom shaders (locations 8-11)
+    ("VertexData%surface%index%slot#x#y=0#z=0#w=0", |h, a, _| {
+        h.vertex_data(a[0].int(), a[1].int(), a[2].int(), [a[3].float(), a[4].float(), a[5].float(), a[6].float()])?;
+        VOID
+    }),
+    ("#VertexDataValue%surface%index%slot%component", |h, a, _| float(h.vertex_data_get(a[0].int(), a[1].int(), a[2].int(), a[3].int())?)),
     ("VertexTexCoords%surface%index#u#v#w=1%coord_set=0", |h, a, _| {
         let set = coord_set(a, 5);
         let uv = [a[2].float(), a[3].float(), a[4].float()];
@@ -1585,6 +1621,42 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         int(h.world.brushes.len() as i32)
     }),
     // ---- sprites
+    // (ext) decals and particle emitters
+    ("%CreateDecal%texture=0%parent=0", |h, a, _| int(crate::decal::create(h, a[0].int(), a[1].int())?)),
+    ("%CreateEmitter%texture=0%parent=0", |h, a, _| int(crate::particles::create(h, a[0].int(), a[1].int())?)),
+    ("EmitterRate%emitter#per_second", |h, a, _| emitter(h, a[0].int(), |s| s.rate = a[1].float().max(0.0).round() as u32)),
+    ("EmitterMax%emitter%count", |h, a, _| emitter(h, a[0].int(), |s| s.max = (a[1].int() > 0).then_some(a[1].int() as u32))),
+    ("EmitterLife%emitter#min#max", |h, a, _| emitter(h, a[0].int(), |s| s.life = (a[1].float().max(0.01), a[2].float().max(0.01)))),
+    ("EmitterVelocity%emitter#x#y#z#spread=0", |h, a, _| {
+        emitter(h, a[0].int(), |s| {
+            s.velocity = [a[1].float(), a[2].float(), a[3].float()];
+            s.spread = a[4].float().abs();
+        })
+    }),
+    ("EmitterSize%emitter#size#grow=0", |h, a, _| {
+        emitter(h, a[0].int(), |s| {
+            s.size = a[1].float().max(0.0);
+            s.grow = a[2].float();
+        })
+    }),
+    ("EmitterSpin%emitter#min#max", |h, a, _| emitter(h, a[0].int(), |s| s.spin = (a[1].float(), a[2].float()))),
+    ("EmitterColor%emitter%red%green%blue%alpha=255", |h, a, _| emitter(h, a[0].int(), |s| s.start = rgba(a))),
+    ("EmitterFadeColor%emitter%red%green%blue%alpha=0", |h, a, _| emitter(h, a[0].int(), |s| s.end = rgba(a))),
+    ("EmitterGravity%emitter#x#y#z", |h, a, _| emitter(h, a[0].int(), |s| s.gravity = [a[1].float(), a[2].float(), a[3].float()])),
+    ("EmitterShape%emitter%shape#width=0#height=0#depth=0", |h, a, _| {
+        emitter(h, a[0].int(), |s| {
+            s.shape = a[1].int();
+            s.shape_size = [a[2].float(), a[3].float(), a[4].float()];
+        })
+    }),
+    ("EmitterSoftness%emitter#softness", |h, a, _| emitter(h, a[0].int(), |s| s.softness = a[1].float())),
+    ("EmitterLocal%emitter%enable", |h, a, _| emitter(h, a[0].int(), |s| s.local = a[1].int() != 0)),
+    ("EmitterEnable%emitter%enable", |h, a, _| emitter(h, a[0].int(), |s| s.playing = a[1].int() != 0)),
+    ("EmitterClear%emitter", |h, a, _| {
+        h.emitter_mut(a[0].int())?;
+        h.clear_particles(a[0].int())?;
+        VOID
+    }),
     ("%CreateSprite%parent=0", |h, a, _| int(h.create_sprite(a[0].int())?)),
     ("%LoadSprite$file%texture_flags=1%parent=0", |h, a, _| {
         h.scene()?;
@@ -1704,6 +1776,11 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         };
         Ok(Value::Str(class.into()))
     }),
+    // (ext) level of detail: show `level` only between near and far units from the camera
+    ("EntityLOD%entity%level#near#far=0", |h, a, _| {
+        h.entity_lod(a[0].int(), a[1].int(), a[2].float(), a[3].float())?;
+        VOID
+    }),
     ("EntityAutoFade%entity#near#far", |h, a, _| {
         let e = h.ent_mut(a[0].int())?;
         let (n, f) = (a[1].float(), a[2].float());
@@ -1741,6 +1818,19 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         if a[2].int() != 0 {
             h.world.textures.clear();
         }
+        VOID
+    }),
+    // (ext) exposure (0 fixed, 1 automatic), colour grading table, render to texture
+    ("CameraExposure%camera%mode#exposure=1#min_luminance=0.035#max_luminance=10", |h, a, _| {
+        h.camera_exposure(a[0].int(), a[1].int(), a[2].float(), a[3].float(), a[4].float())?;
+        VOID
+    }),
+    ("CameraColorGrading%camera$file", |h, a, _| {
+        h.camera_color_grading(a[0].int(), &a[1].str())?;
+        VOID
+    }),
+    ("CameraToTexture%camera%texture", |h, a, _| {
+        h.camera_to_texture(a[0].int(), a[1].int())?;
         VOID
     }),
     ("CameraClsMode%camera%cls_color%cls_zbuffer", |h, a, _| {
@@ -2114,6 +2204,56 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     // (ext) normal map for per-pixel lighting detail
+    // (ext) PBR material settings (standard material; see pbr.rs)
+    ("EntityMetallic%entity#metallic", |h, a, _| pbr(h, a[0].int(), |p| p.metallic = Some(a[1].float()))),
+    ("EntityRoughness%entity#roughness", |h, a, _| pbr(h, a[0].int(), |p| p.roughness = Some(a[1].float()))),
+    ("EntityEmissive%entity#red#green#blue#intensity=1", |h, a, _| {
+        let c = [a[1].float(), a[2].float(), a[3].float()];
+        let off = c.iter().all(|&v| v <= 0.0);
+        pbr(h, a[0].int(), |p| p.emissive = (!off).then_some((c, a[4].float())))
+    }),
+    ("EntityMetallicMap%entity%texture", |h, a, _| pbr_map(h, a, |p, t| p.metallic_map = t)),
+    ("EntityRoughnessMap%entity%texture", |h, a, _| pbr_map(h, a, |p, t| p.roughness_map = t)),
+    ("EntityEmissiveMap%entity%texture", |h, a, _| pbr_map(h, a, |p, t| p.emissive_map = t)),
+    ("EntityAOMap%entity%texture", |h, a, _| pbr_map(h, a, |p, t| p.ao_map = t)),
+    ("EntityLightmap%entity%texture", |h, a, _| pbr_map(h, a, |p, t| p.lightmap = t)),
+    // parallax mapping: a height map (white = high) and its depth
+    ("EntityHeightMap%entity%texture#scale=0.08", |h, a, _| {
+        let scale = a[2].float();
+        pbr_map(h, a, |p, t| {
+            p.height_map = t;
+            p.parallax = scale;
+        })
+    }),
+    // (ext) custom shaders (see shader.rs)
+    ("%LoadShader$file", |h, a, _| match crate::shader::load(&a[0].str()) {
+        Ok(sh) => {
+            h.world.shaders.push(Some(sh));
+            int(h.world.shaders.len() as i32)
+        }
+        Err(e) => {
+            eprintln!("LoadShader: {e}");
+            int(0)
+        }
+    }),
+    ("EntityShader%entity%shader", |h, a, _| {
+        h.entity_shader(a[0].int(), a[1].int())?;
+        VOID
+    }),
+    ("ShaderFloat%entity$name#value", |h, a, _| {
+        h.set_shader_prop(a[0].int(), &a[1].str(), crate::shader::Prop::Float(a[2].float()))?;
+        VOID
+    }),
+    ("ShaderVector%entity$name#x#y#z=0#w=0", |h, a, _| {
+        let v = [a[2].float(), a[3].float(), a[4].float(), a[5].float()];
+        h.set_shader_prop(a[0].int(), &a[1].str(), crate::shader::Prop::Vector(v))?;
+        VOID
+    }),
+    ("ShaderTexture%entity$name%texture", |h, a, _| {
+        h.texture(a[2].int())?;
+        h.set_shader_prop(a[0].int(), &a[1].str(), crate::shader::Prop::Texture(a[2].int()))?;
+        VOID
+    }),
     ("EntityNormalMap%entity%texture", |h, a, _| {
         let (e, t) = (a[0].int(), a[1].int());
         if t != 0 {

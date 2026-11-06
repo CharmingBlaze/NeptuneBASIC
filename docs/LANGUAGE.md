@@ -277,6 +277,34 @@ level = LoadScene("levels/level1.rgs")
 door = FindChild(level, "door")
 ```
 
+## Modern rendering (ext)
+
+```basic
+SkyBox LoadTexture("sky.png", 128)       ; six faces side by side
+EntityMetallic ball, 1 : EntityRoughness ball, 0.2
+EntityEmissive lamp, 255, 200, 120, 4   ; glows with PostEffect EFFECT_BLOOM
+EntityHeightMap wall, LoadTexture("bricks_height.png"), 0.05
+
+blood = CreateDecal(LoadTexture("splat.png", 3))
+PositionEntity blood, x, 0, z : ScaleEntity blood, 2, 1, 2
+
+smoke = CreateEmitter(LoadTexture("puff.png", 3))
+EmitterVelocity smoke, 0, 1, 0, 0.3
+EmitterColor smoke, 200, 200, 200, 180 : EmitterFadeColor smoke, 80, 80, 80, 0
+
+EntityLOD tree, detailed, 0, 40          ; children shown by distance
+EntityLOD tree, billboard, 40
+
+CameraToTexture securitycam, screentexture
+CameraExposure cam, 1                    ; automatic exposure
+CameraColorGrading cam, "warm_lut.png"   ; 256x16 lookup table
+
+water = LoadShader("water.shader")       ; Fyrox shader file
+EntityShader mesh, water
+ShaderFloat mesh, "time", MilliSecs() / 1000.0
+VertexData surface, v, 0, phase, height  ; read in the shader at location 8
+```
+
 ## Tile maps (ext)
 
 A tile map is a grid of frames of an animation image. `AutoTile` paints a

@@ -29,6 +29,13 @@ pub mod movie;
 pub mod loading;
 pub mod scenefile;
 pub mod tilemap;
+pub mod pbr;
+pub mod camerafx;
+pub mod skybox;
+pub mod decal;
+pub mod lod;
+pub mod particles;
+pub mod shader;
 pub mod physics;
 pub mod pick;
 pub mod primitive;
@@ -228,8 +235,11 @@ impl Plugin for NeptunePlugin {
             if let Ok(scene) = context.scenes.try_get_mut(st.scene) {
                 let identity = st.world.gamma.is_identity();
                 let lut = if identity { None } else { st.world.gamma.lut().map_err(|e| eprintln!("{e}")).ok() };
-                use fyrox::graph::SceneGraph;
-                for node in scene.graph.linear_iter_mut() {
+                for (handle, node) in scene.graph.pair_iter_mut() {
+                    // cameras with their own colour table (CameraColorGrading) keep it
+                    if st.world.graded_cameras.contains(&handle) {
+                        continue;
+                    }
                     if let Some(cam) = node.cast_mut::<fyrox::scene::camera::Camera>() {
                         if let Some(l) = &lut {
                             let _ = cam.set_color_grading_lut(Some(l.clone()));

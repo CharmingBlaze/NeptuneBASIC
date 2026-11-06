@@ -18,6 +18,8 @@ pub mod flags {
     pub const CLAMP_V: i32 = 32;
     pub const SPHERE_MAP: i32 = 64;
     pub const CUBE_MAP: i32 = 128;
+    /// (ext) stored compressed (DXT5) in video memory
+    pub const COMPRESSED: i32 = 4096;
 }
 
 /// A loaded texture and the Blitz-side state attached to it.
@@ -55,6 +57,8 @@ pub struct TextureInfo {
     pub dirty: bool,
     /// The GPU texture is a plain RGBA8 texture made here, updated in place.
     pub owned: bool,
+    /// (ext) a camera draws into it (`CameraToTexture`)
+    pub render_target: bool,
 }
 
 impl TextureInfo {
@@ -111,6 +115,7 @@ impl TextureInfo {
             pixels: None,
             dirty: false,
             owned: false,
+            render_target: false,
         }
     }
 
@@ -185,6 +190,10 @@ pub fn load(path: &str, flag_bits: i32) -> Result<TextureInfo, String> {
     if flag_bits & flags::CLAMP_V != 0 {
         opts.set_t_wrap_mode(TextureWrapMode::ClampToEdge);
     }
+    // (ext) compressed in video memory (DXT); DDS files arrive compressed already
+    if flag_bits & flags::COMPRESSED != 0 {
+        opts.set_compression(fyrox::resource::texture::CompressionOptions::Quality);
+    }
     let tex = Texture::load_from_memory(&bytes, opts).map_err(|e| format!("cannot load texture '{path}': {e:?}"))?;
     let (width, height) = match tex.kind() {
         TextureKind::Rectangle { width, height } => (width, height),
@@ -197,6 +206,16 @@ pub fn load(path: &str, flag_bits: i32) -> Result<TextureInfo, String> {
         flag_bits,
         path.to_string(),
     ))
+}
+
+/// A 1x1 texture of one colour (RGBA, 0-255).
+pub fn solid_texture(px: [u8; 4]) -> TextureResource {
+    rgba_texture(&image::RgbaImage::from_pixel(1, 1, image::Rgba(px)), 0)
+}
+
+/// A texture of an image, clamped at the edges (sky box faces).
+pub fn solid_from(img: &image::RgbaImage) -> TextureResource {
+    rgba_texture(img, flags::CLAMP_U | flags::CLAMP_V)
 }
 
 /// A plain RGBA8 texture (no mipmaps, so it can be updated in place).

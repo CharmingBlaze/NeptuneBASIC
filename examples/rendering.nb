@@ -1,0 +1,180 @@
+; Modern rendering extensions (ext). Run from the project folder:
+;   neptune run examples/rendering.nb
+; Sky box, PBR materials (metallic, roughness, emission, parallax),
+; decals, soft particles, level of detail, a camera drawing into a texture,
+; automatic exposure and a custom shader with per-vertex data.
+; Arrows: orbit the camera   E: toggle automatic exposure   Esc: quit
+
+Graphics3D 1024, 640, 0, 2
+AppTitle "Rendering"
+SetBuffer BackBuffer()
+
+; ---- textures made in code ------------------------------------------
+; a cube map sky: six faces in Blitz order (left, front, right, back, up, down)
+sky = CreateTexture(128, 128, 1 + 128)
+For face = 0 To 5
+    SetCubeFace sky, face
+    SetBuffer TextureBuffer(sky)
+    For y = 0 To 127
+        If face = 4
+            Color 40, 80, 160
+        ElseIf face = 5
+            Color 30, 30, 35
+        Else
+            ; horizon glow at the bottom of the side faces
+            Color 40 + y * 1.2, 80 + y * 0.8, 160 + y * 0.4
+        EndIf
+        Rect 0, y, 128, 1
+    Next
+Next
+SetBuffer BackBuffer()
+
+; bricks (colour) and their height map (white bricks, dark mortar)
+bricks = CreateTexture(256, 256)
+height = CreateTexture(256, 256)
+For pass = 0 To 1
+    If pass = 0 Then SetBuffer TextureBuffer(bricks) Else SetBuffer TextureBuffer(height)
+    If pass = 0 Then Color 90, 85, 80 Else Color 0, 0, 0
+    Rect 0, 0, 256, 256
+    For row = 0 To 7
+        For col = -1 To 4
+            x = col * 64 + (row Mod 2) * 32
+            If pass = 0 Then Color 150 + Rand(-20, 20), 70 + Rand(-10, 10), 50 Else Color 255, 255, 255
+            Rect x + 3, row * 32 + 3, 58, 26
+        Next
+    Next
+Next
+
+; a round soft blob (decal and particles)
+blob = CreateTexture(64, 64, 1 + 2)
+SetBuffer TextureBuffer(blob)
+For y = 0 To 63
+    For x = 0 To 63
+        d# = Sqr((x - 32) ^ 2 + (y - 32) ^ 2) / 32.0
+        a = 255 * (1 - d) : If a < 0 Then a = 0
+        WritePixel x, y, (a Shl 24) Or $FFFFFF
+    Next
+Next
+SetBuffer BackBuffer()
+
+; ---- scene -------------------------------------------------------------
+SkyBox sky
+cam = CreateCamera()
+PositionEntity cam, 0, 4, -14
+sun = CreateLight(1)
+RotateEntity sun, 50, -30, 0
+LightShadows sun, True
+AmbientLight 70, 70, 80
+PostEffect EFFECT_BLOOM, True
+
+ground = CreatePlane()
+EntityColor ground, 120, 125, 120
+EntityRoughness ground, 0.9
+
+; metallic (left to right) and smoothness (right to left) steps
+For i = 0 To 4
+    ball = CreateSphere(32)
+    PositionEntity ball, -4 + i * 2, 1, 2
+    EntityColor ball, 220, 180, 120
+    EntityMetallic ball, i / 4.0
+    EntityRoughness ball, 0.15 + (4 - i) * 0.2
+Next
+
+; glowing ball (bloom picks it up)
+glow = CreateSphere(24)
+PositionEntity glow, 6, 1.2, 5
+; the renderer multiplies the glow by the surface colour, so keep it light
+EntityColor glow, 255, 200, 160
+EntityEmissive glow, 255, 140, 40, 6
+
+; parallax-mapped wall
+wall = CreateCube()
+ScaleEntity wall, 3, 1.5, 0.3
+PositionEntity wall, 0, 1.5, 8
+EntityTexture wall, bricks
+EntityHeightMap wall, height, 0.06
+
+; a decal on the ground
+decal = CreateDecal(blob)
+EntityColor decal, 255, 60, 60
+PositionEntity decal, -6, 0, -2
+ScaleEntity decal, 3, 1, 3
+
+; soft particles: a fire above the glowing ball
+fire = CreateEmitter(blob)
+PositionEntity fire, 6, 2, 5
+EmitterRate fire, 60
+EmitterLife fire, 0.6, 1.2
+EmitterVelocity fire, 0, 2, 0, 0.4
+EmitterSize fire, 0.5, -0.3
+EmitterColor fire, 255, 180, 60, 255
+EmitterFadeColor fire, 255, 40, 10, 0
+EmitterShape fire, 0, 0.3
+
+; level of detail: a smooth sphere up close, a cube far away
+lod = CreatePivot()
+fine = CreateSphere(48, lod)
+coarse = CreateCube(lod)
+EntityColor fine, 80, 200, 120
+EntityColor coarse, 200, 80, 80
+EntityLOD lod, fine, 0, 15
+EntityLOD lod, coarse, 15
+
+; a security camera showing the spheres on a screen
+monitorcam = CreateCamera()
+PositionEntity monitorcam, 0, 3, -2
+RotateEntity monitorcam, 30, 0, 0
+screen = CreateTexture(256, 256)
+CameraToTexture monitorcam, screen
+tv = CreateCube()
+ScaleEntity tv, 1.6, 1.2, 0.1
+PositionEntity tv, -7, 2.5, 6
+EntityTexture tv, screen
+
+; water: a custom shader moves every vertex using its VertexData
+water = CreateMesh()
+surf = CreateSurface(water)
+For z = 0 To 20
+    For x = 0 To 20
+        v = AddVertex(surf, x * 0.3, 0, z * 0.3, x / 20.0, z / 20.0)
+        VertexData surf, v, 0, x * 0.6 + z * 0.4, 0.15, Rnd(0.3, 1)
+    Next
+Next
+For z = 0 To 19
+    For x = 0 To 19
+        i = z * 21 + x
+        AddTriangle surf, i, i + 21, i + 1
+        AddTriangle surf, i + 1, i + 21, i + 22
+    Next
+Next
+PositionEntity water, 4, 0.3, -6
+wave = LoadShader("examples/media/wave.shader")
+If wave
+    EntityShader water, wave
+    ShaderVector water, "tint", 0.3, 0.7, 1.0, 1
+EndIf
+
+; ---- loop --------------------------------------------------------------
+yaw# = 0 : auto = False
+While Not KeyHit(1)
+    If KeyDown(203) Then yaw = yaw - 1
+    If KeyDown(205) Then yaw = yaw + 1
+    If KeyHit(18)
+        auto = Not auto
+        If auto Then CameraExposure cam, 1 Else CameraExposure cam, 0, 1
+    EndIf
+    PositionEntity cam, Sin(yaw) * -14, 4, Cos(yaw) * -14
+    PointEntity cam, ground
+    TurnEntity cam, -10, 0, 0
+    ; the LOD object travels away and back
+    PositionEntity lod, -3, 1, 4 + (Sin(MilliSecs() / 30.0) + 1) * 15
+    TurnEntity monitorcam, 0, 0.3, 0
+    If wave Then ShaderFloat water, "time", MilliSecs() / 1000.0
+
+    UpdateWorld
+    RenderWorld
+    Color 255, 255, 255
+    Text 10, 10, "Arrows: orbit   E: automatic exposure (" + auto + ")   Esc: quit"
+    Flip
+Wend
+End

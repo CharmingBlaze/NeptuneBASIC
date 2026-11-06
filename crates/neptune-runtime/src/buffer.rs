@@ -239,7 +239,11 @@ impl Host3D<'_> {
     /// Gives every entity using texture `t` (directly or through a brush) its
     /// current GPU resource.
     pub fn refresh_texture_users(&mut self, t: i32) -> Result<(), String> {
-        let users: Vec<i32> = self.entities().filter(|(_, e)| e.textures.contains(&t) || e.normal_map == t).map(|(i, _)| i).collect();
+        let users: Vec<i32> = self
+            .entities()
+            .filter(|(_, e)| e.textures.contains(&t) || e.normal_map == t || e.pbr.as_ref().is_some_and(|p| p.uses_texture(t)))
+            .map(|(i, _)| i)
+            .collect();
         for e in users {
             self.refresh_material(e)?;
         }

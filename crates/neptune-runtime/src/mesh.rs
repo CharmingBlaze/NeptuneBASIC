@@ -65,6 +65,8 @@ pub struct SurfaceInfo {
     pub dirty: bool,
     /// Brush applied with `PaintSurface`/`CreateSurface` (0 = none).
     pub brush: i32,
+    /// (ext) `VertexData` values per vertex (empty when unused).
+    pub custom: Vec<[[f32; 4]; crate::shader::SLOTS]>,
 }
 
 /// A brush: a reusable set of surface properties.
@@ -107,6 +109,55 @@ static LAYOUT: [VertexAttributeDescriptor; 6] = [
     attr(VertexAttributeUsage::TexCoord1, VertexAttributeDataType::F32, 2, 6, false),
     attr(VertexAttributeUsage::Color, VertexAttributeDataType::U8, 4, 7, true),
 ];
+
+/// GPU vertex with `VertexData` values (locations 8-11).
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GpuVertexCustom {
+    base: GpuVertex,
+    custom: [[f32; 4]; crate::shader::SLOTS],
+}
+
+static LAYOUT_CUSTOM: [VertexAttributeDescriptor; 10] = [
+    attr(VertexAttributeUsage::Position, VertexAttributeDataType::F32, 3, 0, false),
+    attr(VertexAttributeUsage::TexCoord0, VertexAttributeDataType::F32, 2, 1, false),
+    attr(VertexAttributeUsage::Normal, VertexAttributeDataType::F32, 3, 2, false),
+    attr(VertexAttributeUsage::Tangent, VertexAttributeDataType::F32, 4, 3, false),
+    attr(VertexAttributeUsage::TexCoord1, VertexAttributeDataType::F32, 2, 6, false),
+    attr(VertexAttributeUsage::Color, VertexAttributeDataType::U8, 4, 7, true),
+    attr(VertexAttributeUsage::Custom0, VertexAttributeDataType::F32, 4, 8, false),
+    attr(VertexAttributeUsage::Custom1, VertexAttributeDataType::F32, 4, 9, false),
+    attr(VertexAttributeUsage::Custom2, VertexAttributeDataType::F32, 4, 10, false),
+    attr(VertexAttributeUsage::Custom3, VertexAttributeDataType::F32, 4, 11, false),
+];
+
+/// Like [`surface_data`], with `VertexData` values for every vertex.
+pub fn surface_data_custom(verts: &[Vert], tris: &[[u32; 3]], custom: &[[[f32; 4]; crate::shader::SLOTS]]) -> SurfaceData {
+    // standard attributes (and tangents) first, then add the extra values
+    let plain = surface_data(verts, tris);
+    let mut gpu = Vec::with_capacity(verts.len());
+    for (i, v) in plain.vertex_buffer.iter().enumerate() {
+        let r3 = |u| v.read_3_f32(u).unwrap_or_default();
+        let r2 = |u| v.read_2_f32(u).unwrap_or_default();
+        let (p, n, uv0, uv1) = (r3(VertexAttributeUsage::Position), r3(VertexAttributeUsage::Normal), r2(VertexAttributeUsage::TexCoord0), r2(VertexAttributeUsage::TexCoord1));
+        let t = v.read_4_f32(VertexAttributeUsage::Tangent).unwrap_or_default();
+        let c = v.read_4_u8(VertexAttributeUsage::Color).unwrap_or_default();
+        gpu.push(GpuVertexCustom {
+            base: GpuVertex {
+                position: [p.x, p.y, p.z],
+                tex_coord: [uv0.x, uv0.y],
+                normal: [n.x, n.y, n.z],
+                tangent: [t.x, t.y, t.z, t.w],
+                second_tex_coord: [uv1.x, uv1.y],
+                color: [c.x, c.y, c.z, c.w],
+            },
+            custom: custom.get(i).copied().unwrap_or_default(),
+        });
+    }
+    let count = gpu.len();
+    let vb = VertexBuffer::new_with_layout(&LAYOUT_CUSTOM, count, BytesStorage::new(gpu)).expect("valid vertex layout");
+    SurfaceData::new(vb, plain.geometry_buffer.clone())
+}
 
 /// Builds Fyrox surface data (Fyrox space) from Blitz-space geometry.
 pub fn surface_data(verts: &[Vert], tris: &[[u32; 3]]) -> SurfaceData {
@@ -265,7 +316,7 @@ impl Host3D<'_> {
             let data = data.data_ref();
             read_surface(&data)
         };
-        Ok(self.add_surface_info(SurfaceInfo { entity: mesh, index, verts, tris, dirty: false, brush: 0 }))
+        Ok(self.add_surface_info(SurfaceInfo { entity: mesh, index, verts, tris, dirty: false, brush: 0, custom: Vec::new() }))
     }
 
     fn add_surface_info(&mut self, info: SurfaceInfo) -> i32 {
@@ -292,7 +343,7 @@ impl Host3D<'_> {
             m.add_surface(SurfaceBuilder::new(SurfaceResource::new_embedded(data)).with_material(material).build());
             m.surfaces().len() - 1
         };
-        let s = self.add_surface_info(SurfaceInfo { entity: mesh, index, verts: Vec::new(), tris: Vec::new(), dirty: false, brush });
+        let s = self.add_surface_info(SurfaceInfo { entity: mesh, index, verts: Vec::new(), tris: Vec::new(), dirty: false, brush, custom: Vec::new() });
         // a painted surface, or a mesh already on the classic material, needs
         // the new surface's material set up the same way
         if brush != 0 || self.material_is_classic(mesh)? {
@@ -328,7 +379,12 @@ impl Host3D<'_> {
             let Some(info) = self.world.surfaces[i].as_mut() else { continue };
             info.dirty = false;
             let (entity, index) = (info.entity, info.index);
-            let data = surface_data(&info.verts, &info.tris);
+            let data = if info.custom.is_empty() {
+                surface_data(&info.verts, &info.tris)
+            } else {
+                info.custom.resize(info.verts.len(), Default::default());
+                surface_data_custom(&info.verts, &info.tris, &info.custom)
+            };
             let Ok(node) = self.ent(entity).map(|e| e.node) else {
                 self.world.surfaces[i] = None;
                 continue;

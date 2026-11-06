@@ -60,6 +60,10 @@ impl Host3D<'_> {
 
     /// Re-applies colour, alpha, textures and effects to an entity's surfaces.
     pub fn refresh_material(&mut self, id: i32) -> Result<(), String> {
+        // decals and particle emitters have their own materials
+        if self.refresh_decal(id)? || self.refresh_emitter(id)? || self.refresh_custom(id)? {
+            return Ok(());
+        }
         if self.needs_classic(id)? {
             self.apply_classic(id)
         } else {
@@ -121,7 +125,8 @@ impl Host3D<'_> {
             layers.push(Layer {
                 texture: info.resource.clone(),
                 blend: info.blend,
-                scale: (info.scale_u, info.scale_v),
+                // camera pictures (CameraToTexture) are stored upside down
+                scale: (info.scale_u, if info.render_target { -info.scale_v } else { info.scale_v }),
                 offset: (info.pos_u, info.pos_v),
                 rotation: info.rotation,
                 coords: info.coords,
@@ -254,12 +259,17 @@ impl Host3D<'_> {
         let normal = if normal_id != 0 { self.texture(normal_id).ok().map(|t| t.resource.clone()) } else { None };
         let blend = tex.as_ref().is_some_and(|t| t.needs_blending());
         let is_model = self.ent(id)?.model;
+        let pbr = self.resolve_pbr(id)?;
         self.with_materials(id, |m| {
+            if let Some(p) = &pbr {
+                p.apply(m);
+            }
             m.set_property("diffuseColor", color);
             match &tex {
                 Some(t) => {
                     m.bind("diffuseTexture", t.resource.clone());
-                    m.set_property("texCoordScale", Vector2::new(1.0 / t.scale_u, 1.0 / t.scale_v));
+                    let flip = if t.render_target { -1.0 } else { 1.0 };
+                    m.set_property("texCoordScale", Vector2::new(1.0 / t.scale_u, flip / t.scale_v));
                 }
                 None if !is_model => {
                     // models keep their own textures; primitives go back to plain colour
