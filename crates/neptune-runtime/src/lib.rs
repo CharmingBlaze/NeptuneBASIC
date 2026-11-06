@@ -20,6 +20,7 @@ pub mod input;
 pub mod material;
 pub mod mesh;
 pub mod model;
+pub mod physics;
 pub mod pick;
 pub mod sound;
 pub mod texture;

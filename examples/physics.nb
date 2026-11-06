@@ -1,0 +1,71 @@
+; Physics (ext): rigid bodies, impulses, contacts, ray casts and a hinge.
+; Run from the repository root: neptune run examples/physics.nb
+; Space shoots a ball from the camera; the door swings on a hinge.
+
+Graphics3D 1280, 720
+SetWindowTitle "Physics"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 6, -16
+CameraLookAt camera, 0, 2, 0
+CameraClsColor camera, 120, 160, 210
+
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.4, -1, 0.6
+LightShadows light, True
+
+ground = CreateCube()
+ScaleEntity ground, 20, 0.5, 20
+PositionEntity ground, 0, -0.5, 0
+EntityColor ground, 90, 140, 90
+EntityPhysics ground, PHYS_STATIC
+
+; a pyramid of boxes
+For row = 0 To 4
+    For col = 0 To 4 - row
+        box = CreateCube()
+        ScaleEntity box, 0.5, 0.5, 0.5
+        PositionEntity box, -2 + col + row * 0.5, 0.5 + row * 1.0, 3
+        EntityColor box, 200, 120 + row * 25, 60
+        EntityPhysics box, PHYS_DYNAMIC, SHAPE_BOX, 1
+    Next
+Next
+
+; a door on a vertical hinge
+post = CreateCylinder(12)
+ScaleEntity post, 0.15, 2, 0.15
+PositionEntity post, 5, 2, 0
+EntityPhysics post, PHYS_STATIC
+door = CreateCube()
+ScaleEntity door, 1.5, 1.8, 0.1
+PositionEntity door, 6.6, 2, 0
+EntityColor door, 160, 110, 70
+EntityPhysics door, PHYS_DYNAMIC, SHAPE_BOX, 2
+CreateHingeJoint post, door, 5, 2, 0, 0, 1, 0
+
+; give the door a push
+ApplyImpulseAt door, 0, 0, 6, 8, 2, 0
+
+Global shots = 0
+Function Shoot(camera)
+    ball = CreateSphere(12)
+    ScaleEntity ball, 0.4, 0.4, 0.4
+    PositionEntity ball, EntityX(camera), EntityY(camera), EntityZ(camera)
+    EntityColor ball, 60, 60, 220
+    EntityPhysics ball, PHYS_DYNAMIC, SHAPE_SPHERE, 2
+    SetVelocity ball, 0, -4, 24
+    shots = shots + 1
+End Function
+
+frame = 0
+While Not KeyDown(KEY_ESCAPE)
+    frame = frame + 1
+    If KeyHit(KEY_SPACE) Or frame = 120 Then Shoot(camera)
+    UpdatePhysics
+    RenderWorld
+    hit = PhysicsRayCast(EntityX(camera), EntityY(camera), EntityZ(camera), 0, -4, 24)
+    Text 10, 10, $"Space: shoot   balls: {shots}   ground contacts: {CountContacts(ground)}"
+    If hit Then Text 10, 30, $"aim ray hits entity {hit} at {Int(PickedX())}, {Int(PickedY())}, {Int(PickedZ())}"
+    Flip
+Wend
+End

@@ -399,6 +399,19 @@ fn with_channel(h: &mut Host3D, c: i32, f: impl FnOnce(&mut fyrox::scene::sound:
     VOID
 }
 
+fn body(h: &mut Host3D, e: i32, f: impl FnOnce(&mut fyrox::scene::rigidbody::RigidBody)) -> Result<Value, String> {
+    f(h.body_mut(e)?);
+    VOID
+}
+
+fn velocity(h: &mut Host3D, e: i32, angular: bool, axis: usize) -> Result<Value, String> {
+    use crate::physics::{angular_to_fyrox, vec_to_fyrox};
+    let b = h.body_mut(e)?;
+    // both conversions are their own inverse
+    let v = if angular { angular_to_fyrox(b.ang_vel()) } else { vec_to_fyrox(b.lin_vel()) };
+    float(v[axis])
+}
+
 fn font_of(h: &Host3D, f: i32) -> Result<FontInfo, String> {
     usize::try_from(f - 1)
         .ok()
@@ -439,6 +452,16 @@ pub fn constants() -> Vec<(String, ConstVal)> {
         ("FX_NOFOG".into(), ConstVal::Int(8)),
         ("FX_TWOSIDED".into(), ConstVal::Int(16)),
         ("FX_FORCEALPHA".into(), ConstVal::Int(32)),
+        ("PHYS_DYNAMIC".into(), ConstVal::Int(1)),
+        ("PHYS_STATIC".into(), ConstVal::Int(2)),
+        ("PHYS_KINEMATIC".into(), ConstVal::Int(3)),
+        ("SHAPE_AUTO".into(), ConstVal::Int(0)),
+        ("SHAPE_BOX".into(), ConstVal::Int(1)),
+        ("SHAPE_SPHERE".into(), ConstVal::Int(2)),
+        ("SHAPE_CAPSULE".into(), ConstVal::Int(3)),
+        ("SHAPE_CYLINDER".into(), ConstVal::Int(4)),
+        ("SHAPE_MESH".into(), ConstVal::Int(5)),
+        ("SHAPE_HULL".into(), ConstVal::Int(6)),
         ("PROJ_NONE".into(), ConstVal::Int(0)),
         ("PROJ_PERSPECTIVE".into(), ConstVal::Int(1)),
         ("PROJ_ORTHO".into(), ConstVal::Int(2)),
@@ -1337,6 +1360,116 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%EmitSound%sound%entity", |h, a, _| {
         let info = h.sound(a[0].int())?.clone();
         int(h.play(&info, a[1].int())?)
+    }),
+    // ---- physics (ext), Rapier through Fyrox
+    ("EntityPhysics%entity%body_type=1%shape=0#mass=1", |h, a, _| {
+        h.scene()?;
+        h.enable_physics(a[0].int(), a[1].int(), a[2].int(), a[3].float())?;
+        VOID
+    }),
+    ("PhysicsGravity#x#y#z", |h, a, _| {
+        let g = crate::physics::vec_to_fyrox(v3(a, 0));
+        h.scene()?.graph.physics.gravity.set_value_and_mark_modified(g);
+        VOID
+    }),
+    ("EntityMass%entity#mass", |h, a, _| {
+        let m = a[1].float().max(1e-4);
+        body(h, a[0].int(), |b| {
+            b.set_mass(m);
+        })
+    }),
+    ("EntityFriction%entity#friction", |h, a, _| {
+        h.collider_mut(a[0].int())?.set_friction(a[1].float().max(0.0));
+        VOID
+    }),
+    ("EntityBounce%entity#bounce", |h, a, _| {
+        h.collider_mut(a[0].int())?.set_restitution(a[1].float().clamp(0.0, 1.0));
+        VOID
+    }),
+    ("EntityDamping%entity#linear#angular", |h, a, _| {
+        let (l, an) = (a[1].float().max(0.0), a[2].float().max(0.0));
+        body(h, a[0].int(), |b| {
+            b.set_lin_damping(l);
+            b.set_ang_damping(an);
+        })
+    }),
+    ("EntityGravityScale%entity#scale", |h, a, _| {
+        let s = a[1].float();
+        body(h, a[0].int(), |b| {
+            b.set_gravity_scale(s);
+        })
+    }),
+    ("LockRotation%entity%x%y%z", |h, a, _| {
+        // mirroring keeps each axis an axis, so locks map one to one
+        let (x, y, z) = (a[1].int() != 0, a[2].int() != 0, a[3].int() != 0);
+        body(h, a[0].int(), |b| {
+            b.lock_x_rotations(x);
+            b.lock_y_rotations(y);
+            b.lock_z_rotations(z);
+        })
+    }),
+    ("ApplyForce%entity#x#y#z", |h, a, _| {
+        let f = crate::physics::vec_to_fyrox(v3(a, 1));
+        body(h, a[0].int(), |b| b.apply_force(f))
+    }),
+    ("ApplyImpulse%entity#x#y#z", |h, a, _| {
+        let f = crate::physics::vec_to_fyrox(v3(a, 1));
+        body(h, a[0].int(), |b| b.apply_impulse(f))
+    }),
+    ("ApplyImpulseAt%entity#x#y#z#point_x#point_y#point_z", |h, a, _| {
+        let (f, p) = (crate::physics::vec_to_fyrox(v3(a, 1)), crate::physics::vec_to_fyrox(v3(a, 4)));
+        body(h, a[0].int(), |b| b.apply_impulse_at_point(f, p))
+    }),
+    ("ApplyTorque%entity#x#y#z", |h, a, _| {
+        let t = crate::physics::angular_to_fyrox(v3(a, 1));
+        body(h, a[0].int(), |b| b.apply_torque(t))
+    }),
+    ("ApplyTorqueImpulse%entity#x#y#z", |h, a, _| {
+        let t = crate::physics::angular_to_fyrox(v3(a, 1));
+        body(h, a[0].int(), |b| b.apply_torque_impulse(t))
+    }),
+    ("SetVelocity%entity#x#y#z", |h, a, _| {
+        let v = crate::physics::vec_to_fyrox(v3(a, 1));
+        body(h, a[0].int(), |b| {
+            b.set_lin_vel(v);
+        })
+    }),
+    ("SetAngularVelocity%entity#x#y#z", |h, a, _| {
+        let v = crate::physics::angular_to_fyrox(v3(a, 1));
+        body(h, a[0].int(), |b| {
+            b.set_ang_vel(v);
+        })
+    }),
+    ("#VelocityX%entity", |h, a, _| velocity(h, a[0].int(), false, 0)),
+    ("#VelocityY%entity", |h, a, _| velocity(h, a[0].int(), false, 1)),
+    ("#VelocityZ%entity", |h, a, _| velocity(h, a[0].int(), false, 2)),
+    ("#AngularVelocityX%entity", |h, a, _| velocity(h, a[0].int(), true, 0)),
+    ("#AngularVelocityY%entity", |h, a, _| velocity(h, a[0].int(), true, 1)),
+    ("#AngularVelocityZ%entity", |h, a, _| velocity(h, a[0].int(), true, 2)),
+    ("%EntityTouching%entity%other", |h, a, _| int(h.touching(a[0].int())?.contains(&a[1].int()) as i32)),
+    ("%CountContacts%entity", |h, a, _| int(h.touching(a[0].int())?.len() as i32)),
+    ("%ContactEntity%entity%index", |h, a, _| {
+        let list = h.touching(a[0].int())?;
+        let i = a[1].int();
+        int(if i >= 1 { list.get(i as usize - 1).copied().unwrap_or(0) } else { 0 })
+    }),
+    ("%PhysicsRayCast#x#y#z#dx#dy#dz", |h, a, _| {
+        let hit = h.physics_ray(v3(a, 0), v3(a, 3))?;
+        picked(h, hit)
+    }),
+    ("%CreateBallJoint%entity1%entity2#x#y#z", |h, a, _| {
+        int(h.create_joint(a[0].int(), a[1].int(), 1, v3(a, 2), Vector3::x())?)
+    }),
+    ("%CreateHingeJoint%entity1%entity2#x#y#z#axis_x#axis_y#axis_z", |h, a, _| {
+        int(h.create_joint(a[0].int(), a[1].int(), 2, v3(a, 2), v3(a, 5))?)
+    }),
+    ("%CreateFixedJoint%entity1%entity2", |h, a, _| {
+        let p = h.world_of(a[1].int())?.position();
+        int(h.create_joint(a[0].int(), a[1].int(), 3, p, Vector3::x())?)
+    }),
+    ("FreeJoint%joint", |h, a, _| {
+        h.free_joint(a[0].int())?;
+        VOID
     }),
     // ---- 2D (bbgraphics.cpp)
     ("Text%x%y$string%center_x=0%center_y=0", |h, a, _| {

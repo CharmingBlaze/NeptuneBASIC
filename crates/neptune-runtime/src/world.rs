@@ -80,6 +80,8 @@ pub struct Entity {
     /// A node inside a loaded model registered by `FindChild`/`GetChild`;
     /// its transform is read back from the node because animation moves it.
     pub adopted: bool,
+    /// Rigid body nodes when `EntityPhysics` was used.
+    pub phys: Option<crate::physics::PhysState>,
     /// The model a `LoadMesh` entity was made from (for `CopyEntity`).
     pub model_res: Option<fyrox::resource::model::ModelResource>,
     /// `EntityOrder`: non-zero draws in the forward pass, after normal geometry.
@@ -134,6 +136,8 @@ pub struct World {
     pub sounds: Vec<Option<crate::sound::SoundInfo>>,
     /// Channel number → sound node (stale handles mean the channel ended).
     pub channels: Vec<Handle<Node>>,
+    /// Physics joints (`CreateBallJoint`, ...).
+    pub joints: Vec<Handle<Node>>,
     pub listener: Option<Handle<Node>>,
     pub listener_rolloff: f32,
     pub listener_distance: f32,
@@ -169,6 +173,7 @@ impl Default for World {
             brushes: Vec::new(),
             sounds: Vec::new(),
             channels: Vec::new(),
+            joints: Vec::new(),
             listener: None,
             listener_rolloff: 1.0,
             listener_distance: 1.0,
@@ -287,8 +292,22 @@ impl<'a> Host3D<'a> {
     /// Writes an entity's local transform into its Fyrox node.
     pub fn sync(&mut self, id: i32) -> Result<(), String> {
         let e = self.ent(id)?;
-        let (node, xf) = (e.node, e.xf);
+        let (node, xf, phys) = (e.node, e.xf, e.phys);
         let graph = self.graph()?;
+        if let Some(p) = phys {
+            // physics bodies carry position and rotation; the mesh keeps the scale
+            let t = graph[p.body].local_transform_mut();
+            t.set_position(xf.fyrox_position());
+            t.set_rotation(xf.fyrox_rotation());
+            graph[node].local_transform_mut().set_scale(xf.scale);
+            if p.body_type == 3 {
+                if let Some(b) = graph[p.body].cast_mut::<fyrox::scene::rigidbody::RigidBody>() {
+                    b.set_next_kinematic_translation(xf.fyrox_position());
+                    b.set_next_kinematic_rotation(xf.fyrox_rotation());
+                }
+            }
+            return Ok(());
+        }
         let t = graph[node].local_transform_mut();
         t.set_position(xf.fyrox_position());
         t.set_rotation(xf.fyrox_rotation());
@@ -298,8 +317,13 @@ impl<'a> Host3D<'a> {
 
     /// Local transform; for nodes inside animated models, the current one.
     pub fn live_xf(&self, e: &Entity) -> Xform {
-        match (&self.scene, e.adopted) {
-            (Some(scene), true) => crate::anim::xform_of_node(&scene.graph, e.node),
+        match (&self.scene, e.adopted, e.phys) {
+            (Some(scene), _, Some(p)) => {
+                let mut xf = crate::anim::xform_of_node(&scene.graph, p.body);
+                xf.scale = e.xf.scale;
+                xf
+            }
+            (Some(scene), true, None) => crate::anim::xform_of_node(&scene.graph, e.node),
             _ => e.xf,
         }
     }
@@ -356,6 +380,7 @@ impl<'a> Host3D<'a> {
             anim: None,
             adopted: false,
             model_res: None,
+            phys: None,
             own_materials: true,
             col_type: 0,
             radius: (1.0, 1.0),
@@ -392,7 +417,8 @@ impl<'a> Host3D<'a> {
     pub fn free_entity(&mut self, id: i32) -> Result<(), String> {
         let (node, parent) = {
             let e = self.ent(id)?;
-            (e.node, e.parent)
+            // a physics entity's root node is its body
+            (e.phys.map_or(e.node, |p| p.body), e.parent)
         };
         if parent != 0 {
             if let Ok(p) = self.ent_mut(parent as i32) {
