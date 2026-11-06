@@ -204,6 +204,39 @@ door = CreateHingeJoint(post, panel, 5, 2, 0, 0, 1, 0) ; anchor and axis
 The simulation steps every frame by itself; position, rotation and the
 other entity commands keep working on physics entities.
 
+## Game loops and timing
+
+A fixed-rate loop keeps a game the same speed on every PC:
+
+```basic
+timer = CreateTimer(60)              ; 60 ticks a second
+While Not KeyHit(KEY_ESCAPE)
+    ticks = WaitTimer(timer)         ; waits, returns ticks since last time
+    For t = 1 To Min(ticks, 4)       ; catch up if a frame was slow
+        UpdateGame()
+    Next
+    RenderWorld
+    Flip
+Wend
+```
+
+In graphics mode `Print` and `Write` draw on the screen like Blitz3D:
+`Locate x, y` moves the text cursor, and `Cls`/`RenderWorld` reset it.
+
+## Banks and networking
+
+```basic
+b = CreateBank(8)
+PokeInt b, 0, 1234 : PokeFloat b, 4, 2.5
+Print PeekInt(b, 0)
+
+server = CreateTCPServer(8000)
+client = OpenTCPStream("127.0.0.1", 8000)
+conn = AcceptTCPStream(server)
+WriteLine client, "hello"
+Print ReadLine(conn)                 ; TCP and UDP streams use the file commands
+```
+
 ## Errors
 
 ```basic

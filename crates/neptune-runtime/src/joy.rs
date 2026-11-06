@@ -157,9 +157,7 @@ impl Joysticks {
     }
 
     pub fn flush(&mut self) {
-        for h in &mut self.hits {
-            *h = [0; 18];
-        }
+        self.hits.fill([0; 18]);
     }
 
     fn axis(&self, port: i32, a: Axis) -> f32 {

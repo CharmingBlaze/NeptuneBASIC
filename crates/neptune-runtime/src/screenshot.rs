@@ -76,7 +76,7 @@ pub fn capture(x: i32, y: i32, w: u32, h: u32) -> Result<RgbaImage, String> {
     if !ok {
         return Err("could not capture the screen".into());
     }
-    for p in bgra.chunks_exact_mut(4) {
+    for p in bgra.as_chunks_mut::<4>().0 {
         p.swap(0, 2);
         p[3] = 255;
     }

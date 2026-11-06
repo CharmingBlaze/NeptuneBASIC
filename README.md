@@ -36,9 +36,12 @@ End
   compiled with a real multi-stage compiler designed for a future native backend.
 * **Fyrox underneath** – entities are Fyrox scene nodes, so PBR rendering,
   shadows and the rest of Fyrox are available to BASIC commands.
-* **Batteries included** – custom meshes, animated glTF/FBX models, terrain,
-  sprites, sound and 3D sound, rigid-body physics (Rapier), collisions,
-  picking, 2D images and pixel buffers.
+* **All of Blitz3D** – every Blitz3D command: 2D and 3D graphics, custom
+  meshes, animation, terrain, sprites, mirrors, cube maps, collisions,
+  picking, sound, keyboard/mouse/joysticks, files, banks, timers and TCP/UDP
+  networking.
+* **And more** – animated glTF/FBX models, rigid-body physics (Rapier),
+  gamepads, fullscreen, graphics quality presets, a language server.
 * **Runs on old and new PCs** – any OpenGL 3.3 GPU (roughly 2010 onwards).
   `--quality low` turns off the expensive effects for older laptops;
   `ultra` turns them all on.
@@ -68,6 +71,17 @@ Other commands:
 
 Editor support for VS Code (highlighting, the language server, F5 to run) is in
 [`editors/vscode`](editors/vscode/README.md).
+
+## Sample games
+
+Two complete games show what a finished NeptuneBASIC program looks like:
+
+* `examples/games/starcourier.nb` – a 2D space shooter.
+* `examples/games/orbrun.nb` – a 3D collect-the-orbs game with an animated fox.
+
+```bash
+neptune run examples/games/orbrun.nb
+```
 
 ## Documentation
 

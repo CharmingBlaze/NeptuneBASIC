@@ -707,8 +707,8 @@ fn light_mesh(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
                     let facing = if d > 1e-6 { (v.normal.dot(&(to / d))).max(0.0) } else { 1.0 };
                     (1.0 - d / range).max(0.0) * facing
                 };
-                for c in 0..3 {
-                    v.color[c] = (v.color[c] + col[c] * k).min(1.0);
+                for (vc, lc) in v.color.iter_mut().zip(col) {
+                    *vc = (*vc + lc * k).min(1.0);
                 }
             }
         })?;
@@ -740,10 +740,8 @@ fn graphics_mode(h: &mut Host3D, a: &[Value], ctx: &mut NativeCtx) -> Result<Val
     let (w, ht) = (a[0].int().max(1) as u32, a[1].int().max(1) as u32);
     // Blitz modes: 0 auto (windowed here), 1 fullscreen, 2 windowed, 3 scaled window
     let fullscreen = a[3].int() == 1;
-    if h.has_graphics() {
-        if fullscreen != h.world.fullscreen {
-            h.world.pending_fullscreen = Some(fullscreen);
-        }
+    if h.has_graphics() && fullscreen != h.world.fullscreen {
+        h.world.pending_fullscreen = Some(fullscreen);
     }
     h.world.fullscreen = fullscreen;
     if h.has_graphics() {
