@@ -2068,6 +2068,8 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let info = h.sound(a[0].int())?.clone();
         int(h.play(&info, 0)?)
     }),
+    // audio CDs are gone; kept so old programs run (returns no channel)
+    ("%PlayCDTrack%track%mode=1", |_, _, _| int(0)),
     ("%PlayMusic$file%mode=0", |h, a, _| {
         h.scene()?;
         match crate::sound::load(&a[0].str(), true) {
@@ -2429,7 +2431,18 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("RotateImage%image#angle", |h, a, _| {
-        h.image_mut(a[0].int())?.rotate(a[1].float())?;
+        let smooth = h.world.tform_filter;
+        h.image_mut(a[0].int())?.rotate(a[1].float(), smooth)?;
+        VOID
+    }),
+    ("TFormImage%image#a#b#c#d", |h, a, _| {
+        let smooth = h.world.tform_filter;
+        let m = [[a[1].float(), a[2].float()], [a[3].float(), a[4].float()]];
+        h.image_mut(a[0].int())?.transform(m, smooth)?;
+        VOID
+    }),
+    ("TFormFilter%enable", |h, a, _| {
+        h.world.tform_filter = a[0].int() != 0;
         VOID
     }),
     ("TileImage%image%x=0%y=0%frame=0", |h, a, _| tile_image(h, a, true)),

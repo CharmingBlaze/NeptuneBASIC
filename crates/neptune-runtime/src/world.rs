@@ -164,6 +164,8 @@ pub struct World {
     /// nodes show a tweened transform that must be restored.
     pub captured: std::collections::HashMap<i32, Xform>,
     pub tweened: Vec<i32>,
+    /// `TFormFilter`: smooth (bilinear) image transforms.
+    pub tform_filter: bool,
     /// Result of the last `TFormPoint`/`TFormVector`/`TFormNormal`.
     pub tformed: Vector3<f32>,
     /// `TextureFilter` rules: (part of a file name, flags added).
@@ -215,6 +217,7 @@ impl Default for World {
             // Blitz3D's default filter: colour + mipmapped for every texture
             texture_filters: vec![(String::new(), 1 | 8)],
             tformed: Vector3::zeros(),
+            tform_filter: true,
             print_sink: Default::default(),
             cursor: (0.0, 0.0),
             fullscreen: false,

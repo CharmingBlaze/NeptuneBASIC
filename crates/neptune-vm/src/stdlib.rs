@@ -224,6 +224,43 @@ fn poke(c: &mut Core, a: &[Value], bytes: &[u8]) -> Result<Value, String> {
     b[r].copy_from_slice(bytes);
     VOID
 }
+/// `CallDLL`: calls `int proc(void* in, int in_size, void* out, int out_size)`
+/// exported by a DLL, passing two banks (Blitz3D's userlib-free interface).
+#[cfg(windows)]
+fn call_dll(dll: &str, proc_name: &str, input: &mut [u8], output: &mut [u8]) -> Result<i32, String> {
+    use std::ffi::CString;
+    use std::os::raw::{c_char, c_void};
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryA(name: *const c_char) -> *mut c_void;
+        fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
+    }
+    type Proc = unsafe extern "system" fn(*mut c_void, i32, *mut c_void, i32) -> i32;
+    let dll_c = CString::new(dll).map_err(|_| "bad DLL name".to_string())?;
+    let proc_c = CString::new(proc_name).map_err(|_| "bad procedure name".to_string())?;
+    // SAFETY: the program asked for this DLL procedure with Blitz3D's documented
+    // signature; the bank pointers stay valid for the duration of the call.
+    unsafe {
+        let module = LoadLibraryA(dll_c.as_ptr());
+        if module.is_null() {
+            return Err(format!("cannot load DLL '{dll}'"));
+        }
+        let f = GetProcAddress(module, proc_c.as_ptr());
+        if f.is_null() {
+            return Err(format!("DLL '{dll}' has no procedure '{proc_name}'"));
+        }
+        let f: Proc = std::mem::transmute(f);
+        let (ip, il) = if input.is_empty() { (std::ptr::null_mut(), 0) } else { (input.as_mut_ptr().cast(), input.len() as i32) };
+        let (op, ol) = if output.is_empty() { (std::ptr::null_mut(), 0) } else { (output.as_mut_ptr().cast(), output.len() as i32) };
+        Ok(f(ip, il, op, ol))
+    }
+}
+
+#[cfg(not(windows))]
+fn call_dll(_: &str, _: &str, _: &mut [u8], _: &mut [u8]) -> Result<i32, String> {
+    Err("CallDLL is only available on Windows".into())
+}
+
 /// Opens a file or folder with the program the system associates with it.
 fn exec_file(target: &str) -> bool {
     #[cfg(windows)]
@@ -688,6 +725,15 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
             "cpucount" => std::thread::available_parallelism().map_or(1, |n| n.get()).to_string(),
             _ => String::new(),
         })
+    }),
+    ("%CallDLL$dll_name$proc_name%in_bank=0%out_bank=0", |a, c, _| {
+        let mut input = if a[2].int() != 0 { c.bank(a[2].int())?.clone() } else { Vec::new() };
+        let mut output = if a[3].int() != 0 { c.bank(a[3].int())?.clone() } else { Vec::new() };
+        let r = call_dll(&a[0].str(), &a[1].str(), &mut input, &mut output)?;
+        if a[3].int() != 0 {
+            *c.bank(a[3].int())? = output;
+        }
+        ok_int(r)
     }),
     ("ExecFile$file", |a, _, _| {
         exec_file(&a[0].str());

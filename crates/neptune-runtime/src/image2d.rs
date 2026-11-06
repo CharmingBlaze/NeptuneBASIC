@@ -138,34 +138,73 @@ impl Image2D {
         }
     }
 
-    /// `RotateImage`: rotates the pixels of a single-frame image (degrees,
-    /// clockwise on screen) into a canvas big enough to hold them, keeping
-    /// the handle on the same pixel.
-    pub fn rotate(&mut self, degrees: f32) -> Result<(), String> {
-        if self.frames != 1 || self.pixels.width() != self.frame_w || self.pixels.height() != self.frame_h {
-            return Err("RotateImage works on single-frame images".into());
-        }
-        let (w, h) = (self.frame_w as f32, self.frame_h as f32);
+    /// `RotateImage`: rotates a single-frame image (degrees, clockwise on screen).
+    pub fn rotate(&mut self, degrees: f32, smooth: bool) -> Result<(), String> {
         let (s, c) = degrees.to_radians().sin_cos();
-        let nw = (w * c.abs() + h * s.abs()).ceil().max(1.0);
-        let nh = (w * s.abs() + h * c.abs()).ceil().max(1.0);
+        self.transform([[c, -s], [s, c]], smooth)
+    }
+
+    /// `TFormImage`: applies a 2x2 matrix to a single-frame image about its
+    /// centre (`x' = a*x + b*y`, `y' = c*x + d*y`, y pointing down), into a
+    /// canvas big enough to hold the result. The handle stays on the same
+    /// pixel. `smooth` samples bilinearly (`TFormFilter`).
+    pub fn transform(&mut self, m: [[f32; 2]; 2], smooth: bool) -> Result<(), String> {
+        if self.frames != 1 || self.pixels.width() != self.frame_w || self.pixels.height() != self.frame_h {
+            return Err("this command works on single-frame images".into());
+        }
+        let det = m[0][0] * m[1][1] - m[0][1] * m[1][0];
+        if det.abs() < 1e-6 {
+            return Err("the transform squashes the image flat".into());
+        }
+        let inv = [[m[1][1] / det, -m[0][1] / det], [-m[1][0] / det, m[0][0] / det]];
+        let (w, h) = (self.frame_w as f32, self.frame_h as f32);
+        let (cx, cy) = (w / 2.0, h / 2.0);
+        let fwd = |x: f32, y: f32| (m[0][0] * x + m[0][1] * y, m[1][0] * x + m[1][1] * y);
+        let corners = [fwd(-cx, -cy), fwd(cx, -cy), fwd(cx, cy), fwd(-cx, cy)];
+        let span = |f: fn(&(f32, f32)) -> f32| {
+            let v: Vec<f32> = corners.iter().map(f).collect();
+            v.iter().cloned().fold(f32::MIN, f32::max) - v.iter().cloned().fold(f32::MAX, f32::min)
+        };
+        // a small tolerance keeps e.g. a 90 degree turn of a 4x2 image at 2x4, not 3x4
+        let size = |v: f32| (v - 1e-3).ceil().clamp(1.0, 16384.0);
+        let (nw, nh) = (size(span(|p| p.0)), size(span(|p| p.1)));
         let fill = image::Rgba([self.mask[0], self.mask[1], self.mask[2], 255]);
         let mut out = RgbaImage::from_pixel(nw as u32, nh as u32, fill);
-        let (cx, cy, ncx, ncy) = (w / 2.0, h / 2.0, nw / 2.0, nh / 2.0);
+        let (ncx, ncy) = (nw / 2.0, nh / 2.0);
+        let src = &self.pixels;
+        let get = |x: i32, y: i32| -> Option<[f32; 4]> {
+            (x >= 0 && y >= 0 && (x as f32) < w && (y as f32) < h).then(|| src.get_pixel(x as u32, y as u32).0.map(|c| c as f32))
+        };
         for y in 0..nh as u32 {
             for x in 0..nw as u32 {
-                // inverse-rotate each destination pixel centre into the source
+                // map each destination pixel centre back into the source
                 let (dx, dy) = (x as f32 + 0.5 - ncx, y as f32 + 0.5 - ncy);
-                let (sx, sy) = (dx * c + dy * s + cx, -dx * s + dy * c + cy);
-                if sx >= 0.0 && sy >= 0.0 && sx < w && sy < h {
-                    out.put_pixel(x, y, *self.pixels.get_pixel(sx as u32, sy as u32));
+                let (sx, sy) = (inv[0][0] * dx + inv[0][1] * dy + cx, inv[1][0] * dx + inv[1][1] * dy + cy);
+                if sx < 0.0 || sy < 0.0 || sx >= w || sy >= h {
+                    continue;
                 }
+                let p = if smooth {
+                    let (fx, fy) = (sx - 0.5, sy - 0.5);
+                    let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
+                    let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+                    let c = |xx: i32, yy: i32| get(xx.clamp(0, w as i32 - 1), yy.clamp(0, h as i32 - 1)).unwrap_or([0.0; 4]);
+                    let (a, b, cc, d) = (c(x0, y0), c(x0 + 1, y0), c(x0, y0 + 1), c(x0 + 1, y0 + 1));
+                    let mut r = [0u8; 4];
+                    for i in 0..4 {
+                        let top = a[i] + (b[i] - a[i]) * tx;
+                        let bottom = cc[i] + (d[i] - cc[i]) * tx;
+                        r[i] = (top + (bottom - top) * ty).round() as u8;
+                    }
+                    image::Rgba(r)
+                } else {
+                    *src.get_pixel(sx as u32, sy as u32)
+                };
+                out.put_pixel(x, y, p);
             }
         }
-        let (hx, hy) = (self.handle.0 - cx, self.handle.1 - cy);
-        let handle = (hx * c - hy * s + ncx, hx * s + hy * c + ncy);
+        let (hx, hy) = fwd(self.handle.0 - cx, self.handle.1 - cy);
         let mut r = Image2D::new(out, 0, 0, 0, 1)?;
-        r.handle = handle;
+        r.handle = (hx + ncx, hy + ncy);
         r.scale = self.scale;
         r.set_mask(self.mask);
         *self = r;
@@ -289,6 +328,23 @@ mod tests {
         let mut m = sheet();
         m.set_mask([255, 0, 0]);
         assert!(m.solid(0, 0, 0) && !m.solid(0, 1, 1));
+    }
+
+    #[test]
+    fn transforms_keep_the_handle_pixel() {
+        let mut px = RgbaImage::new(4, 2);
+        px.put_pixel(3, 0, image::Rgba([255, 0, 0, 255]));
+        let mut img = Image2D::new(px, 0, 0, 0, 1).unwrap();
+        img.handle = (3.5, 0.5); // centre of the red pixel
+        img.rotate(90.0, false).unwrap();
+        assert_eq!((img.frame_w, img.frame_h), (2, 4));
+        let (hx, hy) = img.handle;
+        assert_eq!(img.pixels().get_pixel(hx as u32, hy as u32).0, [255, 0, 0, 255]);
+        // scaling by 2 doubles the size
+        let mut img2 = Image2D::new(RgbaImage::new(4, 2), 0, 0, 0, 1).unwrap();
+        img2.transform([[2.0, 0.0], [0.0, 2.0]], true).unwrap();
+        assert_eq!((img2.frame_w, img2.frame_h), (8, 4));
+        assert!(img2.transform([[1.0, 2.0], [2.0, 4.0]], false).is_err());
     }
 
     #[test]
