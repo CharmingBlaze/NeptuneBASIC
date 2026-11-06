@@ -6,7 +6,7 @@
 use fyrox::{
     asset::untyped::ResourceKind,
     core::{
-        algebra::{Matrix4, UnitQuaternion, Vector3},
+        algebra::{UnitQuaternion, Vector3},
         color::Color,
         pool::Handle,
         uuid::Uuid,
@@ -727,43 +727,17 @@ pub fn light_node(kind: LightKind) -> Node {
     }
 }
 
-fn plane(size: f32) -> SurfaceData {
-    use fyrox::core::{algebra::{Vector2, Vector4}, math::TriangleDefinition};
-    use fyrox::scene::mesh::{
-        buffer::{TriangleBuffer, VertexBuffer},
-        vertex::StaticVertex,
-    };
-    let h = size / 2.0;
-    let v = |x: f32, y: f32, u: f32, t: f32| StaticVertex {
-        position: Vector3::new(x, y, 0.0),
-        normal: -Vector3::z(),
-        tex_coord: Vector2::new(u, t),
-        tangent: Vector4::default(),
-    };
-    let vertices = vec![v(-h, h, size, size), v(h, h, 0.0, size), v(h, -h, 0.0, 0.0), v(-h, -h, size, 0.0)];
-    let mut data = SurfaceData::new(
-        VertexBuffer::new(vertices.len(), vertices).expect("valid vertex layout"),
-        TriangleBuffer::new(vec![TriangleDefinition([0, 1, 2]), TriangleDefinition([0, 2, 3])]),
-    );
-    data.calculate_tangents().expect("tangents");
-    data.transform_geometry(&Matrix4::from_scaled_axis(Vector3::x() * std::f32::consts::FRAC_PI_2)).expect("transform");
-    data
-}
-
-/// Geometry for Blitz primitives, generated directly in Fyrox space with Blitz dimensions.
+/// Geometry for Blitz primitives, built in Blitz space (see `primitive.rs`).
 pub fn primitive(kind: &str, segments: i32, solid: bool) -> SurfaceData {
+    use crate::primitive as p;
     let seg = segments.clamp(3, 100) as usize;
-    match kind {
-        "cube" => SurfaceData::make_cube(Matrix4::new_scaling(2.0)),
-        // Fyrox derives the latitude step from `slices` but iterates `stacks`,
-        // so the two must match for a closed sphere.
-        "sphere" => SurfaceData::make_sphere(seg * 2, seg * 2, 1.0, &Matrix4::identity()),
-        "cylinder" => SurfaceData::make_cylinder(seg, 1.0, 2.0, solid, &Matrix4::new_translation(&Vector3::new(0.0, -1.0, 0.0))),
-        "cone" => SurfaceData::make_cone(seg, 1.0, 2.0, &Matrix4::new_translation(&Vector3::new(0.0, -1.0, 0.0))),
-        _ => {
-            // Blitz planes are infinite; approximate with a large quad facing +Y.
-            // UVs are in world units so textures repeat once per unit, like Blitz.
-            plane(10_000.0)
-        }
-    }
+    let b = match kind {
+        "cube" => p::cube(),
+        "sphere" => p::sphere(seg),
+        "cylinder" => p::cylinder(seg, solid),
+        "cone" => p::cone(seg, solid),
+        // Blitz planes are infinite; approximate with a large quad facing +Y
+        _ => p::plane(10_000.0),
+    };
+    crate::mesh::surface_data(&b.verts, &b.tris)
 }

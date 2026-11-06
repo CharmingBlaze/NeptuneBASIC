@@ -6,7 +6,8 @@
 //! (`Plot`, `Line`, `Rect`, `Oval`, `Cls`, `DrawImage`, `WritePixel`, ...)
 //! are rasterised in software, and the changed pixels are uploaded to the
 //! GPU at `UnlockBuffer`, `RenderWorld` or `Flip`, whichever comes first.
-//! Reading pixels back from the screen is not supported.
+//! `Text` is rasterised with the current font. Reading pixels back from the
+//! screen is not supported.
 //!
 //! Buffer handles: 1 = back buffer, 2 = front buffer,
 //! `IMAGE_TAG | frame << 20 | image`, `TEXTURE_TAG | frame << 20 | texture`.
@@ -130,6 +131,42 @@ impl Target<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Blends `color` over a pixel with coverage `a` (0..255).
+    pub fn blend(&mut self, x: i32, y: i32, color: Rgba<u8>, a: u8) {
+        if a == 0 {
+            return;
+        }
+        let d = self.get(x, y);
+        let k = a as u32;
+        let mix = |s: u8, d: u8| ((s as u32 * k + d as u32 * (255 - k)) / 255) as u8;
+        let alpha = (k + d[3] as u32 * (255 - k) / 255).min(255) as u8;
+        self.plot(x, y, Rgba([mix(color[0], d[0]), mix(color[1], d[1]), mix(color[2], d[2]), alpha]));
+    }
+
+    /// Draws `text` with its top-left corner at `x, y` (Blitz `Text` placement).
+    pub fn text(&mut self, font: &crate::draw2d::FontInfo, x: i32, y: i32, text: &str, color: Rgba<u8>) {
+        let f = font.resource.data_ref();
+        let Some(inner) = f.inner.as_ref() else { return };
+        let baseline = y as f32 + f.ascender(font.size);
+        let mut pen = x as f32;
+        let mut prev: Option<char> = None;
+        for c in text.chars() {
+            if let Some(p) = prev {
+                pen += f.horizontal_kerning(font.size, p, c).unwrap_or(0.0);
+            }
+            let (m, coverage) = inner.rasterize(c, font.size);
+            let left = (pen + m.xmin as f32).round() as i32;
+            let top = (baseline - (m.ymin as f32 + m.height as f32)).round() as i32;
+            for gy in 0..m.height {
+                for gx in 0..m.width {
+                    self.blend(left + gx as i32, top + gy as i32, color, coverage[gy * m.width + gx]);
+                }
+            }
+            pen += m.advance_width;
+            prev = Some(c);
+        }
+    }
+
     /// Copies a `w`×`h` block from `src` (at `sx, sy`) to `dx, dy`, skipping
     /// pixels equal to `mask` when given.
     pub fn blit(&mut self, src: &RgbaImage, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32, mask: Option<[u8; 3]>) {
@@ -248,6 +285,17 @@ mod tests {
         Target { pixels: &mut o, x0: 0, y0: 0, w: 9, h: 9 }.oval(0, 0, 9, 9, false, red);
         assert_eq!(*o.get_pixel(4, 4), Rgba([0, 0, 0, 0]), "outline only");
         assert_eq!(*o.get_pixel(4, 0), red);
+    }
+
+    #[test]
+    fn text_draws_glyph_pixels() {
+        let font = crate::draw2d::FontInfo::default_font();
+        let mut px = RgbaImage::from_pixel(64, 32, Rgba([0, 0, 0, 255]));
+        Target { pixels: &mut px, x0: 0, y0: 0, w: 64, h: 32 }.text(&font, 2, 2, "Hi", Rgba([255, 255, 255, 255]));
+        let lit = px.pixels().filter(|p| p[0] > 128).count();
+        assert!(lit > 20, "only {lit} pixels lit");
+        // nothing is drawn above the text's top edge
+        assert!((0..64).all(|x| px.get_pixel(x, 0)[0] == 0));
     }
 
     #[test]

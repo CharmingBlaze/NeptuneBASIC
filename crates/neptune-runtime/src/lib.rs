@@ -23,6 +23,7 @@ pub mod mesh;
 pub mod model;
 pub mod physics;
 pub mod pick;
+pub mod primitive;
 pub mod quality;
 pub mod sound;
 pub mod sprite;

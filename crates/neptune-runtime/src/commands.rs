@@ -1670,6 +1670,22 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     // ---- 2D (bbgraphics.cpp)
     ("Text%x%y$string%center_x=0%center_y=0", |h, a, _| {
+        let target = h.current_buffer()?;
+        if target != crate::buffer::Buffer::Screen {
+            let font = h.world.canvas.font.clone();
+            let s = a[2].str().to_string();
+            let mut x = a[0].float() + h.world.canvas.origin.0;
+            let mut y = a[1].float() + h.world.canvas.origin.1;
+            if a[3].int() != 0 {
+                x -= (font.width(&s) / 2.0).floor();
+            }
+            if a[4].int() != 0 {
+                y -= (font.height() / 2.0).floor();
+            }
+            let c = h.world.canvas.color;
+            h.with_target(target, |t| t.text(&font, x as i32, y as i32, &s, image::Rgba([c.r, c.g, c.b, 255])))?;
+            return VOID;
+        }
         h.scene()?;
         h.world.canvas.text(a[0].float(), a[1].float(), &a[2].str(), a[3].int() != 0, a[4].int() != 0);
         VOID
