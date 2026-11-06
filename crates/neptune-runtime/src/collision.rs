@@ -57,6 +57,8 @@ pub struct Contact {
     pub normal: V3,
     /// Fraction of the motion step at which the contact happened.
     pub time: f32,
+    /// Index of the triangle hit (polygon and box collisions), or -1.
+    pub triangle: i32,
 }
 
 /// Triangles of an axis-aligned box `(x, y, z, width, height, depth)`, transformed by `f`.
@@ -216,28 +218,28 @@ pub fn collide_and_slide(start: V3, end: V3, radii: V3, obstacles: &[Obstacle]) 
         if vel.norm_squared() < 1e-12 {
             break;
         }
-        let mut hit: Option<(f32, V3, usize)> = None;
+        let mut hit: Option<(f32, V3, usize, i32)> = None;
         for (i, s) in &shapes {
             let limit = hit.map_or(1.0, |h| h.0);
             let r = match s {
-                Shape::Sphere { center, radius } => sweep_sphere(&pos, &vel, center, *radius, limit),
+                Shape::Sphere { center, radius } => sweep_sphere(&pos, &vel, center, *radius, limit).map(|(t, p)| (t, p, -1)),
                 Shape::Triangles(tris) => {
-                    let mut best: Option<(f32, V3)> = None;
-                    for t in tris {
-                        if let Some(h) = sweep_triangle(&pos, &vel, t, best.map_or(limit, |b| b.0)) {
-                            best = Some(h);
+                    let mut best: Option<(f32, V3, i32)> = None;
+                    for (ti, t) in tris.iter().enumerate() {
+                        if let Some((ht, hp)) = sweep_triangle(&pos, &vel, t, best.map_or(limit, |b| b.0)) {
+                            best = Some((ht, hp, ti as i32));
                         }
                     }
                     best
                 }
             };
-            if let Some((t, p)) = r {
-                if hit.map_or(true, |h| t < h.0) {
-                    hit = Some((t, p, *i));
+            if let Some((t, p, tri)) = r {
+                if hit.is_none_or(|h| t < h.0) {
+                    hit = Some((t, p, *i, tri));
                 }
             }
         }
-        let Some((t, point, idx)) = hit else {
+        let Some((t, point, idx, tri)) = hit else {
             pos = dest;
             break;
         };
@@ -252,7 +254,7 @@ pub fn collide_and_slide(start: V3, end: V3, radii: V3, obstacles: &[Obstacle]) 
         let normal = normal.normalize();
         let ob = &obstacles[idx];
         let world_normal = V3::new(normal.x / radii.x, normal.y / radii.y, normal.z / radii.z).normalize();
-        contacts.push(Contact { entity: ob.entity, point: to_w(&point), normal: world_normal, time: t });
+        contacts.push(Contact { entity: ob.entity, point: to_w(&point), normal: world_normal, time: t, triangle: tri });
         pos = new_pos;
         // remaining motion projected onto the contact plane
         let remaining = dest - pos;

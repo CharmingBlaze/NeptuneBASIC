@@ -19,6 +19,7 @@ pub mod draw2d;
 pub mod image2d;
 pub mod input;
 pub mod joy;
+pub mod keyanim;
 pub mod material;
 pub mod mesh;
 pub mod model;

@@ -78,8 +78,20 @@ impl Host3D<'_> {
     }
 
     fn layers(&self, id: i32) -> Result<Vec<Layer>, String> {
-        let textures = self.ent(id)?.textures;
-        self.texture_layers(&textures)
+        let (textures, frames) = (self.ent(id)?.textures, self.ent(id)?.tex_frames);
+        let mut layers = self.texture_layers(&textures)?;
+        // animated textures: show the chosen frame
+        let used = textures.iter().zip(frames.iter()).filter(|(&t, _)| t != 0);
+        for (layer, (&t, &f)) in layers.iter_mut().zip(used) {
+            if let Ok(info) = self.texture(t) {
+                if info.frames > 0 {
+                    let ((sx, sy), (ox, oy)) = info.frame_window(f);
+                    layer.scale = (layer.scale.0 / sx, layer.scale.1 / sy);
+                    layer.offset = (layer.offset.0 + ox, layer.offset.1 + oy);
+                }
+            }
+        }
+        Ok(layers)
     }
 
     fn brush_layers(&self, b: &crate::mesh::Brush) -> Result<Vec<Layer>, String> {

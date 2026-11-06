@@ -36,6 +36,12 @@ pub struct TextureInfo {
     pub blend: i32,
     /// `TextureCoords`: UV set 0 or 1.
     pub coords: i32,
+    /// `LoadAnimTexture` frame layout: frame size, first frame, frame count
+    /// (`frames == 0` for ordinary textures).
+    pub frame_w: u32,
+    pub frame_h: u32,
+    pub first_frame: u32,
+    pub frames: u32,
     pub path: String,
     /// CPU copy of the pixels while the texture is drawn to (`TextureBuffer`).
     pub pixels: Option<image::RgbaImage>,
@@ -51,8 +57,22 @@ impl TextureInfo {
         self.flags & (flags::ALPHA | flags::MASKED) != 0
     }
 
+    /// UV scale and offset that show `frame` of an animated texture.
+    pub fn frame_window(&self, frame: i32) -> ((f32, f32), (f32, f32)) {
+        if self.frames == 0 || self.frame_w == 0 || self.frame_h == 0 {
+            return ((1.0, 1.0), (0.0, 0.0));
+        }
+        let cols = (self.width / self.frame_w).max(1);
+        let idx = self.first_frame + (frame.max(0) as u32).min(self.frames - 1);
+        let (sx, sy) = (self.frame_w as f32 / self.width as f32, self.frame_h as f32 / self.height as f32);
+        ((sx, sy), ((idx % cols) as f32 * sx, (idx / cols) as f32 * sy))
+    }
+
     /// Whether this texture uses settings only the classic material supports.
     pub fn needs_classic(&self) -> bool {
+        if self.frames > 0 {
+            return true;
+        }
         self.pos_u != 0.0
             || self.pos_v != 0.0
             || self.rotation != 0.0
@@ -75,6 +95,10 @@ impl TextureInfo {
             rotation: 0.0,
             blend: 2,
             coords: 0,
+            frame_w: 0,
+            frame_h: 0,
+            first_frame: 0,
+            frames: 0,
             path,
             pixels: None,
             dirty: false,

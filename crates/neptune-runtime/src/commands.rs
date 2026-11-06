@@ -461,6 +461,12 @@ fn buffer_arg(h: &Host3D, b: i32) -> Result<crate::buffer::Buffer, String> {
 }
 
 /// `TileImage`/`TileBlock`: repeats an image over the whole screen.
+/// Flags for loading a texture: the program's flags plus matching `TextureFilter`s.
+fn texture_flags(h: &Host3D, file: &str, flags: i32) -> i32 {
+    let name = file.to_lowercase();
+    h.world.texture_filters.iter().filter(|(m, _)| name.contains(m.as_str())).fold(flags, |f, (_, add)| f | add)
+}
+
 fn tile_image(h: &mut Host3D, a: &[Value], masked: bool) -> Result<Value, String> {
     h.scene()?;
     let img = h.image(a[0].int())?;
@@ -522,6 +528,189 @@ fn write_pixel(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
         h.world.canvas.color = old;
     } else {
         h.with_target(b, |t| t.plot(x, y, c))?;
+    }
+    VOID
+}
+
+/// Result of the last `TFormPoint`/`TFormVector`/`TFormNormal`.
+fn tform(h: &mut Host3D, a: &[Value], kind: u8) -> Result<Value, String> {
+    let v = v3(a, 0);
+    let (src, dst) = (a[3].int(), a[4].int());
+    let world = |h: &Host3D, e: i32| if e == 0 { Ok(crate::transform::WorldXform::identity()) } else { h.world_of(e) };
+    let (ws, wd) = (world(h, src)?, world(h, dst)?);
+    let out = match kind {
+        // points: full affine transforms
+        0 => {
+            let p = ws.matrix.transform_point(&v.into()).coords;
+            wd.to_local_point(&p)
+        }
+        // vectors: rotation and scale only
+        1 => {
+            let m = |w: &crate::transform::WorldXform| w.matrix.fixed_view::<3, 3>(0, 0).into_owned();
+            let p = m(&ws) * v;
+            m(&wd).try_inverse().map_or(p, |inv| inv * p)
+        }
+        // normals: the inverse-transpose, renormalised
+        _ => {
+            let m = |w: &crate::transform::WorldXform| w.matrix.fixed_view::<3, 3>(0, 0).into_owned();
+            let to_world = m(&ws).try_inverse().map_or(v, |inv| inv.transpose() * v);
+            let n = m(&wd).transpose() * to_world;
+            n.try_normalize(1e-12).unwrap_or(n)
+        }
+    };
+    h.world.tformed = out;
+    VOID
+}
+
+/// `AlignToVector`: turns one local axis of an entity towards a world vector.
+fn align_to_vector(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
+    use fyrox::core::algebra::{Rotation3, Unit, UnitQuaternion};
+    let e = a[0].int();
+    let target = v3(a, 1);
+    let Some(target) = target.try_normalize(1e-9) else { return VOID };
+    let axis = match a[4].int() {
+        1 => Vector3::x(),
+        2 => Vector3::y(),
+        _ => Vector3::z(),
+    };
+    let rate = a[5].float().clamp(0.0, 1.0);
+    let rot = h.world_of(e)?.rot;
+    let current = rot * axis;
+    let delta = UnitQuaternion::rotation_between(&current, &target).unwrap_or_else(|| {
+        // opposite directions: turn half a circle about any perpendicular axis
+        let perp = current.cross(&Vector3::x()).try_normalize(1e-6).unwrap_or_else(|| current.cross(&Vector3::y()).normalize());
+        UnitQuaternion::from_axis_angle(&Unit::new_normalize(perp), std::f32::consts::PI)
+    });
+    let delta = UnitQuaternion::identity().slerp(&delta, rate);
+    let q = delta * UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(rot));
+    set_world_rotation(h, e, q.to_rotation_matrix().into_inner())?;
+    VOID
+}
+
+/// `EntityAutoFade` and `CaptureWorld` tweening, before each render.
+fn before_render(h: &mut Host3D, tween: f32) -> Result<(), String> {
+    // put tweened nodes back to their real transforms
+    for e in std::mem::take(&mut h.world.tweened) {
+        if h.ent(e).is_ok() {
+            h.sync(e)?;
+        }
+    }
+    if tween < 0.999 && !h.world.captured.is_empty() {
+        use fyrox::core::algebra::{Rotation3, UnitQuaternion};
+        let t = tween.clamp(0.0, 1.0);
+        let captured: Vec<(i32, crate::transform::Xform)> = h.world.captured.iter().map(|(k, v)| (*k, *v)).collect();
+        for (e, old) in captured {
+            let Ok(ent) = h.ent(e) else { continue };
+            if ent.phys.is_some() || ent.sprite.is_some() {
+                continue;
+            }
+            let now = h.live_xf(ent);
+            let q = |m: &fyrox::core::algebra::Matrix3<f32>| UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(*m));
+            let mix = crate::transform::Xform {
+                pos: old.pos.lerp(&now.pos, t),
+                rot: q(&old.rot).slerp(&q(&now.rot), t).to_rotation_matrix().into_inner(),
+                scale: old.scale.lerp(&now.scale, t),
+            };
+            let node = ent.node;
+            let tr = h.graph()?[node].local_transform_mut();
+            tr.set_position(mix.fyrox_position());
+            tr.set_rotation(mix.fyrox_rotation());
+            tr.set_scale(mix.scale);
+            h.world.tweened.push(e);
+        }
+    }
+    // auto-fade by distance from the first active camera
+    let fading: Vec<(i32, (f32, f32))> = h.entities().filter_map(|(i, e)| e.auto_fade.map(|f| (i, f))).collect();
+    if !fading.is_empty() {
+        let cam = h.entities().find(|(_, e)| matches!(e.kind, Kind::Camera { mode, .. } if mode != 0)).map(|(i, _)| i);
+        if let Some(cam) = cam {
+            let cp = h.world_of(cam)?.position();
+            for (e, (near, far)) in fading {
+                let d = (h.world_of(e)?.position() - cp).norm();
+                let k = if d <= near { 1.0 } else if d >= far { 0.0 } else { (far - d) / (far - near).max(1e-6) };
+                let node = h.ent(e)?.node;
+                let hidden = h.ent(e)?.hidden;
+                h.graph()?[node].set_visibility(!hidden && k > 0.0);
+                let base = h.ent(e)?.fade_base;
+                let alpha = (base as f32 * k).round() as u8;
+                if h.ent(e)?.color.a != alpha {
+                    h.ent_mut(e)?.color.a = alpha;
+                    h.refresh_material(e)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// World-space triangles of an entity's meshes.
+fn world_triangles(h: &mut Host3D, e: i32) -> Result<Vec<[Vector3<f32>; 3]>, String> {
+    let w = h.world_of(e)?;
+    let tris = h.mesh_triangles(e)?;
+    Ok(tris.into_iter().map(|t| t.map(|p| w.matrix.transform_point(&p.into()).coords)).collect())
+}
+
+/// Does segment `p..q` cross triangle `t`?
+fn segment_hits_triangle(p: Vector3<f32>, q: Vector3<f32>, t: &[Vector3<f32>; 3]) -> bool {
+    let d = q - p;
+    let (e1, e2) = (t[1] - t[0], t[2] - t[0]);
+    let pv = d.cross(&e2);
+    let det = e1.dot(&pv);
+    if det.abs() < 1e-12 {
+        return false;
+    }
+    let inv = 1.0 / det;
+    let tv = p - t[0];
+    let u = tv.dot(&pv) * inv;
+    if !(0.0..=1.0).contains(&u) {
+        return false;
+    }
+    let qv = tv.cross(&e1);
+    let v = d.dot(&qv) * inv;
+    if v < 0.0 || u + v > 1.0 {
+        return false;
+    }
+    let s = e2.dot(&qv) * inv;
+    (0.0..=1.0).contains(&s)
+}
+
+/// `MeshesIntersect`: does any triangle edge of one mesh pass through the other?
+pub fn triangles_intersect(a: &[[Vector3<f32>; 3]], b: &[[Vector3<f32>; 3]]) -> bool {
+    let bounds = |t: &[[Vector3<f32>; 3]]| crate::model::bounds(t);
+    let (Some((alo, ahi)), Some((blo, bhi))) = (bounds(a), bounds(b)) else { return false };
+    if (0..3).any(|i| ahi[i] < blo[i] || bhi[i] < alo[i]) {
+        return false;
+    }
+    let edges_cross = |x: &[[Vector3<f32>; 3]], y: &[[Vector3<f32>; 3]]| {
+        x.iter().any(|t| (0..3).any(|i| {
+            let (p, q) = (t[i], t[(i + 1) % 3]);
+            y.iter().any(|u| segment_hits_triangle(p, q, u))
+        }))
+    };
+    edges_cross(a, b) || edges_cross(b, a)
+}
+
+/// `LightMesh`: adds a light's colour to vertex colours (fullbright-free baked lighting).
+fn light_mesh(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
+    let m = a[0].int();
+    let col = [a[1].float() / 255.0, a[2].float() / 255.0, a[3].float() / 255.0];
+    let (range, light) = (a[4].float(), v3(a, 5));
+    for s in h.all_surfaces(m)? {
+        h.edit_surface(s, |info| {
+            for v in &mut info.verts {
+                let k = if range <= 0.0 {
+                    1.0
+                } else {
+                    let to = light - v.pos;
+                    let d = to.norm();
+                    let facing = if d > 1e-6 { (v.normal.dot(&(to / d))).max(0.0) } else { 1.0 };
+                    (1.0 - d / range).max(0.0) * facing
+                };
+                for c in 0..3 {
+                    v.color[c] = (v.color[c] + col[c] * k).min(1.0);
+                }
+            }
+        })?;
     }
     VOID
 }
@@ -917,8 +1106,9 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         update_world(h)?;
         VOID
     }),
-    ("RenderWorld#tween=1", |h, _, ctx| {
+    ("RenderWorld#tween=1", |h, a, ctx| {
         h.scene()?;
+        before_render(h, a[0].float())?;
         h.flush_meshes()?;
         h.face_sprites()?;
         h.commit_buffers()?;
@@ -1285,6 +1475,143 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.terrain(a[0].int())?;
         VOID
     }),
+    // ---- maths on entities and vectors (bbblitz3d.cpp)
+    ("TFormPoint#x#y#z%source_entity%dest_entity", |h, a, _| tform(h, a, 0)),
+    ("TFormVector#x#y#z%source_entity%dest_entity", |h, a, _| tform(h, a, 1)),
+    ("TFormNormal#x#y#z%source_entity%dest_entity", |h, a, _| tform(h, a, 2)),
+    ("#TFormedX", |h, _, _| float(h.world.tformed.x)),
+    ("#TFormedY", |h, _, _| float(h.world.tformed.y)),
+    ("#TFormedZ", |h, _, _| float(h.world.tformed.z)),
+    ("#VectorYaw#x#y#z", |_, a, _| float(vector_yaw(&v3(a, 0)))),
+    ("#VectorPitch#x#y#z", |_, a, _| float(vector_pitch(&v3(a, 0)))),
+    ("#DeltaYaw%src_entity%dest_entity", |h, a, _| {
+        let (s, d) = (h.world_of(a[0].int())?, h.world_of(a[1].int())?);
+        let local = s.rot.transpose() * (d.position() - s.position());
+        // Blitz: the yaw to turn src towards dest, in -180..180
+        float(vector_yaw(&local))
+    }),
+    ("#DeltaPitch%src_entity%dest_entity", |h, a, _| {
+        let (s, d) = (h.world_of(a[0].int())?, h.world_of(a[1].int())?);
+        let local = s.rot.transpose() * (d.position() - s.position());
+        float(vector_pitch(&local))
+    }),
+    ("AlignToVector%entity#vector_x#vector_y#vector_z%axis#rate=1", |h, a, _| align_to_vector(h, a)),
+    ("#GetMatElement%entity%row%column", |h, a, _| {
+        let w = h.world_of(a[0].int())?;
+        let (r, c) = (a[1].int(), a[2].int());
+        if !(0..=3).contains(&r) || !(0..=2).contains(&c) {
+            return Err(format!("GetMatElement row must be 0-3 and column 0-2, got {r}, {c}"));
+        }
+        // rows 0-2 are the scaled axes, row 3 the position (Blitz row-vector layout)
+        let v = if r == 3 { w.position() } else { w.rot.column(r as usize) * w.scale[r as usize] };
+        float(v[c as usize])
+    }),
+    ("$EntityClass%entity", |h, a, _| {
+        let e = h.ent(a[0].int())?;
+        let class = match e.kind {
+            Kind::Camera { .. } => "Camera",
+            Kind::Light { .. } => "Light",
+            Kind::Pivot => "Pivot",
+            Kind::Mesh if e.sprite.is_some() => "Sprite",
+            Kind::Mesh if e.terrain.is_some() => "Terrain",
+            Kind::Mesh => "Mesh",
+        };
+        Ok(Value::Str(class.into()))
+    }),
+    ("EntityAutoFade%entity#near#far", |h, a, _| {
+        let e = h.ent_mut(a[0].int())?;
+        let (n, f) = (a[1].float(), a[2].float());
+        if f <= 0.0 {
+            e.auto_fade = None;
+            e.color.a = e.fade_base;
+        } else {
+            if e.auto_fade.is_none() {
+                e.fade_base = e.color.a;
+            }
+            e.auto_fade = Some((n.min(f), f.max(n)));
+        }
+        let id = a[0].int();
+        h.refresh_material(id)?;
+        VOID
+    }),
+    ("CaptureWorld", |h, _, _| {
+        h.scene()?;
+        let all: Vec<(i32, crate::transform::Xform)> = h.entities().map(|(i, e)| (i, h.live_xf(e))).collect();
+        h.world.captured = all.into_iter().collect();
+        VOID
+    }),
+    ("ClearWorld%entities=1%brushes=1%textures=1", |h, a, _| {
+        h.scene()?;
+        if a[0].int() != 0 {
+            let roots: Vec<i32> = h.entities().filter(|(_, e)| e.parent == 0).map(|(i, _)| i).collect();
+            for e in roots {
+                h.free_entity(e)?;
+            }
+            h.world.captured.clear();
+        }
+        if a[1].int() != 0 {
+            h.world.brushes.clear();
+        }
+        if a[2].int() != 0 {
+            h.world.textures.clear();
+        }
+        VOID
+    }),
+    ("CameraClsMode%camera%cls_color%cls_zbuffer", |h, a, _| {
+        // Fyrox always clears each camera's view; keep the setting for programs that query it
+        camera_mut(h, a[0].int())?;
+        VOID
+    }),
+    ("%MeshesIntersect%mesh_a%mesh_b", |h, a, _| {
+        let ta = world_triangles(h, a[0].int())?;
+        let tb = world_triangles(h, a[1].int())?;
+        int(triangles_intersect(&ta, &tb) as i32)
+    }),
+    ("%CollisionSurface%entity%index", |h, a, _| int((nth_contact(h, a)?.triangle >= 0) as i32)),
+    ("%CollisionTriangle%entity%index", |h, a, _| int(nth_contact(h, a)?.triangle.max(0))),
+    ("%FindSurface%mesh%brush", |h, a, _| {
+        let (m, b) = (a[0].int(), a[1].int());
+        h.ent(m)?;
+        let found = h.world.surfaces.iter().position(|s| s.as_ref().is_some_and(|s| s.entity == m && s.brush == b));
+        int(found.map_or(0, |i| i as i32 + 1))
+    }),
+    ("%GetBrushTexture%brush%index=0", |h, a, _| {
+        let i = a[1].int();
+        let b = h.brush(a[0].int())?;
+        int(usize::try_from(i).ok().and_then(|i| b.textures.get(i)).copied().unwrap_or(0))
+    }),
+    ("LightMesh%mesh#red#green#blue#range=0#light_x=0#light_y=0#light_z=0", |h, a, _| light_mesh(h, a)),
+    ("%LoadAnimTexture$file%flags%frame_width%frame_height%first_frame%frame_count", |h, a, _| {
+        let flags = texture_flags(h, &a[0].str(), a[1].int());
+        match crate::texture::load(&a[0].str(), flags) {
+            Ok(mut t) => {
+                let n = |i: usize| a[i].int().max(0) as u32;
+                let (fw, fh) = (n(2).max(1).min(t.width), n(3).max(1).min(t.height));
+                let available = (t.width / fw) * (t.height / fh);
+                t.frame_w = fw;
+                t.frame_h = fh;
+                t.first_frame = n(4).min(available.saturating_sub(1));
+                t.frames = n(5).clamp(1, available - t.first_frame);
+                h.world.textures.push(Some(t));
+                int(h.world.textures.len() as i32)
+            }
+            Err(_) => int(0),
+        }
+    }),
+    ("TextureFilter$match_text%flags", |h, a, _| {
+        h.world.texture_filters.push((a[0].str().to_lowercase(), a[1].int()));
+        VOID
+    }),
+    ("ClearTextureFilters", |h, _, _| {
+        h.world.texture_filters.clear();
+        VOID
+    }),
+    // ---- keyframe animation of any entity
+    ("%AddAnimSeq%entity%length", |h, a, _| int(h.add_anim_seq(a[0].int(), a[1].float())?)),
+    ("SetAnimKey%entity%frame%pos_key=1%rot_key=1%scale_key=1", |h, a, _| {
+        h.set_anim_key(a[0].int(), a[1].int(), a[2].int() != 0, a[3].int() != 0, a[4].int() != 0)?;
+        VOID
+    }),
     // ---- entity creation
     ("%CreatePivot%parent=0", |h, a, _| {
         h.scene()?;
@@ -1359,7 +1686,13 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         int(h.extract_seq(a[0].int(), a[1].float(), a[2].float(), a[3].int())?)
     }),
     // (ext)
-    ("%CountAnimSeqs%entity", |h, a, _| int(h.ent(a[0].int())?.anim.as_ref().map_or(0, |s| s.seqs.len() as i32))),
+    ("%CountAnimSeqs%entity", |h, a, _| {
+        let e = a[0].int();
+        if h.ent(e)?.anim.is_none() {
+            return int(0);
+        }
+        int(h.seq_count(e)? as i32)
+    }),
     // ---- transforms
     ("PositionEntity%entity#x#y#z%global=0", |h, a, _| {
         let (e, p) = (a[0].int(), v3(a, 1));
@@ -1461,6 +1794,8 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("EntityAlpha%entity#alpha", |h, a, _| {
         let e = a[0].int();
         let alpha = (a[1].float().clamp(0.0, 1.0) * 255.0) as u8;
+        // with auto-fade on, this is the alpha at close range
+        h.ent_mut(e)?.fade_base = alpha;
         let c = h.ent(e)?.color;
         let c = Color::from_rgba(c.r, c.g, c.b, alpha);
         h.ent_mut(e)?.color = c;
@@ -1469,7 +1804,8 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     // ---- textures
     ("%LoadTexture$file%flags=1", |h, a, _| {
-        match crate::texture::load(&a[0].str(), a[1].int()) {
+        let flags = texture_flags(h, &a[0].str(), a[1].int());
+        match crate::texture::load(&a[0].str(), flags) {
             Ok(t) => {
                 h.world.textures.push(Some(t));
                 int(h.world.textures.len() as i32)
@@ -1533,6 +1869,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
             h.texture(t)?;
         }
         h.ent_mut(e)?.textures[index as usize] = t;
+        h.ent_mut(e)?.tex_frames[index as usize] = a[2].int();
         h.refresh_material(e)?;
         VOID
     }),
@@ -2350,6 +2687,19 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mesh_intersection() {
+        let v = |x: f32, y: f32, z: f32| Vector3::new(x, y, z);
+        // a triangle in the XY plane and one crossing it along Z
+        let a = [[v(-1., -1., 0.), v(1., -1., 0.), v(0., 1., 0.)]];
+        let b = [[v(0., 0., -1.), v(0., 0., 1.), v(0.2, 0.5, 0.)]];
+        assert!(triangles_intersect(&a, &b));
+        // moved away: no contact
+        let c = [[v(5., 0., -1.), v(5., 0., 1.), v(5.2, 0.5, 0.)]];
+        assert!(!triangles_intersect(&a, &c));
+        assert!(!triangles_intersect(&a, &[]));
+    }
 
     #[test]
     fn aliases_resolve_and_names_are_unique() {

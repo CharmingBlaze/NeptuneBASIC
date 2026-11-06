@@ -54,6 +54,8 @@ pub struct AnimState {
     pub from_pose: Option<AnimationPose<Handle<Node>>>,
     /// Pose shown last (the start of the next transition).
     pub last_pose: Option<AnimationPose<Handle<Node>>>,
+    /// Keyframe sequences made with `AddAnimSeq`/`SetAnimKey` (no Fyrox player).
+    pub keys: Option<crate::keyanim::KeyAnim>,
 }
 
 impl AnimState {
@@ -70,6 +72,7 @@ impl AnimState {
             blend_total: 0.0,
             from_pose: None,
             last_pose: None,
+            keys: None,
         }
     }
 
@@ -132,8 +135,17 @@ impl Host3D<'_> {
     }
 
     /// Length of a sequence in frames.
+    /// Number of sequences an entity can play.
+    pub fn seq_count(&mut self, e: i32) -> Result<usize, String> {
+        let st = self.anim_mut(e)?;
+        Ok(st.keys.as_ref().map_or(st.seqs.len(), |k| k.seqs.len()))
+    }
+
     pub fn seq_length(&mut self, e: i32, seq: usize) -> Result<f32, String> {
         let st = self.anim_mut(e)?;
+        if let Some(k) = &st.keys {
+            return k.seqs.get(seq).map(|s| s.length).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"));
+        }
         let (player, a) = (st.player, *st.seqs.get(seq).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?);
         self.with_animation(player, a, |anim| anim.length() * FPS)
     }
@@ -141,6 +153,11 @@ impl Host3D<'_> {
     /// Shows sequence `seq` at `time` frames, blended with the transition's
     /// starting pose while a transition is running.
     fn pose(&mut self, e: i32, seq: usize, time: f32) -> Result<(), String> {
+        if let Some(seq_data) = self.anim_mut(e)?.keys.as_ref().and_then(|k| k.seqs.get(seq)).cloned() {
+            let mut xf = self.live_xf(self.ent(e)?);
+            seq_data.sample(time, &mut xf);
+            return self.set_xf(e, |x| *x = xf);
+        }
         let (player, a, weight, from) = {
             let st = self.anim_mut(e)?;
             let a = *st.seqs.get(seq).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
@@ -165,7 +182,7 @@ impl Host3D<'_> {
 
     /// `Animate`.
     pub fn animate(&mut self, e: i32, mode: i32, speed: f32, seq: i32, transition: f32) -> Result<(), String> {
-        let n = self.anim_mut(e)?.seqs.len();
+        let n = self.seq_count(e)?;
         let seq = usize::try_from(seq).ok().filter(|&s| s < n).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
         let st = self.anim_mut(e)?;
         let restart = st.seq != seq || st.mode == 0;
@@ -193,7 +210,7 @@ impl Host3D<'_> {
 
     /// `SetAnimTime`: stops playback and shows a frame.
     pub fn set_anim_time(&mut self, e: i32, time: f32, seq: i32) -> Result<(), String> {
-        let n = self.anim_mut(e)?.seqs.len();
+        let n = self.seq_count(e)?;
         let seq = usize::try_from(seq).ok().filter(|&s| s < n).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
         let st = self.anim_mut(e)?;
         st.mode = 0;
@@ -250,8 +267,38 @@ impl Host3D<'_> {
         Ok(())
     }
 
+    /// `AddAnimSeq`: starts a keyframe sequence of `length` frames.
+    pub fn add_anim_seq(&mut self, e: i32, length: f32) -> Result<i32, String> {
+        let ent = self.ent_mut(e)?;
+        let st = ent.anim.get_or_insert_with(|| AnimState::new(Handle::NONE, Vec::new()));
+        if st.keys.is_none() && !st.seqs.is_empty() {
+            return Err(format!("Entity {e} is an animated model; use ExtractAnimSeq for its sequences"));
+        }
+        let keys = st.keys.get_or_insert_with(Default::default);
+        keys.seqs.push(crate::keyanim::Seq { length: length.max(0.0), keys: Default::default() });
+        Ok(keys.seqs.len() as i32 - 1)
+    }
+
+    /// `SetAnimKey`: records the entity's transform at `frame` of its last sequence.
+    pub fn set_anim_key(&mut self, e: i32, frame: i32, pos: bool, rot: bool, scale: bool) -> Result<(), String> {
+        let xf = self.live_xf(self.ent(e)?);
+        let st = self.anim_mut(e)?;
+        let seq = st.keys.as_mut().and_then(|k| k.seqs.last_mut()).ok_or("SetAnimKey needs AddAnimSeq first")?;
+        seq.keys.insert(frame.max(0) as u32, crate::keyanim::key_from(&xf, pos, rot, scale));
+        seq.length = seq.length.max(frame as f32);
+        Ok(())
+    }
+
     /// `ExtractAnimSeq`: a new sequence playing frames `first..=last` of `seq`.
     pub fn extract_seq(&mut self, e: i32, first: f32, last: f32, seq: i32) -> Result<i32, String> {
+        if let Some(k) = self.anim_mut(e)?.keys.as_mut() {
+            // keyframe sequences: copy the keys in range, shifted to start at 0
+            let src = k.seqs.get(usize::try_from(seq).unwrap_or(usize::MAX)).cloned().ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
+            let (a, b) = (first.min(last).max(0.0) as u32, first.max(last).max(0.0) as u32);
+            let keys = src.keys.range(a..=b).map(|(f, key)| (f - a, *key)).collect();
+            k.seqs.push(crate::keyanim::Seq { length: (b - a) as f32, keys });
+            return Ok(k.seqs.len() as i32 - 1);
+        }
         let st = self.anim_mut(e)?.clone();
         let src = *usize::try_from(seq).ok().and_then(|s| st.seqs.get(s)).ok_or_else(|| format!("entity {e} has no animation sequence {seq}"))?;
         let graph = self.graph()?;

@@ -80,6 +80,11 @@ pub struct Entity {
     /// A node inside a loaded model registered by `FindChild`/`GetChild`;
     /// its transform is read back from the node because animation moves it.
     pub adopted: bool,
+    /// `EntityAutoFade` (near, far) and the alpha set by the program.
+    pub auto_fade: Option<(f32, f32)>,
+    pub fade_base: u8,
+    /// `EntityTexture` frame per layer (animated textures).
+    pub tex_frames: [i32; crate::classic::MAX_LAYERS],
     /// Set for sprites (`CreateSprite`) and terrains (`CreateTerrain`).
     pub sprite: Option<crate::sprite::SpriteState>,
     pub terrain: Option<crate::terrain::TerrainState>,
@@ -155,6 +160,14 @@ pub struct World {
     pub tris_rendered: i32,
     /// Current drawing buffer (`SetBuffer`), see `buffer.rs`.
     pub buffer: i32,
+    /// `CaptureWorld`: local transforms to tween from, and entities whose
+    /// nodes show a tweened transform that must be restored.
+    pub captured: std::collections::HashMap<i32, Xform>,
+    pub tweened: Vec<i32>,
+    /// Result of the last `TFormPoint`/`TFormVector`/`TFormNormal`.
+    pub tformed: Vector3<f32>,
+    /// `TextureFilter` rules: (part of a file name, flags added).
+    pub texture_filters: Vec<(String, i32)>,
     /// Renderer quality (ext); `quality_dirty` asks the engine to apply it.
     pub quality: crate::quality::Quality,
     pub quality_dirty: bool,
@@ -197,6 +210,11 @@ impl Default for World {
             channels: Vec::new(),
             joints: Vec::new(),
             buffer: crate::buffer::BACK,
+            captured: Default::default(),
+            tweened: Vec::new(),
+            // Blitz3D's default filter: colour + mipmapped for every texture
+            texture_filters: vec![(String::new(), 1 | 8)],
+            tformed: Vector3::zeros(),
             print_sink: Default::default(),
             cursor: (0.0, 0.0),
             fullscreen: false,
@@ -418,6 +436,9 @@ impl<'a> Host3D<'a> {
             phys: None,
             sprite: None,
             terrain: None,
+            auto_fade: None,
+            fade_base: 255,
+            tex_frames: [0; crate::classic::MAX_LAYERS],
             own_materials: true,
             col_type: 0,
             radius: (1.0, 1.0),
