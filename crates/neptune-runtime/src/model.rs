@@ -35,12 +35,41 @@ pub fn load_mesh(h: &mut Host3D, path: &str, parent: i32) -> Result<i32, String>
             return Ok(0);
         }
     };
-    instantiate(h, &model, parent)
+    let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let loader = h.world.loader_matrices.iter().rev().find(|(e, _)| *e == ext).map(|(_, m)| *m);
+    instantiate(h, &model, parent, loader)
+}
+
+/// Splits a matrix into rotation and per-axis scale (a negative scale keeps
+/// mirror matrices such as `LoaderMatrix "x", 1,0,0, 0,1,0, 0,0,-1`).
+pub fn rotation_scale(m: &fyrox::core::algebra::Matrix3<f32>) -> (fyrox::core::algebra::Matrix3<f32>, Vector3<f32>) {
+    let mut scale = Vector3::new(m.column(0).norm(), m.column(1).norm(), m.column(2).norm()).map(|v| v.max(1e-9));
+    let mut r = fyrox::core::algebra::Matrix3::from_columns(&[m.column(0) / scale.x, m.column(1) / scale.y, m.column(2) / scale.z]);
+    if r.determinant() < 0.0 {
+        scale.z = -scale.z;
+        let c = -r.column(2);
+        r.set_column(2, &c);
+    }
+    (r, scale)
 }
 
 /// Creates an entity holding a new instance of a loaded model.
-pub fn instantiate(h: &mut Host3D, model: &fyrox::resource::model::ModelResource, parent: i32) -> Result<i32, String> {
+pub fn instantiate(
+    h: &mut Host3D,
+    model: &fyrox::resource::model::ModelResource,
+    parent: i32,
+    loader: Option<fyrox::core::algebra::Matrix3<f32>>,
+) -> Result<i32, String> {
     let instance = model.instantiate(h.scene()?);
+    // LoaderMatrix for this file type: applied to the model inside the entity
+    if let Some(m) = loader {
+        let (r, s) = rotation_scale(&m);
+        let mirror = fyrox::core::algebra::Matrix3::from_diagonal(&Vector3::new(-1.0, 1.0, 1.0));
+        let q = fyrox::core::algebra::UnitQuaternion::from_matrix(&(mirror * r * mirror));
+        let t = h.graph()?[instance].local_transform_mut();
+        t.set_rotation(q * **t.rotation());
+        t.set_scale(t.scale().component_mul(&s));
+    }
     let id = h.add_entity(pivot_node(), Kind::Mesh, parent)?;
     let pivot = h.ent(id)?.node;
     h.graph()?.link_nodes(instance, pivot);
@@ -58,11 +87,41 @@ pub fn instantiate(h: &mut Host3D, model: &fyrox::resource::model::ModelResource
     e.model = true;
     e.anim = anim;
     e.model_res = Some(model.clone());
+    e.loader = loader;
     if has_anim {
         // show the first frame of the first sequence, like Blitz
         h.set_anim_time(id, 0.0, 0)?;
     }
     Ok(id)
+}
+
+/// `LoadAnimSeq`: adds the animations of another model file (same skeleton)
+/// to an animated entity; returns the first new sequence number.
+pub fn load_anim_seq(h: &mut Host3D, e: i32, path: &str) -> Result<i32, String> {
+    let rm = h.resources().ok_or("Graphics3D must be called before LoadAnimSeq")?;
+    let player = h.ent(e)?.anim.as_ref().filter(|a| a.keys.is_none()).map(|a| a.player).ok_or_else(|| format!("Entity {e} is not an animated model"))?;
+    if !std::path::Path::new(path).is_file() {
+        eprintln!("LoadAnimSeq: file not found: {path}");
+        return Ok(-1);
+    }
+    let model = match block_on(rm.request::<Model>(path)) {
+        Ok(m) => m,
+        Err(err) => {
+            eprintln!("LoadAnimSeq: cannot load {path}: {err:?}");
+            return Ok(-1);
+        }
+    };
+    let root = h.ent(e)?.node;
+    let new = model.retarget_animations_to_player(root, player, h.graph()?);
+    if new.is_empty() {
+        return Ok(-1);
+    }
+    // the new animations play under program control like the others
+    let all = crate::anim::take_control(h.graph()?, player);
+    let st = h.ent_mut(e)?.anim.as_mut().unwrap();
+    let first = st.seqs.len() as i32;
+    st.seqs = all;
+    Ok(first)
 }
 
 /// Copies a node subtree, leaving out nodes for which `skip` is true.

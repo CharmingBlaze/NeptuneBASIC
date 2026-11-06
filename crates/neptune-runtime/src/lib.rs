@@ -16,6 +16,7 @@ pub mod classic;
 pub mod collision;
 pub mod commands;
 pub mod draw2d;
+pub mod gamma;
 pub mod image2d;
 pub mod input;
 pub mod joy;
@@ -176,8 +177,9 @@ impl fmt::Debug for NeptunePlugin {
 impl Plugin for NeptunePlugin {
     fn init(&mut self, _scene_path: Option<&str>, context: PluginContext) -> GameResult {
         let mut scene = Scene::new();
-        world::setup_scene(&mut scene);
+        let pool = world::setup_scene(&mut scene);
         let mut st = self.state.borrow_mut();
+        st.world.mirror_pool = pool;
         st.scene = context.scenes.add(scene);
         if context.user_interfaces.iter().next().is_none() {
             let size = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32);
@@ -200,6 +202,23 @@ impl Plugin for NeptunePlugin {
             st.world.width = (size.width.round() as u32).max(1);
             st.world.height = (size.height.round() as u32).max(1);
             st.scale = scale as f32;
+        }
+        // UpdateGamma: every camera grades its image through the gamma table
+        if st.world.gamma_dirty {
+            st.world.gamma_dirty = false;
+            if let Ok(scene) = context.scenes.try_get_mut(st.scene) {
+                let identity = st.world.gamma.is_identity();
+                let lut = if identity { None } else { st.world.gamma.lut().map_err(|e| eprintln!("{e}")).ok() };
+                use fyrox::graph::SceneGraph;
+                for node in scene.graph.linear_iter_mut() {
+                    if let Some(cam) = node.cast_mut::<fyrox::scene::camera::Camera>() {
+                        if let Some(l) = &lut {
+                            let _ = cam.set_color_grading_lut(Some(l.clone()));
+                        }
+                        cam.set_color_grading_enabled(lut.is_some());
+                    }
+                }
+            }
         }
         // a screenshot asked for last frame: the frame now on screen
         if let Some(path) = st.world.pending_screenshot.take() {

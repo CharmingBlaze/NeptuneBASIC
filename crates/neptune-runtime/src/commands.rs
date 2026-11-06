@@ -467,6 +467,12 @@ fn texture_flags(h: &Host3D, file: &str, flags: i32) -> i32 {
     h.world.texture_filters.iter().filter(|(m, _)| name.contains(m.as_str())).fold(flags, |f, (_, add)| f | add)
 }
 
+fn entity_scale(h: &mut Host3D, a: &[Value], axis: usize) -> Result<Value, String> {
+    let e = a[0].int();
+    let s = if a[1].int() != 0 { h.world_of(e)?.scale } else { h.live_xf(h.ent(e)?).scale };
+    float(s[axis])
+}
+
 fn tile_image(h: &mut Host3D, a: &[Value], masked: bool) -> Result<Value, String> {
     h.scene()?;
     let img = h.image(a[0].int())?;
@@ -922,6 +928,26 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     // ---- graphics modes and drivers (bbgraphics.cpp)
+    // ---- display gamma (bbgraphics.cpp)
+    ("SetGamma%src_red%src_green%src_blue#dest_red#dest_green#dest_blue", |h, a, _| {
+        h.world.gamma.set([a[0].int(), a[1].int(), a[2].int()], [a[3].float(), a[4].float(), a[5].float()]);
+        VOID
+    }),
+    ("UpdateGamma%calibrate=0", |h, _, _| {
+        h.world.gamma_dirty = true;
+        VOID
+    }),
+    ("#GammaRed%red", |h, a, _| float(h.world.gamma.ramp[0][a[0].int().clamp(0, 255) as usize] as f32)),
+    ("#GammaGreen%green", |h, a, _| float(h.world.gamma.ramp[1][a[0].int().clamp(0, 255) as usize] as f32)),
+    ("#GammaBlue%blue", |h, a, _| float(h.world.gamma.ramp[2][a[0].int().clamp(0, 255) as usize] as f32)),
+    ("%GfxMode3D%mode", |_, a, _| int(gfx_mode(a[0].int()).is_some() as i32)),
+    ("%GfxDriver3D%driver", |_, a, _| int((a[0].int() == 1) as i32)),
+    // depth precision is handled by the renderer; accepted for compatibility
+    ("WBuffer%enable", |_, _, _| VOID),
+    ("%ActiveTextures", |h, _, _| {
+        let used: std::collections::HashSet<i32> = h.entities().flat_map(|(_, e)| e.textures.into_iter().filter(|&t| t != 0)).collect();
+        int(used.len() as i32)
+    }),
     ("%GraphicsDepth", |_, _, _| int(32)),
     ("%CountGfxModes", |_, _, _| int(GFX_MODES.len() as i32)),
     ("%CountGfxModes3D", |_, _, _| int(GFX_MODES.len() as i32)),
@@ -1631,6 +1657,9 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%CreateCamera%parent=0", |h, a, _| {
         h.scene()?;
         let id = h.add_entity(camera_node(), Kind::Camera { zoom: 1.0, mode: 1 }, a[0].int())?;
+        if !h.world.gamma.is_identity() {
+            h.world.gamma_dirty = true;
+        }
         h.update_camera_fov(id)?;
         int(id)
     }),
@@ -1647,6 +1676,25 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.graph()?.link_nodes(light, pivot);
         int(id)
     }),
+    ("LoaderMatrix$file_extension#xx#xy#xz#yx#yy#yz#zx#zy#zz", |h, a, _| {
+        let ext = a[0].str().trim_start_matches('.').to_lowercase();
+        let f = |i: usize| a[i].float();
+        // rows are the new x, y and z axes, as in Blitz3D
+        let m = fyrox::core::algebra::Matrix3::new(f(1), f(4), f(7), f(2), f(5), f(8), f(3), f(6), f(9));
+        h.world.loader_matrices.retain(|(e, _)| *e != ext);
+        h.world.loader_matrices.push((ext, m));
+        VOID
+    }),
+    ("%LoadAnimSeq%entity$file", |h, a, _| int(crate::model::load_anim_seq(h, a[0].int(), &a[1].str())?)),
+    // the GPU culls by the mesh's real bounds; accepted for compatibility
+    ("MeshCullBox%mesh#x#y#z#width#height#depth", |h, a, _| {
+        h.ent(a[0].int())?;
+        VOID
+    }),
+    // (ext) an entity's scale
+    ("#EntityScaleX%entity%global=0", |h, a, _| entity_scale(h, a, 0)),
+    ("#EntityScaleY%entity%global=0", |h, a, _| entity_scale(h, a, 1)),
+    ("#EntityScaleZ%entity%global=0", |h, a, _| entity_scale(h, a, 2)),
     ("%LoadMesh$file%parent=0", |h, a, _| int(crate::model::load_mesh(h, &a[0].str(), a[1].int())?)),
     ("%LoadAnimMesh$file%parent=0", |h, a, _| int(crate::model::load_mesh(h, &a[0].str(), a[1].int())?)),
     ("%CopyEntity%entity%parent=0", |h, a, _| int(h.copy_entity(a[0].int(), a[1].int())?)),

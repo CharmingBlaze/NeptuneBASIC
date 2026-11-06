@@ -92,6 +92,8 @@ pub struct Entity {
     pub terrain: Option<crate::terrain::TerrainState>,
     /// Rigid body nodes when `EntityPhysics` was used.
     pub phys: Option<crate::physics::PhysState>,
+    /// `LoaderMatrix` in force when the model was loaded (kept by copies).
+    pub loader: Option<fyrox::core::algebra::Matrix3<f32>>,
     /// The model a `LoadMesh` entity was made from (for `CopyEntity`).
     pub model_res: Option<fyrox::resource::model::ModelResource>,
     /// `EntityOrder`: non-zero draws in the forward pass, after normal geometry.
@@ -170,6 +172,13 @@ pub struct World {
     pub tform_filter: bool,
     /// Result of the last `TFormPoint`/`TFormVector`/`TFormNormal`.
     pub tformed: Vector3<f32>,
+    /// Unused mirror cameras made at start-up (see [`MIRROR_POOL`]).
+    pub mirror_pool: Vec<Handle<Node>>,
+    /// `SetGamma` ramps; `gamma_dirty` asks the engine to apply them (`UpdateGamma`).
+    pub gamma: crate::gamma::Gamma,
+    pub gamma_dirty: bool,
+    /// `LoaderMatrix` per file extension (lower case, no dot), Blitz space.
+    pub loader_matrices: Vec<(String, fyrox::core::algebra::Matrix3<f32>)>,
     /// `TextureFilter` rules: (part of a file name, flags added).
     pub texture_filters: Vec<(String, i32)>,
     /// Renderer quality (ext); `quality_dirty` asks the engine to apply it.
@@ -218,6 +227,10 @@ impl Default for World {
             tweened: Vec::new(),
             // Blitz3D's default filter: colour + mipmapped for every texture
             texture_filters: vec![(String::new(), 1 | 8)],
+            mirror_pool: Vec::new(),
+            gamma: Default::default(),
+            gamma_dirty: false,
+            loader_matrices: Vec::new(),
             tformed: Vector3::zeros(),
             tform_filter: true,
             print_sink: Default::default(),
@@ -239,14 +252,23 @@ impl Default for World {
     }
 }
 
-/// Initial scene settings matching Blitz3D defaults.
-pub fn setup_scene(scene: &mut Scene) {
+/// Hidden cameras made before the program's own, for `CreateMirror`: Fyrox
+/// renders cameras in creation order, so these reflections are drawn before
+/// the main view uses them (no lag between the two).
+pub const MIRROR_POOL: usize = 4;
+
+/// Initial scene settings matching Blitz3D defaults. Returns the mirror
+/// camera pool.
+pub fn setup_scene(scene: &mut Scene) -> Vec<Handle<Node>> {
     // Blitz3D clears to black; Fyrox's default sky would hide CameraClsColor.
     scene.set_skybox(None);
     let opts = scene.rendering_options.get_value_mut_silent();
     opts.clear_color = Some(Color::BLACK);
     opts.environment_lighting_source = EnvironmentLightingSource::AmbientColor;
     opts.ambient_lighting_color = Color::opaque(127, 127, 127);
+    (0..MIRROR_POOL)
+        .map(|_| scene.graph.add_node(CameraBuilder::new(BaseBuilder::new().with_name("MirrorCamera")).enabled(false).build_node()))
+        .collect()
 }
 
 /// The [`Host`] implementation: runs runtime commands against the world.
@@ -438,6 +460,7 @@ impl<'a> Host3D<'a> {
             anim: None,
             adopted: false,
             model_res: None,
+            loader: None,
             phys: None,
             mirror: None,
             sprite: None,
@@ -510,7 +533,12 @@ impl<'a> Host3D<'a> {
             self.world.entities.iter().flatten().filter_map(|e| e.mirror.as_ref().map(|m| m.camera)).collect();
         for c in mirror_cams {
             if !alive.contains(&c) && self.graph()?.try_get(c).is_ok() {
-                self.graph()?.remove_node(c);
+                // keep the camera (and its early place in the render order) for later mirrors
+                if let Some(cam) = self.graph()?[c].cast_mut::<fyrox::scene::camera::Camera>() {
+                    cam.set_enabled(false);
+                    cam.set_render_target(None);
+                }
+                self.world.mirror_pool.push(c);
             }
         }
         self.prune_surfaces();
@@ -594,7 +622,8 @@ impl<'a> Host3D<'a> {
     pub fn copy_entity(&mut self, id: i32, parent: i32) -> Result<i32, String> {
         if let Some(res) = self.ent(id)?.model_res.clone() {
             // animated models need their own skeleton and animation player
-            let new = crate::model::instantiate(self, &res, parent)?;
+            let loader = self.ent(id)?.loader;
+            let new = crate::model::instantiate(self, &res, parent, loader)?;
             let (xf, name, hidden) = {
                 let e = self.ent(id)?;
                 (e.xf, e.name.clone(), e.hidden)

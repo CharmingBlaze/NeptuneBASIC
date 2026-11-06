@@ -7,10 +7,10 @@
 //! XZ plane, facing +Y) shows that texture projected through the reflected
 //! camera's own view-projection matrix, so the reflection lines up exactly.
 //! Semi-transparent ground drawn on top (as in Blitz3D) blends with it.
-//! The reflection is one frame behind the main view. Fyrox logs one
-//! "Failed to create GPU texture" line the first time a material samples a
-//! camera's render target; it is harmless (the texture is registered by the
-//! renderer right after) and appears once per mirror.
+//! Fyrox renders cameras in creation order, so the first four mirrors use
+//! cameras made when the scene is set up, before any program camera; their
+//! reflections are drawn before the main view samples them, in the same
+//! frame. Further mirrors make new cameras and lag one frame.
 
 use fyrox::{
     core::algebra::{Matrix4, Point3, UnitQuaternion, Vector2, Vector3},
@@ -66,9 +66,19 @@ impl Host3D<'_> {
         let id = self.add_entity(crate::world::mesh_node(crate::mesh::surface_data(&b.verts, &b.tris), "Mirror"), Kind::Mesh, parent)?;
         let size = rt_size(self.world.width, self.world.height);
         let texture = TextureResource::new_render_target(size.0, size.1);
-        let camera = self.graph()?.add_node(
-            CameraBuilder::new(BaseBuilder::new().with_name("MirrorCamera")).with_render_target(Some(texture.clone())).build_node(),
-        );
+        let camera = match self.world.mirror_pool.pop() {
+            Some(c) => {
+                // a camera made before the program's cameras renders first
+                if let Some(cam) = self.graph()?[c].cast_mut::<Camera>() {
+                    cam.set_enabled(true);
+                    cam.set_render_target(Some(texture.clone()));
+                }
+                c
+            }
+            None => self.graph()?.add_node(
+                CameraBuilder::new(BaseBuilder::new().with_name("MirrorCamera")).with_render_target(Some(texture.clone())).build_node(),
+            ),
+        };
         let e = self.ent_mut(id)?;
         e.mirror = Some(MirrorState { camera, texture, size, frames: 0 });
         e.fx = crate::classic::fx::FULLBRIGHT;
