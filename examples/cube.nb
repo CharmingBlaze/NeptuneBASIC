@@ -1,0 +1,29 @@
+; NeptuneBASIC - first program
+; Hold W to move the cube forward, Escape to quit.
+
+Graphics3D 1280, 720
+
+camera = CreateCamera()
+
+PositionEntity camera, 0, 5, -10
+CameraLookAt camera, 0, 0, 0
+
+light = CreateLight(LIGHT_DIRECTIONAL)
+
+cube = CreateCube()
+
+PositionEntity cube, 0, 1, 0
+EntityColor cube, 255, 0, 0
+
+While Not KeyDown(KEY_ESCAPE)
+
+    If KeyDown(KEY_W)
+        MoveEntity cube, 0, 0, 0.1
+    EndIf
+
+    UpdateWorld()
+    RenderWorld()
+
+Wend
+
+End

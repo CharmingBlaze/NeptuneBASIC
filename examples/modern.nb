@@ -1,0 +1,78 @@
+; NeptuneBASIC language tour (console only - no window needed)
+
+Enum Element
+    Fire
+    Water
+    Earth
+End Enum
+
+Type Monster
+    Field name$
+    Field hp = 100
+    Field element = Element.Fire
+    Field level# = 1
+
+    Method TakeHit(amount)
+        Self\hp -= amount
+        If Self\hp <= 0 Then Throw Self\name + " was defeated"
+    End Method
+
+    Method Describe$()
+        Return $"{Self\name} (hp {Self\hp}, level {Self\level})"
+    End Method
+End Type
+
+Function Spawn(name$, element = Element.Fire)
+    m = New Monster           ; smart variable: inferred as Monster
+    m\name = name
+    m\element = element
+    Return m                  ; return type inferred
+End Function
+
+Function ElementName$(e)
+    Select e
+        Case Element.Fire  : Return "fire"
+        Case Element.Water : Return "water"
+        Default            : Return "earth"
+    End Select
+End Function
+
+Spawn("Ember")
+Spawn("Tide", Element.Water)
+Spawn("Golem", Element.Earth)
+
+For Each m In Monster
+    m\level = m\level * 1.5   ; Float field
+    Print m\Describe() + " is " + ElementName(m\element)
+Next
+
+; error handling
+target = First Monster
+Try
+    For hit = 1 To 10
+        target\TakeHit(30)
+    Next
+Catch message$
+    Print "Battle over: " + message
+End Try
+
+; dynamic values when you want them
+Local loot As Variant = 25
+Print $"loot is {TypeOf(loot)} {loot}"
+loot = "a golden key"
+Print $"loot is {TypeOf(loot)}: {loot}"
+
+; inline conditional and short-circuit logic
+alive = 0
+For Each m In Monster
+    If m\hp > 0 AndAlso m\name <> "" Then alive += 1
+Next
+plural$ = IIf(alive = 1, "", "s")
+Print $"{alive} monster{plural} still standing"
+
+; arrays
+Local damage#[4]
+For i = 0 To 4 : damage[i] = i * 2.5 : Next
+total = 0
+For Each d In damage : total += d : Next
+Print "Total damage: " + total

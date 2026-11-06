@@ -1,0 +1,11 @@
+[package]
+name = "neptune-runtime"
+description = "NeptuneBASIC 3D runtime built on the Fyrox engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+neptune-lang.workspace = true
+neptune-vm.workspace = true
+fyrox.workspace = true

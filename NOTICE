@@ -1,0 +1,15 @@
+NeptuneBASIC third-party notices
+================================
+
+Blitz3D (https://github.com/blitz-research/blitz3d)
+  Copyright (c) 2013 Blitz Research Ltd. zlib/libpng license.
+  NeptuneBASIC's grammar, operator precedence, command names and command
+  signatures are modelled on Blitz3D's compiler (compiler/parser.cpp,
+  compiler/toker.cpp) and runtime (bbruntime/*.cpp). No Blitz3D source code
+  is included; the Rust implementation is new.
+
+Fyrox (https://github.com/FyroxEngine/Fyrox)
+  MIT license. Used as the rendering/scene engine (crates.io dependency).
+
+Reference checkouts in ./reference are not part of NeptuneBASIC and are
+excluded from version control (.gitignore).

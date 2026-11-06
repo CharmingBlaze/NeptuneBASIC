@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/neptune-lang", "crates/neptune-vm", "crates/neptune-runtime", "crates/neptune-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Zlib"
+repository = "https://github.com/neptunebasic/neptunebasic"
+
+[workspace.dependencies]
+neptune-lang = { path = "crates/neptune-lang" }
+neptune-vm = { path = "crates/neptune-vm" }
+neptune-runtime = { path = "crates/neptune-runtime" }
+fyrox = "1.0.1"
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
