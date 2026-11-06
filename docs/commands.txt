@@ -838,3 +838,77 @@ ShaderTexture: (ext) Sets the texture property called name of entity's custom sh
 # Loading and saving scenes
 SaveScene: (ext) Saves every top-level entity as a Fyrox scene file (.rgs) that LoadMesh can load back as one entity; cameras, collision, pick and physics settings and sounds are not saved. Returns 1 on success.
 SaveEntity: (ext) Saves entity and its children as a Fyrox scene file (.rgs) named file, to be loaded back with LoadMesh. Returns 1 on success.
+
+# GUI widgets
+GuiWindow: (ext) Creates a window with title at x,y of size width by height (draggable, with a close button) and returns its handle; widgets created with it as parent are stacked inside. GuiValue is 1 while it is open; closing it sets 0 and counts as a change. SetGuiValue window, 1 or 0 opens or closes it.
+GuiPanel: (ext) Creates a panel that lays out the widgets put in it: layout 0 in a column, 1 in a row, 2 wrapping into rows, 3 free (place them with SetGuiPosition); returns its handle.
+GuiGrid: (ext) Creates a grid of columns by rows equal cells and returns its handle; put widgets in it and choose their cell with GuiCell.
+GuiCell: (ext) Puts widget in cell column, row of the grid it is in (counting from 0).
+GuiScroll: (ext) Creates a scrolling area; widgets put in it are stacked in a column and scroll when they do not fit. Returns its handle.
+GuiButton: (ext) Creates a button showing text and returns its handle; GuiClicked tells when it was pressed.
+GuiLabel: (ext) Creates a line of text and returns its handle; change it with SetGuiText.
+GuiTextBox: (ext) Creates a box the user can type in, starting with text, and returns its handle; multiline 1 allows several lines. GuiText reads what was typed and GuiChanged counts edits.
+GuiCheckBox: (ext) Creates a check box labelled text, ticked if checked is 1, and returns its handle; GuiValue is 1 when ticked and GuiChanged counts changes.
+GuiSlider: (ext) Creates a slider from min to max starting at value and returns its handle; GuiValue reads it and GuiChanged counts moves.
+GuiProgress: (ext) Creates a progress bar showing value (0 to 1) and returns its handle; change it with SetGuiValue.
+GuiImage: (ext) Creates a widget showing image (from LoadImage or CreateImage) and returns its handle. With GuiClicked and GuiMouseX/GuiMouseY it can be used as a custom widget the program draws itself.
+SetGuiText: (ext) Changes the text of widget (button, label, text box, check box, window title and the text of list, tree, tab and menu items).
+GuiText: (ext) Returns the text of widget: what was typed in a text box, the selected item of a list or drop-down, or the widget's label.
+SetGuiValue: (ext) Sets the value of widget: a slider's position, a progress bar (0 to 1), a check box (1 ticked, 0 not), a number box, or a window (1 open, 0 closed).
+GuiValue: (ext) Returns the value of widget (slider, progress, check box, number box, window open state, message box answer, selected index).
+GuiClicked: (ext) Returns how many times widget was clicked since the last call (0 if not), like KeyHit.
+GuiChanged: (ext) Returns how many times the user changed widget since the last call (typed, ticked, moved, selected, closed or answered), like KeyHit.
+SetGuiPosition: (ext) Moves widget to x,y (logical pixels) inside the screen or a free panel.
+SetGuiSize: (ext) Sets widget's width and height in logical pixels; 0 makes that side as big as the content needs.
+GuiMargin: (ext) Sets the space around widget: left, top, right and bottom in pixels.
+GuiAlign: (ext) Aligns widget inside the space its container gives it: horizontal and vertical are 0 stretch, 1 left/top, 2 centre, 3 right/bottom.
+GuiVisible: (ext) Shows (1) or hides (0) widget and everything in it.
+GuiEnable: (ext) Enables (1) or disables (0) widget; a disabled widget is greyed out and ignores the user.
+GuiFocus: (ext) Gives widget the keyboard focus (a text box can then be typed in at once).
+GuiTooltip: (ext) Shows text in a small box when the mouse rests on widget.
+GuiColor: (ext) Sets the background colour of widget (red, green, blue, alpha 0-255); buttons get lighter and darker shades for hover and press.
+GuiTextColor: (ext) Sets the text colour of widget (red, green, blue 0-255).
+GuiFontSize: (ext) Sets the size of the text in widget, in pixels.
+FreeGui: (ext) Removes widget and everything in it.
+GuiMouseX: (ext) Returns the mouse's x position relative to widget's left edge, in logical pixels.
+GuiMouseY: (ext) Returns the mouse's y position relative to widget's top edge, in logical pixels.
+GuiUnderMouse: (ext) Returns 1 if the mouse is over a GUI widget, so a game can ignore clicks meant for the GUI.
+GuiTheme: (ext) Styles every GUI widget with the built-in dark (0) or light (1) theme.
+GuiThemeColor: (ext) Changes one colour of the GUI theme for every widget: name is a theme brush such as Primary, Dark, Light, Text, Foreground, Highlight or BrightBlue (red, green, blue, alpha 0-255).
+GuiThemeFontSize: (ext) Sets the text size of every GUI widget, in pixels.
+GuiDropDown: (ext) Creates a drop-down list from items separated by "|" (e.g. "Low|Medium|High") in parent (0 = the screen) and returns its handle; the first item starts selected, and when the player picks one, GuiSelected/GuiValue give its index, GuiText its text and GuiChanged reports the change.
+GuiList: (ext) Creates a list box showing items separated by "|" in parent (0 = the screen) and returns its handle; nothing starts selected, and a click selects an item: GuiSelected/GuiValue give its index, GuiText its text and GuiChanged reports the change.
+GuiAddItem: (ext) Adds an item with the given text to the end of a drop-down or list.
+GuiRemoveItem: (ext) Removes the item at index (0 = first) from a drop-down or list; if it was selected, nothing is selected afterwards.
+GuiClearItems: (ext) Removes every item from a drop-down or list and clears the selection.
+GuiCountItems: (ext) Returns how many items a widget has: entries of a drop-down or list, tabs of a tab control, top-level items of a tree or menu bar, or children of a tree or menu item.
+GuiItemText: (ext) Returns the text of the item at index (0 = first) of a drop-down, list, tab control, tree, menu or menu item.
+GuiSelected: (ext) Returns the selected item: an index (0 = first, -1 = none) for a drop-down, list or tab control (the active tab), or the handle of the selected tree item for a tree (0 = none).
+SetGuiSelected: (ext) Selects an item from the program: an index for a drop-down, list or tab control (-1 clears a drop-down or list), or a tree item's handle for a tree (0 clears); this does not count as a change for GuiChanged.
+GuiTree: (ext) Creates an empty tree view in parent (0 = the screen) and returns its handle; fill it with GuiTreeItem, and read the clicked item with GuiSelected (GuiText gives its text, GuiChanged reports a new selection).
+GuiTreeItem: (ext) Adds an item with the given text to a tree, or under another tree item when parent is a tree item, and returns the item's own handle; GuiClicked(item) counts how often it was selected, and SetGuiText renames it.
+GuiExpand: (ext) Opens (expand = 1) or closes (expand = 0) a tree item so its children are shown or hidden.
+GuiTabs: (ext) Creates an empty tab control in parent (0 = the screen) and returns its handle; add pages with GuiTab, and read the active tab with GuiSelected/GuiValue (0 = first) and GuiChanged.
+GuiTab: (ext) Adds a page with the given title to a tab control and returns the page's handle, which can be used as the parent of other widgets (they are stacked in a column); the first page added becomes active, and SetGuiText changes the title.
+GuiMenu: (ext) Creates an empty menu bar in parent (0 = the screen) and returns its handle; add its menus with GuiMenuItem.
+GuiMenuItem: (ext) Adds an item with the given text to a menu bar, or to the sub-menu of another menu item when parent is a menu item, and returns the item's handle; GuiClicked(item) returns how many times it was chosen since last asked, and SetGuiText renames it.
+GuiBorder: (ext) Creates a box with a border line (thickness in pixels, default 1) that holds other widgets stacked in a column; parent is the widget to put it in (0 = the screen). Returns the border's handle, which you pass as the parent of the widgets that go inside.
+GuiPopup: (ext) Creates a hidden popup of the given width and height (0 = as big as its contents) that holds other widgets stacked in a column. Open it with GuiShowPopup; it closes when the user clicks outside it or presses Escape. GuiValue is 1 while open and 0 when closed, and GuiChanged counts the times the user closed it. Returns the popup's handle.
+GuiShowPopup: (ext) Opens a popup at the mouse position (show = 1) or closes it (show = 0).
+GuiMessageBox: (ext) Shows a message box with a title and text in the middle of the screen at once and blocks clicks on the rest of the GUI until it is answered. buttons: 0 OK, 1 Yes/No, 2 Yes/No/Cancel. When the user answers, GuiChanged becomes non-zero and GuiValue is 1 for OK/Yes, 2 for No, 3 for Cancel. Returns the message box's handle.
+GuiFileBrowser: (ext) Creates a folder tree that starts at path ("" = the current folder), 300 by 250 pixels; parent is the widget to put it in (0 = the screen). When the user picks a file or folder, GuiChanged becomes non-zero and GuiText returns its path. Returns the browser's handle.
+GuiFileDialog: (ext) Opens a file dialog window in the middle of the screen at once, with a title and a starting path (a folder, or a file whose name is filled in). save = 1 makes it a Save dialog. When the user clicks Open/Save, GuiChanged becomes non-zero, GuiValue is 1 and GuiText is the chosen path; when the user clicks Cancel, GuiChanged becomes non-zero and GuiValue is 0. Returns the dialog's handle.
+GuiDock: (ext) Creates a docking area, 400 by 300 pixels (resize it with SetGuiSize), where GuiWindows can be docked side by side or as tabs and dragged in and out by the user; parent is the widget to put it in (0 = the screen). Returns the dock's handle.
+GuiDockWindow: (ext) Puts a GuiWindow into a dock. place: 0 leaves it floating so the user can drag it onto the dock, 1 docks it on the left, 2 right, 3 top, 4 bottom, 5 as a tab in the middle.
+GuiModal: (ext) Opens a GuiWindow in the middle of the screen as a modal window: the rest of the GUI ignores clicks until the window is closed.
+GuiCenter: (ext) Moves a widget to the middle of the widget it is in (the screen for widgets with parent 0).
+GuiNumber: (ext) Creates a number box with up/down arrows (you can also type in it or drag the arrows) showing value, kept between min and max and changed by step per click; returns the widget handle. Read it with GuiValue, set it with SetGuiValue, and GuiChanged tells you when the user edits it.
+GuiVector3: (ext) Creates an editor with three number boxes for an X, Y, Z vector, starting at x, y, z; returns the widget handle. Read the parts with GuiVectorValue, set them with SetGuiVector; GuiChanged tells you when the user edits it.
+GuiColorPicker: (ext) Creates a full colour picker (colour square, hue and alpha bars, RGB/HSV boxes) starting at the colour red, green, blue (0-255, default white); returns the widget handle. Read the colour with GuiVectorValue (0 red, 1 green, 2 blue, 3 alpha), set it with SetGuiVector; GuiChanged tells you when the user picks a colour.
+GuiColorField: (ext) Creates a small colour swatch showing red, green, blue (0-255) that opens a colour picker when clicked; returns the widget handle. The new colour arrives when the picker closes: read it with GuiVectorValue (0 red, 1 green, 2 blue, 3 alpha), set it with SetGuiVector; GuiChanged tells you when it changes.
+GuiVectorValue: (ext) Returns one part of a vector editor or colour widget as a float: component 0, 1, 2 are x, y, z of a GuiVector3, or 0-3 are red, green, blue, alpha (0-255) of a GuiColorPicker or GuiColorField.
+SetGuiVector: (ext) Sets a GuiVector3 to x, y, z, or a GuiColorPicker or GuiColorField to the colour x=red, y=green, z=blue, w=alpha (0-255, 255 if left out). Does not count as a change for GuiChanged.
+GuiCurve: (ext) Creates a curve editor showing a curve that starts as a straight line from (0,0) to (1,1); the user can drag, add and remove keys (right-click for the menu). Returns the widget handle; GuiChanged tells you when the user edits the curve.
+GuiCurveKey: (ext) Adds a key (point) at position x with value y to a GuiCurve; the curve is a straight line between keys.
+GuiClearCurve: (ext) Removes every key from a GuiCurve, leaving it empty (an empty curve has the value 0 everywhere).
+GuiCurveValue: (ext) Returns the value of a GuiCurve at position x, following the curve as currently edited by the user; before the first key it is the first key's value and after the last key the last key's value.

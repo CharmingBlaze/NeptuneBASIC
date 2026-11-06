@@ -16,6 +16,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCES = [
     ("crates/neptune-vm/src/stdlib.rs", "Core"),
     ("crates/neptune-runtime/src/commands.rs", "Graphics"),
+    ("crates/neptune-runtime/src/gui.rs", "GUI"),
+    ("crates/neptune-runtime/src/gui_lists.rs", "GUI"),
+    ("crates/neptune-runtime/src/gui_dialogs.rs", "GUI"),
+    ("crates/neptune-runtime/src/gui_editors.rs", "GUI"),
 ]
 # an entry is the signature then a closure or a function name
 ENTRY = re.compile(r'^\s*\("([^"\\]*(?:\\.[^"\\]*)*)",\s*(?:\||[a-z_])')

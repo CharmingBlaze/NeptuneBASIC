@@ -305,6 +305,29 @@ ShaderFloat mesh, "time", MilliSecs() / 1000.0
 VertexData surface, v, 0, phase, height  ; read in the shader at location 8
 ```
 
+## GUI widgets (ext)
+
+`Gui*` widgets are made once and kept; Fyrox draws them and handles the
+mouse and keyboard, and the program reads what the user did. Parent 0 puts
+a widget on the screen; a window, panel, tab or scroll area holds the
+widgets created inside it.
+
+```basic
+win = GuiWindow("Options", 20, 20, 300, 260)
+name = GuiTextBox("Player", win)
+level = GuiDropDown("Easy|Normal|Hard", win)
+volume = GuiSlider(0, 100, 80, win)
+ok = GuiButton("OK", win)
+menu = GuiMenu() : quit = GuiMenuItem(GuiMenuItem(menu, "File"), "Quit")
+
+While Not KeyHit(1)
+    If GuiClicked(ok) Then Print GuiText(name) + " / " + GuiText(level) + " / " + GuiValue(volume)
+    If GuiClicked(quit) Then box = GuiMessageBox("Quit", "Really quit?", 1)
+    If box And GuiChanged(box) Then If GuiValue(box) = 1 Then End
+    Flip
+Wend
+```
+
 ## Animation states, blend spaces and layers (ext)
 
 ```basic

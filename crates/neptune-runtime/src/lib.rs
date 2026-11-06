@@ -44,6 +44,10 @@ pub mod jointmotor;
 pub mod ragdoll;
 pub mod animblend;
 pub mod proptrack;
+pub mod gui;
+pub mod gui_lists;
+pub mod gui_dialogs;
+pub mod gui_editors;
 pub mod physics;
 pub mod pick;
 pub mod primitive;
@@ -219,6 +223,10 @@ impl Plugin for NeptunePlugin {
             let size = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32);
             context.user_interfaces.add(fyrox::gui::UserInterface::new(size));
         }
+        // the 2D drawing layer first, so GUI widgets made later draw above it
+        let scale = st.scale;
+        let screen = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32) * scale;
+        st.overlay.show(context.user_interfaces.first_mut(), &[], scale, screen);
         Ok(())
     }
 
@@ -275,7 +283,9 @@ impl Plugin for NeptunePlugin {
             return Ok(());
         };
         let result = {
-            let mut host = Host3D::graphics(&mut st.world, &mut st.input, scene, context.resource_manager.clone());
+            let scale = st.scale;
+            let ui = context.user_interfaces.first_mut();
+            let mut host = Host3D::graphics(&mut st.world, &mut st.input, scene, context.resource_manager.clone()).with_ui(ui, scale);
             // models and textures loading in the background
             if let Err(e) = loading::poll(&mut host) {
                 eprintln!("{e}");
@@ -287,6 +297,9 @@ impl Plugin for NeptunePlugin {
             let screen = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32) * st.scale;
             st.overlay.show(context.user_interfaces.first_mut(), &items, st.scale, screen);
         }
+        // the retained GUI fills the window, in logical pixels
+        let logical = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32);
+        st.world.gui.sync_root(context.user_interfaces.first_mut(), logical, st.scale);
         // apply renderer quality changes (GraphicsQuality / PostEffect)
         if st.world.quality_dirty {
             if let GraphicsContext::Initialized(g) = &mut *context.graphics_context {
@@ -332,6 +345,12 @@ impl Plugin for NeptunePlugin {
                 context.loop_controller.exit();
             }
         }
+        Ok(())
+    }
+
+    fn on_ui_message(&mut self, _context: &mut PluginContext, message: &fyrox::gui::message::UiMessage, _ui: fyrox::core::pool::Handle<fyrox::gui::UserInterface>) -> GameResult {
+        // clicks, edits and selections of the program's GUI widgets
+        self.state.borrow_mut().world.gui.on_message(message);
         Ok(())
     }
 

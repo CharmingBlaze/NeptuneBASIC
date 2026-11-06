@@ -4,6 +4,19 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## GUI widgets
+
+* **Fyrox's retained UI for BASIC programs** – 72 `Gui*` commands: windows,
+  layout panels, grids and scroll areas, buttons, text, text boxes, check
+  boxes, sliders, progress bars, images, drop-downs, lists, trees, tabs,
+  menus, popups, message boxes, file browsers and dialogs, docking, number
+  boxes, Vector3 editors, colour pickers and fields and curve editors, with
+  click and change events, styling and themes. Sizes are logical pixels, so
+  the GUI keeps its size on high-DPI screens. `examples/gui.nb` is a small
+  settings app over a 3D scene. Also: the debug build no longer exceeds the
+  Windows linker's debug-database limit (dependencies are built without
+  debug info).
+
 ## Animation states, blend spaces, layers and tracks
 
 * **Animation layers, blend spaces, state machines, root motion and

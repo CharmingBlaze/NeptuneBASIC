@@ -1104,6 +1104,11 @@ pub fn table() -> &'static [(String, Cmd)] {
             let new_sig = format!("{}{}{}", &sig[..at], alias, &sig[at + target_sig.name.len()..]);
             t.push((new_sig, *f));
         }
+        // (ext) the retained GUI's commands, after everything else so the
+        // other commands keep their numbers
+        for table in [crate::gui::COMMANDS, crate::gui_lists::COMMANDS, crate::gui_dialogs::COMMANDS, crate::gui_editors::COMMANDS] {
+            t.extend(table.iter().map(|(s, f)| (s.to_string(), *f)));
+        }
         t
     })
 }

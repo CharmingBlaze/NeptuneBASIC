@@ -1,0 +1,113 @@
+; Retained GUI widgets (ext): windows, menus, tabs, lists, trees, sliders,
+; colour pickers, number boxes, a curve editor and dialogs, over a 3D scene.
+;   neptune run examples/gui.nb
+; Everything is made once; the loop only reads what the user did.
+
+Graphics3D 1100, 700, 0, 2
+AppTitle "GUI"
+
+; ---- a 3D scene behind the GUI
+cam = CreateCamera() : PositionEntity cam, 2, 2, -6
+light = CreateLight() : RotateEntity light, 45, 30, 0
+cube = CreateCube() : PositionEntity cube, 2, 0, 0
+ground = CreatePlane() : PositionEntity ground, 0, -1, 0 : EntityColor ground, 60, 70, 60
+
+; ---- menu bar
+menu = GuiMenu()
+fileMenu = GuiMenuItem(menu, "File")
+openItem = GuiMenuItem(fileMenu, "Open...")
+saveItem = GuiMenuItem(fileMenu, "Save...")
+quitItem = GuiMenuItem(fileMenu, "Quit")
+helpMenu = GuiMenuItem(menu, "Help")
+aboutItem = GuiMenuItem(helpMenu, "About")
+
+; ---- settings window with tabs
+win = GuiWindow("Settings", 20, 40, 340, 420)
+tabs = GuiTabs(win)
+SetGuiSize tabs, 0, 360
+
+general = GuiTab(tabs, "Player")
+GuiLabel "Name", general
+name = GuiTextBox("Fox", general)
+GuiLabel "Class", general
+class = GuiDropDown("Ranger|Knight|Wizard", general)
+GuiLabel "Difficulty", general
+difficulty = GuiSlider(1, 10, 5, general)
+sound = GuiCheckBox("Sound effects", 1, general)
+loading = GuiProgress(0, general)
+
+look = GuiTab(tabs, "Look")
+GuiLabel "Cube colour", look
+picker = GuiColorPicker(80, 160, 255, look)
+GuiLabel "Cube size", look
+size = GuiNumber(1, 0.2, 3, 0.1, look)
+
+world = GuiTab(tabs, "World")
+levels = GuiTree(world)
+forest = GuiTreeItem(levels, "Forest")
+GuiTreeItem forest, "Clearing" : GuiTreeItem forest, "River"
+cave = GuiTreeItem(levels, "Caves")
+GuiTreeItem cave, "Crystal hall"
+GuiExpand forest, 1
+GuiLabel "Inventory", world
+items = GuiList("Sword|Shield|Potion|Map", world)
+row = GuiPanel(1, world)
+addBtn = GuiButton("Add apple", row)
+removeBtn = GuiButton("Remove", row)
+
+; ---- a curve that drives the cube's bounce
+curveWin = GuiWindow("Bounce curve", 740, 40, 340, 260)
+curve = GuiCurve(curveWin)
+GuiClearCurve curve
+GuiCurveKey curve, 0, 0 : GuiCurveKey curve, 0.5, 1 : GuiCurveKey curve, 1, 0
+GuiTooltip curve, "Drag the keys to change how the cube bounces"
+
+status = GuiLabel("Ready", 0)
+SetGuiPosition status, 20, 670
+GuiTextColor status, 220, 220, 120
+
+dialog = 0 : quitBox = 0 : t# = 0
+While Not KeyHit(1)
+    ; menus
+    If GuiClicked(openItem) Then dialog = GuiFileDialog("Open a level", CurrentDir()) : saving = False
+    If GuiClicked(saveItem) Then dialog = GuiFileDialog("Save the level", CurrentDir() + "level.txt", 1) : saving = True
+    If GuiClicked(aboutItem) Then GuiMessageBox "About", "NeptuneBASIC GUI example"
+    If GuiClicked(quitItem) Then quitBox = GuiMessageBox("Quit", "Really quit?", 1)
+
+    ; answers from dialogs
+    If dialog
+        If GuiChanged(dialog)
+            If GuiValue(dialog) = 1 Then SetGuiText status, "Chose " + GuiText(dialog) Else SetGuiText status, "Cancelled"
+            dialog = 0
+        EndIf
+    EndIf
+    If quitBox
+        If GuiChanged(quitBox)
+            If GuiValue(quitBox) = 1 Then Exit
+            quitBox = 0
+        EndIf
+    EndIf
+
+    ; settings
+    If GuiChanged(name) Then AppTitle "GUI - " + GuiText(name)
+    If GuiChanged(class) Then SetGuiText status, "Class: " + GuiText(class)
+    If GuiChanged(levels) Then SetGuiText status, "Level: " + GuiText(GuiSelected(levels))
+    If GuiClicked(addBtn) Then GuiAddItem items, "Apple"
+    If GuiClicked(removeBtn) And GuiSelected(items) >= 0 Then GuiRemoveItem items, GuiSelected(items)
+    EntityColor cube, GuiVectorValue(picker, 0), GuiVectorValue(picker, 1), GuiVectorValue(picker, 2)
+    s# = GuiValue(size) : ScaleEntity cube, s, s, s
+    If GuiValue(loading) < 1 Then SetGuiValue loading, GuiValue(loading) + 0.004
+
+    ; the cube bounces along the curve; it spins faster at higher difficulty
+    t = t + 0.01 : If t > 1 Then t = t - 1
+    PositionEntity cube, 2, GuiCurveValue(curve, t) * 2, 0
+    TurnEntity cube, 0, GuiValue(difficulty) * 0.3, 0
+
+    ; clicks on the GUI should not count as game clicks
+    If MouseHit(1) And Not GuiUnderMouse() Then SetGuiText status, "Clicked the game world"
+
+    UpdateWorld
+    RenderWorld
+    Flip
+Wend
+End

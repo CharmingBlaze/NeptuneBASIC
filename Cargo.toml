@@ -16,6 +16,9 @@ fyrox = "1.0.1"
 
 [profile.dev.package."*"]
 opt-level = 3
+# no debug info for dependencies: with Fyrox's size the Windows linker's
+# debug database (PDB) otherwise goes over its limit (LNK1318/LNK1140)
+debug = false
 
 [profile.release]
 lto = "thin"

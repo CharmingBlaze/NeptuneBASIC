@@ -209,6 +209,8 @@ pub struct World {
     pub ui: crate::ui::UiState,
     /// (ext) Joints' starting poses for motors and `JointAngle` ((2D?, id)).
     pub joint_info: std::collections::HashMap<(bool, i32), crate::jointmotor::JointInfo>,
+    /// (ext) Retained GUI widgets.
+    pub gui: crate::gui::GuiState,
     /// (ext) `CreateBlendSpace` blend spaces and `CreateTrack` property tracks.
     pub blend_spaces: Vec<Option<crate::animblend::BlendSpace>>,
     pub tracks: Vec<Option<crate::proptrack::Track>>,
@@ -281,6 +283,7 @@ impl Default for World {
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
             shaders: Vec::new(),
+            gui: Default::default(),
             blend_spaces: Vec::new(),
             tracks: Vec::new(),
             joint_info: Default::default(),
@@ -343,12 +346,15 @@ pub struct Host3D<'a> {
     pub input: &'a mut Input,
     scene: Option<&'a mut Scene>,
     resources: Option<fyrox::asset::manager::ResourceManager>,
+    /// (ext) Fyrox's UI for the retained GUI, and the window's DPI scale.
+    pub ui: Option<&'a mut fyrox::gui::UserInterface>,
+    pub ui_scale: f32,
 }
 
 impl<'a> Host3D<'a> {
     /// Host for the console phase (before `Graphics3D`).
     pub fn console(world: &'a mut World, input: &'a mut Input) -> Self {
-        Host3D { world, input, scene: None, resources: None }
+        Host3D { world, input, scene: None, resources: None, ui: None, ui_scale: 1.0 }
     }
     pub fn graphics(
         world: &'a mut World,
@@ -356,7 +362,14 @@ impl<'a> Host3D<'a> {
         scene: &'a mut Scene,
         resources: fyrox::asset::manager::ResourceManager,
     ) -> Self {
-        Host3D { world, input, scene: Some(scene), resources: Some(resources) }
+        Host3D { world, input, scene: Some(scene), resources: Some(resources), ui: None, ui_scale: 1.0 }
+    }
+
+    /// Gives the host Fyrox's UI (for the `Gui*` commands).
+    pub fn with_ui(mut self, ui: &'a mut fyrox::gui::UserInterface, scale: f32) -> Self {
+        self.ui = Some(ui);
+        self.ui_scale = scale;
+        self
     }
 
     pub fn resources(&self) -> Option<fyrox::asset::manager::ResourceManager> {
