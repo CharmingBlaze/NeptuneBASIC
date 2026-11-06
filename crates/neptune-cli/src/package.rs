@@ -10,6 +10,10 @@
 //! `entries … | u64 payload length | MAGIC`, where each entry is three
 //! length-prefixed UTF-8 strings: include key, canonical name, text. The
 //! first entry is the main program (key = its file name).
+//!
+//! On Windows the packaged executable is switched to the GUI subsystem so no
+//! console window opens next to the game (`--console` keeps it); errors are
+//! then shown in a message box.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -183,8 +187,26 @@ pub fn media_files(entries: &[Entry], root: &Path) -> BTreeSet<PathBuf> {
     found
 }
 
+/// Switches a Windows executable between the console (3) and GUI (2)
+/// subsystems by editing its PE header. Returns false for non-PE files.
+pub fn set_pe_subsystem(exe: &mut [u8], gui: bool) -> bool {
+    if exe.len() < 0x40 || &exe[..2] != b"MZ" {
+        return false;
+    }
+    let pe = u32::from_le_bytes(exe[0x3C..0x40].try_into().unwrap()) as usize;
+    // signature (4) + COFF header (20), then the optional header; Subsystem is
+    // at offset 68 in both PE32 and PE32+
+    let field = pe + 24 + 68;
+    if exe.len() < field + 2 || &exe[pe..pe + 4] != b"PE\0\0" {
+        return false;
+    }
+    let value: u16 = if gui { 2 } else { 3 };
+    exe[field..field + 2].copy_from_slice(&value.to_le_bytes());
+    true
+}
+
 /// `neptune build`: writes `<out>/<name>.exe` and the media it uses.
-pub fn build(main: &str, out: Option<&str>) -> Result<PathBuf, String> {
+pub fn build(main: &str, out: Option<&str>, console: bool) -> Result<PathBuf, String> {
     let src = std::fs::read_to_string(main).map_err(|e| format!("cannot read '{main}': {e}"))?;
     let mut loader = RecordingLoader { entries: Vec::new() };
     neptune_runtime::compile_source(main, &src, &mut loader).map_err(|e| e.to_string())?;
@@ -205,6 +227,9 @@ pub fn build(main: &str, out: Option<&str>) -> Result<PathBuf, String> {
         bytes.truncate(len_at - len);
     }
     bytes.extend(encode(&entries));
+    if cfg!(windows) {
+        set_pe_subsystem(&mut bytes, !console);
+    }
     let ext = exe.extension().and_then(|e| e.to_str()).map(|e| format!(".{e}")).unwrap_or_default();
     let target = out_dir.join(format!("{stem}{ext}"));
     std::fs::write(&target, bytes).map_err(|e| format!("cannot write '{}': {e}", target.display()))?;
@@ -250,6 +275,21 @@ mod tests {
     fn finds_string_literals_but_not_comments() {
         let src = "a = LoadImage(\"gfx/a.png\") ; \"comment.png\"\nText 0,0,\"say \"\"hi\"\"\"\n' \"also comment\"";
         assert_eq!(string_literals(src), vec!["gfx/a.png".to_string(), "say \"hi\"".to_string()]);
+    }
+
+    #[test]
+    fn pe_subsystem_switch() {
+        let mut exe = vec![0u8; 0x200];
+        exe[..2].copy_from_slice(b"MZ");
+        exe[0x3C..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+        exe[0x80..0x84].copy_from_slice(b"PE\0\0");
+        let field = 0x80 + 24 + 68;
+        exe[field] = 3;
+        assert!(set_pe_subsystem(&mut exe, true));
+        assert_eq!(exe[field], 2);
+        assert!(set_pe_subsystem(&mut exe, false));
+        assert_eq!(exe[field], 3);
+        assert!(!set_pe_subsystem(&mut b"ELF".to_vec(), true));
     }
 
     #[test]
