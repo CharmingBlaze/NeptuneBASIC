@@ -305,6 +305,38 @@ ShaderFloat mesh, "time", MilliSecs() / 1000.0
 VertexData surface, v, 0, phase, height  ; read in the shader at location 8
 ```
 
+## Building worlds (ext)
+
+Terrains can mix four textures, painted per grid point:
+
+```basic
+TerrainLayer land, grass, 0             ; base
+TerrainLayer land, rock, 1              ; painted layers 1-3
+PaintTerrain land, 1, x, z, 6, 0.5      ; brush at world x, z
+TerrainDetail land, 10000               ; level of detail: about 10000 triangles
+```
+
+A prefab is a model or scene loaded once and placed many times:
+
+```basic
+tree = LoadPrefab("tree.glb")           ; or CreatePrefab(entity)
+For i = 1 To 500
+    t = InstancePrefab(tree)
+    PositionEntity t, Rnd(-100, 100), 0, Rnd(-100, 100)
+Next
+```
+
+Several scenes can be loaded at once. Each keeps its own entities, lights
+and physics; later scenes draw over earlier ones.
+
+```basic
+hud = CreateScene()
+SetScene hud            ; new entities go into the HUD scene
+cam = CreateCamera()
+SetScene 1              ; back to the level
+HideScene hud           ; not drawn or updated until ShowScene
+```
+
 ## AI and pathfinding (ext)
 
 A navigation mesh is the ground characters can walk on. Agents find their

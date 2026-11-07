@@ -527,7 +527,7 @@ GetMatElement: Returns the element at row and column (0 to 2) of entity's world 
 EntityDistance: Returns the distance in world units between source_entity and destination_entity.
 
 # Cameras
-CameraClsMode: Sets whether camera clears the colour buffer (cls_color) and depth buffer (cls_zbuffer) before rendering; 1 clears, 0 keeps what was there.
+CameraClsMode: Sets whether camera clears the colour buffer (cls_color) and depth buffer (cls_zbuffer) before rendering; 1 clears, 0 keeps what was there, so the camera's picture is laid over the other cameras (also inside its viewport). Cameras in scenes after the first always work like cls_color 0.
 CreateCamera: Creates a camera and returns its handle; parent is optional.
 CameraClsColor: Sets the colour camera clears the background to, with red, green, blue from 0 to 255.
 CameraRange: Sets the nearest and farthest distances camera can see (defaults 1 and 1000).
@@ -709,8 +709,12 @@ ModifyTerrain: Sets the height of terrain at grid point grid_x, grid_z to height
 TerrainY: Returns the world Y height of terrain at world position x, y, z.
 TerrainX: Returns the world X of the terrain point under world position x, y, z.
 TerrainZ: Returns the world Z of the terrain point under world position x, y, z.
-TerrainDetail: Accepted for compatibility; terrain level of detail is handled by the GPU.
+TerrainDetail: Sets terrain level of detail: about detail_level triangles are drawn, with full detail near the camera and fewer, larger squares further away (chosen every render). 0 draws the full grid (the default). vertex_morph is accepted. Collisions and picks always use the full grid.
 TerrainShading: Accepted for compatibility; terrain shading is handled by the GPU.
+TerrainLayer: (ext) Gives terrain a texture for layer 0 (the base, the same as EntityTexture) to 3. Layers 1 to 3 are painted over the base with PaintTerrain or LoadTerrainLayers (grass, rock, sand, snow...); scale them with ScaleTexture.
+PaintTerrain: (ext) Paints layer (0-3) of terrain with a soft round brush at world position x, z: radius in world units, strength 0-1 (how much a single stroke adds; negative removes). Painting a layer also uncovers it from the layers above it; painting layer 0 brings the base back.
+TerrainLayerWeight: (ext) Returns how much of layer (0-3) shows on terrain at world position x, z, from 0 to 1 (for footstep sounds, placing trees on grass, slowing down in sand).
+LoadTerrainLayers: (ext) Paints terrain's layers 1, 2 and 3 from the red, green and blue of an image file (a splat map, as painted in another program), stretched over the whole terrain; the top of the image is the far (+Z) edge.
 
 # Mirrors and sky
 SkyBox: (ext) Shows a cube map texture (loaded with flag 128, six square faces side by side) as the sky; 0 removes the sky.
@@ -897,6 +901,20 @@ ReloadAssets: (ext) Reads every loaded texture, image, sound and model again fro
 WatchAssets: (ext) With enable 1, checks the files of loaded textures, images, sounds and models about once a second and reloads the ones that changed on disk, so art edited in another program shows up while the game runs; 0 stops watching.
 AssetsReloaded: (ext) Returns how many assets were reloaded (by ReloadAssets or WatchAssets) since the last call.
 ModelName: (ext) Returns the file entity's model was loaded from, or "" if it is not a loaded model.
+LoadPrefab: (ext) Loads a model or saved scene file (from SaveScene or SaveEntity, the Fyrox editor, glTF or FBX) once as a prefab and returns its handle, or 0 if it cannot be loaded. Place it with InstancePrefab.
+CreatePrefab: (ext) Makes entity (built in the program, with its children) a prefab and returns its handle. The entity is hidden and kept as the original that InstancePrefab copies.
+InstancePrefab: (ext) Places a new copy of prefab and returns the new entity (parent optional). Copies of a file prefab share its meshes, materials and textures, and ReloadAssets updates them all.
+PrefabName: (ext) Returns the file prefab was loaded from, or the name of its original entity.
+EntityPrefab: (ext) Returns the prefab entity was placed from with InstancePrefab, or 0.
+FreePrefab: (ext) Frees prefab (and the original entity of a CreatePrefab prefab); copies already placed stay.
+CreateScene: (ext) Creates a new empty scene and returns its handle (scene 1 is the one Graphics3D makes). Each scene has its own entities, lights, ambient light, physics and sounds; its cameras draw with a see-through background over the scenes made before it. Use SetScene to build in it.
+SetScene: (ext) Makes scene the current scene: new entities go into it and commands work on its entities (using an entity of another scene is an error, so read what you need before switching).
+CurrentScene: (ext) Returns the current scene.
+ShowScene: (ext) Shows scene again after HideScene: it is drawn and updated.
+HideScene: (ext) Hides scene: it is not drawn, UpdateWorld does not move it and its physics stops, but everything in it is kept (a paused level, an interior, a menu).
+SceneVisible: (ext) Returns 1 if scene is shown, 0 if hidden.
+FreeScene: (ext) Frees scene and every entity in it (scene 1 cannot be freed). If it was current, scene 1 becomes current.
+EntityScene: (ext) Returns the scene entity is in.
 
 # GUI widgets
 GuiWindow: (ext) Creates a window with title at x,y of size width by height (draggable, with a close button) and returns its handle; widgets created with it as parent are stacked inside. GuiValue is 1 while it is open; closing it sets 0 and counts as a change. SetGuiValue window, 1 or 0 opens or closes it.

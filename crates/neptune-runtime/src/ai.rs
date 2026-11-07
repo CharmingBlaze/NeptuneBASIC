@@ -358,12 +358,15 @@ impl Host3D<'_> {
         let mut positions: Vec<Option<(V3, f32)>> = Vec::with_capacity(n);
         for i in 0..n {
             let p = match &self.world.agents[i] {
-                Some(a) if self.ent(a.entity).is_ok() => Some((self.world_of(a.entity)?.position(), a.radius)),
+                Some(a) if self.ent(a.entity).is_ok() && self.navmesh(a.navmesh).is_ok() => Some((self.world_of(a.entity)?.position(), a.radius)),
                 _ => None,
             };
             positions.push(p);
         }
         for i in 0..n {
+            if self.world.agents[i].as_ref().is_some_and(|a| self.elsewhere(a.entity)) {
+                continue;
+            }
             let Some(mut ag) = self.world.agents[i].take() else { continue };
             if self.ent(ag.entity).is_err() {
                 // the entity was freed: so is its agent

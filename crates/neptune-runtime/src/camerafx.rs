@@ -133,6 +133,10 @@ impl Host3D<'_> {
         let list = std::mem::take(&mut self.world.texture_cameras);
         let mut keep = Vec::new();
         for mut t in list {
+            if self.elsewhere(t.camera) {
+                keep.push(t);
+                continue;
+            }
             let Ok(ent) = self.ent(t.camera) else {
                 // the camera was freed
                 if let Some(c) = self.graph()?[t.pool].cast_mut::<Camera>() {

@@ -153,6 +153,9 @@ impl Host3D<'_> {
     pub fn apply_track(&mut self, t: i32, ctx: &mut NativeCtx) -> Result<(), String> {
         let tr = self.track_mut(t)?.clone();
         let Some(v) = tr.value(tr.time) else { return Ok(()) };
+        if self.elsewhere(tr.entity) {
+            return Ok(());
+        }
         if self.ent(tr.entity).is_err() {
             // the entity was freed: the track stops
             self.track_mut(t)?.mode = 0;
@@ -175,7 +178,7 @@ impl Host3D<'_> {
 
     /// Advances and applies every playing track (called by `UpdateWorld`).
     pub fn update_tracks(&mut self, frames: f32, ctx: &mut NativeCtx) -> Result<(), String> {
-        let playing: Vec<i32> = self.world.tracks.iter().enumerate().filter(|(_, t)| t.as_ref().is_some_and(|t| t.mode != 0)).map(|(i, _)| i as i32 + 1).collect();
+        let playing: Vec<i32> = self.world.tracks.iter().enumerate().filter(|(_, t)| t.as_ref().is_some_and(|t| t.mode != 0 && !self.elsewhere(t.entity))).map(|(i, _)| i as i32 + 1).collect();
         for t in playing {
             let tr = self.track_mut(t)?;
             let len = tr.length().max(1e-3);

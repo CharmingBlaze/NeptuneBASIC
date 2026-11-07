@@ -1,0 +1,147 @@
+; World building: a painted terrain with level of detail, prefabs placed
+; many times, and a second scene drawn over the first.
+; Run from the repository root: neptune run examples/worlds.nb
+; Arrow keys fly, hold 1 / 2 / 3 and the left mouse button to paint rock,
+; sand or snow (0 paints grass back), Tab shows or hides the compass scene.
+
+Graphics3D 1280, 720
+SetWindowTitle "Worlds"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 40, -95
+RotateEntity camera, 20, 0, 0
+CameraClsColor camera, 150, 190, 230
+CameraFogMode camera, 1
+CameraFogColor camera, 150, 190, 230
+CameraFogRange camera, 60, 260
+light = CreateLight(DIRECTIONAL)
+SetLightDirection light, 0.5, -1, 0.4
+AmbientLight 90, 90, 100
+
+; a texture of speckles in one colour
+Function Speckles(r, g, b, spread)
+    t = CreateTexture(64, 64)
+    SetBuffer TextureBuffer(t)
+    ClsColor r, g, b
+    Cls
+    For i = 1 To 500
+        d = Rand(-spread, spread)
+        Color r + d, g + d, b + d
+        Rect Rand(0, 63), Rand(0, 63), 2, 2
+    Next
+    SetBuffer BackBuffer()
+    ScaleTexture t, 4, 4
+    Return t
+End Function
+
+; ---- the terrain: four painted layers and level of detail
+size = 128
+land = CreateTerrain(size)
+ScaleEntity land, 2, 40, 2
+PositionEntity land, -size, 0, -size
+EntityPickMode land, 2
+For x = 0 To size
+    For z = 0 To size
+        h# = 0.35 + 0.25 * Sin(x * 6) * Cos(z * 5) + 0.12 * Sin((x - z) * 14) + 0.05 * Cos(x * 31)
+        ModifyTerrain land, x, z, h
+    Next
+Next
+TerrainLayer land, Speckles(70, 130, 60, 20), 0    ; grass
+TerrainLayer land, Speckles(110, 105, 100, 30), 1  ; rock
+TerrainLayer land, Speckles(200, 180, 120, 15), 2  ; sand
+TerrainLayer land, Speckles(240, 240, 250, 8), 3   ; snow
+; paint by height: sand in the valleys, rock on the slopes, snow on the tops
+For x = -size To size Step 3
+    For z = -size To size Step 3
+        y# = TerrainY(land, x, 0, z)
+        If y < 10 Then PaintTerrain land, 2, x, z, 4, 0.6
+        If y > 18 Then PaintTerrain land, 1, x, z, 4, 0.5
+        If y > 24 Then PaintTerrain land, 3, x, z, 4, 0.7
+    Next
+Next
+TerrainDetail land, 12000   ; about 12000 triangles instead of 32768
+
+; ---- prefabs: a tree built here, placed many times
+trunk = CreateCylinder(6)
+ScaleEntity trunk, 0.3, 1, 0.3
+EntityColor trunk, 110, 70, 40
+crown = CreateCone(8, True, trunk)
+PositionEntity crown, 0, 2.2, 0
+ScaleEntity crown, 6, 2, 6
+EntityColor crown, 40, 120, 50
+tree = CreatePrefab(trunk)
+placed = 0
+While placed < 120
+    tx# = Rnd(-120, 120)
+    tz# = Rnd(-120, 120)
+    ty# = TerrainY(land, tx, 0, tz)
+    If ty > 10 And ty < 22 And TerrainLayerWeight(land, 0, tx, tz) > 0.5
+        t = InstancePrefab(tree)
+        PositionEntity t, tx, ty + 1, tz
+        TurnEntity t, 0, Rnd(360), 0
+        placed = placed + 1
+    EndIf
+Wend
+; and a model file loaded once, placed several times
+pyramid = LoadPrefab("examples/media/pyramid.gltf")
+For i = 0 To 4
+    p = InstancePrefab(pyramid)
+    px# = -40 + i * 20
+    PositionEntity p, px, TerrainY(land, px, 0, -40) + 1, -40
+    ScaleEntity p, 3, 3, 3
+Next
+
+; ---- a second scene: a compass drawn over the corner of the screen. Scenes
+; after the first are see-through, so only what they draw covers the view.
+compass = CreateScene()
+SetScene compass
+ccam = CreateCamera()
+CameraViewport ccam, 1280 - 170, 10, 160, 160
+PositionEntity ccam, 0, 3, -3
+LookAt ccam, 0, 0, 0
+clight = CreateLight(DIRECTIONAL)
+SetLightDirection clight, 0.3, -1, 0.5
+needle = CreateCone(4)
+RotateEntity needle, 90, 0, 0
+ScaleEntity needle, 0.3, 1, 0.3
+EntityColor needle, 230, 60, 50
+dial = CreateCylinder(24)
+ScaleEntity dial, 1.2, 0.05, 1.2
+PositionEntity dial, 0, -0.3, 0
+EntityColor dial, 220, 220, 210
+SetScene 1
+
+While Not KeyHit(KEY_ESCAPE)
+    ; fly
+    TurnEntity camera, 0, (KeyDown(KEY_LEFT) - KeyDown(KEY_RIGHT)) * 1.5, 0
+    MoveEntity camera, 0, 0, (KeyDown(KEY_UP) - KeyDown(KEY_DOWN)) * 0.8
+    ground# = TerrainY(land, EntityX(camera), 0, EntityZ(camera))
+    If EntityY(camera) < ground + 4 Then PositionEntity camera, EntityX(camera), ground + 4, EntityZ(camera)
+
+    ; paint where the mouse points
+    layer = -1
+    If KeyDown(KEY_0) Then layer = 0
+    If KeyDown(KEY_1) Then layer = 1
+    If KeyDown(KEY_2) Then layer = 2
+    If KeyDown(KEY_3) Then layer = 3
+    If layer >= 0 And MouseDown(MOUSE_LEFT)
+        If CameraPick(camera, MouseX(), MouseY()) = land Then PaintTerrain land, layer, PickedX(), PickedZ(), 6, 0.1
+    EndIf
+
+    If KeyHit(KEY_TAB)
+        If SceneVisible(compass) Then HideScene compass Else ShowScene compass
+    EndIf
+    ; the compass needle turns with the camera
+    yaw# = EntityYaw(camera)   ; read before switching: entities belong to their scene
+    SetScene compass
+    RotateEntity needle, 90, -yaw, 0
+    SetScene 1
+
+    UpdateWorld
+    RenderWorld
+    Color 255, 255, 255
+    Text 10, 10, "Arrows: fly   1/2/3/0 + left mouse: paint rock / sand / snow / grass   Tab: compass"
+    Text 10, 30, $"Triangles drawn: {TrisRendered()}   trees: {placed} copies of one prefab"
+    Flip
+Wend
+End

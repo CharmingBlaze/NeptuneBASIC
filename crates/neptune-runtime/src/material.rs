@@ -94,9 +94,19 @@ impl Host3D<'_> {
                 coords: 0,
                 sphere_map: false,
                 cube: 4,
+                splat: 0,
             }]);
         }
         let mut layers = self.texture_layers(&textures)?;
+        if self.ent(id)?.terrain.as_ref().is_some_and(|t| t.painted()) {
+            // layer i comes from texture slot i; slots 1-3 are painted on
+            let slots = textures.iter().enumerate().filter(|(_, &t)| t != 0).map(|(i, _)| i as i32);
+            for (layer, slot) in layers.iter_mut().zip(slots) {
+                if (1..=3).contains(&slot) {
+                    layer.splat = slot;
+                }
+            }
+        }
         // animated textures: show the chosen frame
         let used = textures.iter().zip(frames.iter()).filter(|(&t, _)| t != 0);
         for (layer, (&t, &f)) in layers.iter_mut().zip(used) {
@@ -132,6 +142,7 @@ impl Host3D<'_> {
                 coords: info.coords,
                 sphere_map: info.flags & flags::SPHERE_MAP != 0,
                 cube: if info.flags & flags::CUBE_MAP != 0 { info.cube_mode.clamp(1, 3) } else { 0 },
+                splat: 0,
             });
         }
         Ok(layers)
@@ -202,6 +213,7 @@ impl Host3D<'_> {
                             coords: 0,
                             sphere_map: false,
                             cube: 0,
+                            splat: 0,
                         });
                     }
                 } else if surface_state.layers.is_empty() && is_classic {
@@ -215,6 +227,7 @@ impl Host3D<'_> {
                             coords: 0,
                             sphere_map: false,
                             cube: 0,
+                            splat: 0,
                         });
                     }
                 }

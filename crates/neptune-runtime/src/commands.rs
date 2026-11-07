@@ -485,10 +485,32 @@ fn entity_scale(h: &mut Host3D, a: &[Value], axis: usize) -> Result<Value, Strin
 /// so such a camera renders into a texture whose background is transparent
 /// (the scene's clear alpha is 0) and the texture is laid over the 3D view
 /// as the first 2D layer of the frame.
+///
+/// Fyrox applies a camera's viewport twice when it draws into a texture, so
+/// such a camera keeps the whole viewport, its picture is made at the
+/// viewport's size, and the picture is placed at the viewport in 2D. In
+/// scenes after the first every camera works this way (see scenes.rs).
 fn set_cls_mode(h: &mut Host3D, cam: i32, clear_color: bool) -> Result<(), String> {
     use fyrox::resource::texture::{TextureResource, TextureResourceExtension};
-    let rt = (!clear_color).then(|| TextureResource::new_render_target(h.world.width.max(1), h.world.height.max(1)));
-    camera_mut(h, cam)?.set_render_target(rt.clone());
+    let overlay = !clear_color || h.world.current_scene != 0;
+    let vp = h.ent(cam)?.viewport;
+    let (w, ht) = match vp {
+        Some(v) => (v[2].round().max(1.0) as u32, v[3].round().max(1.0) as u32),
+        None => (h.world.width.max(1), h.world.height.max(1)),
+    };
+    let rt = overlay.then(|| TextureResource::new_render_target(w, ht));
+    let c = camera_mut(h, cam)?;
+    c.set_render_target(rt.clone());
+    let full = Rect::new(0.0, 0.0, 1.0, 1.0);
+    match (overlay, vp) {
+        (true, _) | (false, None) => {
+            c.set_viewport(full);
+        }
+        (false, Some(v)) => {
+            let (sw, sh) = (h.world.width.max(1) as f32, h.world.height.max(1) as f32);
+            camera_mut(h, cam)?.set_viewport(Rect::new(v[0] / sw, v[1] / sh, v[2] / sw, v[3] / sh));
+        }
+    }
     h.ent_mut(cam)?.overlay = rt;
     update_clear_alpha(h)
 }
@@ -496,7 +518,8 @@ fn set_cls_mode(h: &mut Host3D, cam: i32, clear_color: bool) -> Result<(), Strin
 /// The scene background is transparent while any overlay camera exists, so
 /// overlay pictures only cover what they draw (the window itself is opaque).
 fn update_clear_alpha(h: &mut Host3D) -> Result<(), String> {
-    let any = h.entities().any(|(_, e)| e.overlay.is_some());
+    // scenes after the first are always see-through (see scenes.rs)
+    let any = h.entities().any(|(_, e)| e.overlay.is_some()) || h.world.current_scene != 0;
     let opts = h.scene()?.rendering_options.get_value_mut_silent();
     let c = opts.clear_color.unwrap_or(Color::BLACK);
     opts.clear_color = Some(Color::from_rgba(c.r, c.g, c.b, if any { 0 } else { 255 }));
@@ -505,20 +528,25 @@ fn update_clear_alpha(h: &mut Host3D) -> Result<(), String> {
 
 /// Lays the pictures of overlay cameras over the 3D view (start of each 2D frame).
 fn draw_overlays(h: &mut Host3D) -> Result<(), String> {
-    let cams: Vec<(i32, fyrox::resource::texture::TextureResource)> =
-        h.entities().filter_map(|(i, e)| e.overlay.clone().map(|t| (i, t))).collect();
+    // the first scene's overlay cameras, then those of the other visible scenes
+    let visible = h.visible_scenes();
     let (w, ht) = (h.world.width as f32, h.world.height as f32);
-    for (cam, tex) in cams {
-        let vp = camera_mut(h, cam)?.viewport();
+    let mut cams: Vec<(usize, i32, [f32; 4], fyrox::resource::texture::TextureResource)> = h
+        .world
+        .entities
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| {
+            let e = e.as_ref()?;
+            let tex = e.overlay.clone()?;
+            (visible.contains(&e.scene) && !e.hidden && matches!(e.kind, Kind::Camera { mode, .. } if mode != 0))
+                .then(|| (e.scene, i as i32 + 1, e.viewport.unwrap_or([0.0, 0.0, w, ht]), tex))
+        })
+        .collect();
+    cams.sort_by_key(|c| (c.0, c.1));
+    for (_, _, vp, tex) in cams {
         // render targets are stored bottom-up: flip V
-        h.world.canvas.items.push(crate::draw2d::DrawOp::Image {
-            x: vp.x() * w,
-            y: vp.y() * ht,
-            w: vp.w() * w,
-            h: vp.h() * ht,
-            uv: Rect::new(0.0, 1.0, 1.0, -1.0),
-            texture: tex,
-        });
+        h.world.canvas.items.push(crate::draw2d::DrawOp::Image { x: vp[0], y: vp[1], w: vp[2], h: vp[3], uv: Rect::new(0.0, 1.0, 1.0, -1.0), texture: tex });
     }
     Ok(())
 }
@@ -805,6 +833,7 @@ fn align_to_vector(h: &mut Host3D, a: &[Value]) -> Result<Value, String> {
 fn before_render(h: &mut Host3D, tween: f32) -> Result<(), String> {
     h.update_mirrors()?;
     h.update_lods()?;
+    h.update_terrain_lods()?;
     h.update_render_targets()?;
     // put tweened nodes back to their real transforms
     for e in std::mem::take(&mut h.world.tweened) {
@@ -1362,18 +1391,25 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%GraphicsHeight", |h, _, _| int(h.world.height as i32)),
     ("UpdateWorld#elapsed_time=1", |h, a, ctx| {
         h.scene()?;
-        h.flush_meshes()?;
-        h.update_animations(a[0].float())?;
-        h.update_tracks(a[0].float(), ctx)?;
-        h.update_agents(a[0].float())?;
-        update_world(h)?;
+        let elapsed = a[0].float();
+        // every visible scene moves on
+        h.in_each_scene(|h| {
+            h.flush_meshes()?;
+            h.update_animations(elapsed)?;
+            h.update_tracks(elapsed, ctx)?;
+            h.update_agents(elapsed)?;
+            update_world(h)
+        })?;
         VOID
     }),
     ("RenderWorld#tween=1", |h, a, ctx| {
         h.scene()?;
-        before_render(h, a[0].float())?;
-        h.flush_meshes()?;
-        h.face_sprites()?;
+        let tween = a[0].float();
+        h.in_each_scene(|h| {
+            before_render(h, tween)?;
+            h.flush_meshes()?;
+            h.face_sprites()
+        })?;
         h.commit_buffers()?;
         // A program that renders repeatedly without Flip still needs frames shown.
         if h.world.renders > h.world.renders_at_flip {
@@ -1781,7 +1817,21 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     // level of detail and shading are handled by the GPU; accepted for compatibility
     ("TerrainDetail%terrain%detail_level%vertex_morph=0", |h, a, _| {
-        h.terrain(a[0].int())?;
+        h.terrain_detail(a[0].int(), a[1].int())?;
+        VOID
+    }),
+    // (ext) painted terrain layers
+    ("TerrainLayer%terrain%texture%layer=0", |h, a, _| {
+        h.terrain_layer(a[0].int(), a[1].int(), a[2].int())?;
+        VOID
+    }),
+    ("PaintTerrain%terrain%layer#x#z#radius#strength=1", |h, a, _| {
+        h.paint_terrain(a[0].int(), a[1].int(), a[2].float(), a[3].float(), a[4].float(), a[5].float())?;
+        VOID
+    }),
+    ("#TerrainLayerWeight%terrain%layer#x#z", |h, a, _| float(h.terrain_layer_weight(a[0].int(), a[1].int(), a[2].float(), a[3].float())?)),
+    ("LoadTerrainLayers%terrain$file", |h, a, _| {
+        h.load_terrain_layers(a[0].int(), &a[1].str())?;
         VOID
     }),
     ("TerrainShading%terrain%enable", |h, a, _| {
@@ -1956,6 +2006,10 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%CreateCamera%parent=0", |h, a, _| {
         h.scene()?;
         let id = h.add_entity(camera_node(), Kind::Camera { zoom: 1.0, mode: 1 }, a[0].int())?;
+        if h.world.current_scene != 0 {
+            // cameras of later scenes draw over the scenes below
+            set_cls_mode(h, id, false)?;
+        }
         if !h.world.gamma.is_identity() {
             h.world.gamma_dirty = true;
         }
@@ -2000,6 +2054,41 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%LoadMeshAsync$file%parent=0", |h, a, _| int(crate::loading::load_mesh(h, &a[0].str(), a[1].int())?)),
     ("%EntityLoaded%entity", |h, a, _| int(crate::loading::entity_state(h, a[0].int())?)),
     ("%PendingLoads", |h, _, _| int(crate::loading::pending(h)?)),
+    // (ext) prefabs: a scene loaded once and placed many times (see prefab.rs)
+    // (ext) several scenes at once (see scenes.rs)
+    ("%CreateScene", |h, _, _| int(h.create_scene()?)),
+    ("SetScene%scene", |h, a, _| {
+        h.set_scene(a[0].int())?;
+        VOID
+    }),
+    ("%CurrentScene", |h, _, _| int(h.world.current_scene as i32 + 1)),
+    ("ShowScene%scene", |h, a, _| {
+        h.show_scene(a[0].int(), true)?;
+        VOID
+    }),
+    ("HideScene%scene", |h, a, _| {
+        h.show_scene(a[0].int(), false)?;
+        VOID
+    }),
+    ("%SceneVisible%scene", |h, a, _| int(h.scene_visible(a[0].int())? as i32)),
+    ("FreeScene%scene", |h, a, _| {
+        h.free_scene(a[0].int())?;
+        VOID
+    }),
+    ("%EntityScene%entity", |h, a, _| int(h.entity_scene(a[0].int())?)),
+    ("%LoadPrefab$file", |h, a, _| int(h.load_prefab(&a[0].str())?)),
+    ("%CreatePrefab%entity", |h, a, _| int(h.create_prefab(a[0].int())?)),
+    ("%InstancePrefab%prefab%parent=0", |h, a, _| int(h.instance_prefab(a[0].int(), a[1].int())?)),
+    ("$PrefabName%prefab", |h, a, _| Ok(Value::Str(h.prefab_name(a[0].int())?.as_str().into()))),
+    ("%EntityPrefab%entity", |h, a, _| {
+        let e = a[0].int();
+        h.ent(e)?;
+        int(h.world.prefab_of.get(&e).copied().unwrap_or(0))
+    }),
+    ("FreePrefab%prefab", |h, a, _| {
+        h.free_prefab(a[0].int())?;
+        VOID
+    }),
     // (ext) asset caching and reloading (see assets.rs)
     ("%ReloadAssets", |h, _, _| int(h.reload_assets(None)?)),
     ("WatchAssets%enable=1", |h, a, _| {
@@ -2478,9 +2567,12 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("CameraViewport%camera%x%y%width%height", |h, a, _| {
-        let (w, ht) = (h.world.width.max(1) as f32, h.world.height.max(1) as f32);
-        let r = Rect::new(a[1].float() / w, a[2].float() / ht, a[3].float() / w, a[4].float() / ht);
-        camera_mut(h, a[0].int())?.set_viewport(r);
+        let cam = a[0].int();
+        camera_mut(h, cam)?;
+        h.ent_mut(cam)?.viewport = Some([a[1].float(), a[2].float(), a[3].float().max(1.0), a[4].float().max(1.0)]);
+        // remakes an overlay camera's picture at the new size
+        let clears = h.ent(cam)?.overlay.is_none();
+        set_cls_mode(h, cam, clears)?;
         VOID
     }),
     ("CameraProjMode%camera%mode", |h, a, _| {

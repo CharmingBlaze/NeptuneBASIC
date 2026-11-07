@@ -66,6 +66,9 @@ pub struct Layer {
     /// Cube map mode (0 none, 1 reflection, 2 normal, 3 refraction), or 4:
     /// a mirror's reflection, projected with the `mirrorMatrix` property.
     pub cube: i32,
+    /// Terrain painting (ext): 1-3 blends this layer over the ones below by
+    /// the vertex colour's red, green or blue (the painted weight); 0 off.
+    pub splat: i32,
 }
 
 /// Everything the classic material shows for one entity.
@@ -134,7 +137,7 @@ impl ClassicState {
                             l.rotation.to_radians(),
                             l.coords as f32,
                             if l.cube > 0 { (l.cube + 1) as f32 } else { l.sphere_map as i32 as f32 },
-                            0.0,
+                            l.splat as f32,
                         ),
                     );
                 }
@@ -471,6 +474,13 @@ pub fn source(blend: i32, two_sided: bool, transparent: bool) -> String {
                     return dst;
                 }}
 
+                // a painted terrain layer: mixed in by the vertex colour channel it was painted into
+                vec4 splatLayer(vec4 dst, vec4 src, int mode, float channel) {{
+                    if (channel < 0.5) return blendLayer(dst, src, mode);
+                    float w = channel < 1.5 ? vcolor.r : (channel < 2.5 ? vcolor.g : vcolor.b);
+                    return vec4(mix(dst.rgb, src.rgb, clamp(w, 0.0, 1.0)), dst.a);
+                }}
+
                 void main() {{
                     vec3 n = normalize(worldNormal);
                     if ((properties.fx & 4) != 0) {{
@@ -488,9 +498,9 @@ pub fn source(blend: i32, two_sided: bool, transparent: bool) -> String {
 
                     vec4 tex = vec4(1.0);
                     if (properties.layerCount > 0) tex = S_SRGBToLinear(texture(layerTexture0, layerUV(properties.layerTransform0, properties.layerOptions0, n)));
-                    if (properties.layerCount > 1) tex = blendLayer(tex, S_SRGBToLinear(texture(layerTexture1, layerUV(properties.layerTransform1, properties.layerOptions1, n))), properties.layerBlend1);
-                    if (properties.layerCount > 2) tex = blendLayer(tex, S_SRGBToLinear(texture(layerTexture2, layerUV(properties.layerTransform2, properties.layerOptions2, n))), properties.layerBlend2);
-                    if (properties.layerCount > 3) tex = blendLayer(tex, S_SRGBToLinear(texture(layerTexture3, layerUV(properties.layerTransform3, properties.layerOptions3, n))), properties.layerBlend3);
+                    if (properties.layerCount > 1) tex = splatLayer(tex, S_SRGBToLinear(texture(layerTexture1, layerUV(properties.layerTransform1, properties.layerOptions1, n))), properties.layerBlend1, properties.layerOptions1.w);
+                    if (properties.layerCount > 2) tex = splatLayer(tex, S_SRGBToLinear(texture(layerTexture2, layerUV(properties.layerTransform2, properties.layerOptions2, n))), properties.layerBlend2, properties.layerOptions2.w);
+                    if (properties.layerCount > 3) tex = splatLayer(tex, S_SRGBToLinear(texture(layerTexture3, layerUV(properties.layerTransform3, properties.layerOptions3, n))), properties.layerBlend3, properties.layerOptions3.w);
                     // layer 0 uses its own blend mode against the vertex/entity colour
                     vec4 albedo = properties.layerCount > 0 && properties.layerBlend0 != 2
                         ? blendLayer(base, tex, properties.layerBlend0)

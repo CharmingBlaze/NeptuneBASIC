@@ -30,6 +30,7 @@ pub mod model;
 pub mod movie;
 pub mod loading;
 pub mod scenefile;
+pub mod scenes;
 pub mod tilemap;
 pub mod pbr;
 pub mod camerafx;
@@ -53,6 +54,7 @@ pub mod gui_dialogs;
 pub mod gui_editors;
 pub mod physics;
 pub mod pick;
+pub mod prefab;
 pub mod primitive;
 pub mod quality;
 pub mod screenshot;
@@ -222,6 +224,7 @@ impl Plugin for NeptunePlugin {
         let mut st = self.state.borrow_mut();
         st.world.mirror_pool = pool;
         st.scene = context.scenes.add(scene);
+        st.world.scenes = vec![Some(scenes::SceneSlot { handle: st.scene, mirror_pool: Vec::new() })];
         if context.user_interfaces.iter().next().is_none() {
             let size = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32);
             context.user_interfaces.add(fyrox::gui::UserInterface::new(size));
@@ -251,9 +254,9 @@ impl Plugin for NeptunePlugin {
         // UpdateGamma: every camera grades its image through the gamma table
         if st.world.gamma_dirty {
             st.world.gamma_dirty = false;
-            if let Ok(scene) = context.scenes.try_get_mut(st.scene) {
-                let identity = st.world.gamma.is_identity();
-                let lut = if identity { None } else { st.world.gamma.lut().map_err(|e| eprintln!("{e}")).ok() };
+            let identity = st.world.gamma.is_identity();
+            let lut = if identity { None } else { st.world.gamma.lut().map_err(|e| eprintln!("{e}")).ok() };
+            for scene in context.scenes.iter_mut() {
                 for (handle, node) in scene.graph.pair_iter_mut() {
                     // cameras with their own colour table (CameraColorGrading) keep it
                     if st.world.graded_cameras.contains(&handle) {
@@ -282,13 +285,13 @@ impl Plugin for NeptunePlugin {
         if let GraphicsContext::Initialized(g) = &*context.graphics_context {
             st.world.tris_rendered = g.renderer.get_statistics().geometry.triangles_rendered as i32;
         }
-        let Ok(scene) = context.scenes.try_get_mut(st.scene) else {
+        if context.scenes.try_get(st.scene).is_err() {
             return Ok(());
-        };
+        }
         let result = {
             let scale = st.scale;
             let ui = context.user_interfaces.first_mut();
-            let mut host = Host3D::graphics(&mut st.world, &mut st.input, scene, context.resource_manager.clone()).with_ui(ui, scale);
+            let mut host = Host3D::graphics(&mut st.world, &mut st.input, &mut *context.scenes, context.resource_manager.clone()).with_ui(ui, scale);
             // models and textures loading in the background
             if let Err(e) = loading::poll(&mut host) {
                 eprintln!("{e}");

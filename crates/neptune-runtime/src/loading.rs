@@ -143,7 +143,8 @@ pub fn poll(h: &mut Host3D) -> Result<(), String> {
     poll_images_and_sounds(h);
     let mut i = 0;
     while i < h.world.loading_meshes.len() {
-        if h.world.loading_meshes[i].model.is_loading() {
+        // models for another scene are attached when it is current
+        if h.world.loading_meshes[i].model.is_loading() || h.elsewhere(h.world.loading_meshes[i].entity) {
             i += 1;
             continue;
         }

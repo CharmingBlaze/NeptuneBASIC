@@ -4,6 +4,22 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## World building
+
+* **Painted terrain, terrain level of detail, prefabs and multiple
+  scenes** – Terrains take up to four textures (`TerrainLayer`) painted
+  with a brush (`PaintTerrain`) or from a splat map (`LoadTerrainLayers`);
+  `TerrainLayerWeight` tells which ground is under a point.
+  `TerrainDetail` now works: far parts of a terrain are drawn with fewer
+  triangles. Prefabs (`LoadPrefab`, `CreatePrefab`, `InstancePrefab`)
+  place one model or scene many times while sharing its data. Several
+  scenes can be kept at once (`CreateScene`, `SetScene`, `ShowScene`,
+  `HideScene`): each has its own entities, lights and physics, and later
+  scenes draw over earlier ones. See `examples/worlds.nb`.
+* **Fix: cameras with a viewport that draw over others** – A camera with
+  `CameraClsMode camera, 0` and a `CameraViewport` showed its picture
+  squeezed into the wrong place; it now appears in its viewport.
+
 ## AI and pathfinding
 
 * **Navigation meshes, paths, agents and behaviour trees** – A level's

@@ -88,8 +88,13 @@ pub struct Entity {
     /// `CameraClsMode camera, 0`: the camera draws into this texture with a
     /// transparent background, shown over the cameras that clear.
     pub overlay: Option<fyrox::resource::texture::TextureResource>,
+    /// `CameraViewport` in logical pixels (x, y, width, height), kept for
+    /// cameras drawing into an overlay picture (placed there in 2D).
+    pub viewport: Option<[f32; 4]>,
     /// Set for mirrors (`CreateMirror`).
     pub mirror: Option<crate::mirror::MirrorState>,
+    /// (ext) The scene the entity is in (0 = the first; see `scenes.rs`).
+    pub scene: usize,
     /// Set for sprites (`CreateSprite`) and terrains (`CreateTerrain`).
     pub sprite: Option<crate::sprite::SpriteState>,
     pub terrain: Option<crate::terrain::TerrainState>,
@@ -133,7 +138,7 @@ pub struct Entity {
 /// Program-visible state that persists across frames.
 #[derive(Debug)]
 pub struct World {
-    entities: Vec<Option<Entity>>,
+    pub(crate) entities: Vec<Option<Entity>>,
     free: Vec<u32>,
     pub width: u32,
     pub height: u32,
@@ -221,6 +226,11 @@ pub struct World {
     pub agents: Vec<Option<crate::ai::Agent>>,
     pub behaviors: Vec<Option<crate::behavior::Tree>>,
     pub behavior_of: std::collections::HashMap<i32, crate::behavior::Instance>,
+    pub prefabs: Vec<Option<crate::prefab::Prefab>>,
+    /// (ext) Fyrox scenes the program uses; entities belong to one each.
+    pub scenes: Vec<Option<crate::scenes::SceneSlot>>,
+    pub current_scene: usize,
+    pub prefab_of: std::collections::HashMap<i32, i32>,
     /// (ext) Retained GUI widgets.
     pub gui: crate::gui::GuiState,
     /// (ext) `CreateBlendSpace` blend spaces and `CreateTrack` property tracks.
@@ -307,6 +317,10 @@ impl Default for World {
             agents: Vec::new(),
             behaviors: Vec::new(),
             behavior_of: Default::default(),
+            prefabs: Vec::new(),
+            scenes: Vec::new(),
+            current_scene: 0,
+            prefab_of: Default::default(),
             blend_spaces: Vec::new(),
             tracks: Vec::new(),
             joint_info: Default::default(),
@@ -367,7 +381,8 @@ pub fn setup_scene(scene: &mut Scene) -> Vec<Handle<Node>> {
 pub struct Host3D<'a> {
     pub world: &'a mut World,
     pub input: &'a mut Input,
-    scene: Option<&'a mut Scene>,
+    /// Every Fyrox scene; commands work in `world.current_scene`.
+    scenes: Option<&'a mut fyrox::scene::SceneContainer>,
     resources: Option<fyrox::asset::manager::ResourceManager>,
     /// (ext) Fyrox's UI for the retained GUI, and the window's DPI scale.
     pub ui: Option<&'a mut fyrox::gui::UserInterface>,
@@ -377,15 +392,15 @@ pub struct Host3D<'a> {
 impl<'a> Host3D<'a> {
     /// Host for the console phase (before `Graphics3D`).
     pub fn console(world: &'a mut World, input: &'a mut Input) -> Self {
-        Host3D { world, input, scene: None, resources: None, ui: None, ui_scale: 1.0 }
+        Host3D { world, input, scenes: None, resources: None, ui: None, ui_scale: 1.0 }
     }
     pub fn graphics(
         world: &'a mut World,
         input: &'a mut Input,
-        scene: &'a mut Scene,
+        scenes: &'a mut fyrox::scene::SceneContainer,
         resources: fyrox::asset::manager::ResourceManager,
     ) -> Self {
-        Host3D { world, input, scene: Some(scene), resources: Some(resources), ui: None, ui_scale: 1.0 }
+        Host3D { world, input, scenes: Some(scenes), resources: Some(resources), ui: None, ui_scale: 1.0 }
     }
 
     /// Gives the host Fyrox's UI (for the `Gui*` commands).
@@ -409,6 +424,10 @@ impl<'a> Host3D<'a> {
 
     /// Triangles of an entity's own meshes in its local Blitz space.
     pub fn mesh_triangles(&mut self, id: i32) -> Result<Vec<[Vector3<f32>; 3]>, String> {
+        if let Some(t) = self.ent(id)?.terrain.as_ref().filter(|t| t.budget > 0) {
+            // a terrain drawn with level of detail collides with its full grid
+            return Ok(t.full_triangles());
+        }
         self.flush_meshes()?;
         let node = self.ent(id)?.node;
         let skip = self.other_entity_nodes(id);
@@ -416,15 +435,39 @@ impl<'a> Host3D<'a> {
     }
 
     pub fn has_graphics(&self) -> bool {
-        self.scene.is_some()
+        self.scenes.is_some()
+    }
+
+    /// The Fyrox handle of the current scene.
+    fn current_handle(&self) -> Option<Handle<Scene>> {
+        self.world.scenes.get(self.world.current_scene).and_then(Option::as_ref).map(|s| s.handle)
     }
 
     pub fn scene(&mut self) -> Result<&mut Scene, String> {
-        self.scene.as_deref_mut().ok_or_else(|| "Graphics3D must be called before using 3D commands".to_string())
+        self.scene_opt().ok_or_else(|| "Graphics3D must be called before using 3D commands".to_string())
     }
 
     pub fn scene_opt(&mut self) -> Option<&mut Scene> {
-        self.scene.as_deref_mut()
+        let h = self.current_handle()?;
+        self.scenes.as_deref_mut()?.try_get_mut(h).ok()
+    }
+
+    pub fn scenes_ref(&self) -> Option<&fyrox::scene::SceneContainer> {
+        self.scenes.as_deref()
+    }
+
+    pub fn scenes_mut(&mut self) -> Option<&mut fyrox::scene::SceneContainer> {
+        self.scenes.as_deref_mut()
+    }
+
+    fn scene_ref(&self) -> Option<&Scene> {
+        let h = self.current_handle()?;
+        self.scenes.as_deref()?.try_get(h).ok()
+    }
+
+    /// The scene container (for `CreateScene` and friends).
+    pub fn scene_container(&mut self) -> Result<&mut fyrox::scene::SceneContainer, String> {
+        self.scenes.as_deref_mut().ok_or_else(|| "Graphics3D must be called before using 3D commands".to_string())
     }
 
     pub fn graph(&mut self) -> Result<&mut Graph, String> {
@@ -432,19 +475,32 @@ impl<'a> Host3D<'a> {
     }
 
     pub fn ent(&self, id: i32) -> Result<&Entity, String> {
-        usize::try_from(id - 1)
-            .ok()
-            .and_then(|i| self.world.entities.get(i))
-            .and_then(Option::as_ref)
-            .ok_or_else(|| format!("Entity {id} does not exist"))
+        let scene = self.world.current_scene;
+        match self.ent_any(id) {
+            Some(e) if e.scene == scene => Ok(e),
+            Some(e) => Err(format!("Entity {id} is in scene {} (use SetScene)", e.scene + 1)),
+            None => Err(format!("Entity {id} does not exist")),
+        }
     }
 
     pub fn ent_mut(&mut self, id: i32) -> Result<&mut Entity, String> {
-        usize::try_from(id - 1)
-            .ok()
-            .and_then(|i| self.world.entities.get_mut(i))
-            .and_then(Option::as_mut)
-            .ok_or_else(|| format!("Entity {id} does not exist"))
+        let scene = self.world.current_scene;
+        match usize::try_from(id - 1).ok().and_then(|i| self.world.entities.get_mut(i)).and_then(Option::as_mut) {
+            Some(e) if e.scene == scene => Ok(e),
+            Some(e) => Err(format!("Entity {id} is in scene {} (use SetScene)", e.scene + 1)),
+            None => Err(format!("Entity {id} does not exist")),
+        }
+    }
+
+    /// An entity in any scene.
+    pub fn ent_any(&self, id: i32) -> Option<&Entity> {
+        usize::try_from(id - 1).ok().and_then(|i| self.world.entities.get(i)).and_then(Option::as_ref)
+    }
+
+    /// True for an entity that exists but is in another scene than the
+    /// current one (per-frame work skips it rather than forgetting it).
+    pub fn elsewhere(&self, id: i32) -> bool {
+        self.ent_any(id).is_some_and(|e| e.scene != self.world.current_scene)
     }
 
     /// World transform of an entity's *parent frame* (identity for roots).
@@ -499,7 +555,7 @@ impl<'a> Host3D<'a> {
 
     /// Local transform; for nodes inside animated models, the current one.
     pub fn live_xf(&self, e: &Entity) -> Xform {
-        match (&self.scene, e.adopted, e.phys) {
+        match (self.scene_ref(), e.adopted, e.phys) {
             (Some(scene), _, Some(p)) => {
                 let mut xf = crate::anim::xform_of_node(&scene.graph, p.body);
                 xf.scale = e.xf.scale;
@@ -543,6 +599,7 @@ impl<'a> Host3D<'a> {
             self.ent(parent)?;
         }
         let entity = Entity {
+            scene: self.world.current_scene,
             node: handle,
             kind,
             parent: parent as u32,
@@ -565,6 +622,7 @@ impl<'a> Host3D<'a> {
             loader: None,
             phys: None,
             overlay: None,
+            viewport: None,
             mirror: None,
             sprite: None,
             terrain: None,
@@ -890,12 +948,16 @@ impl<'a> Host3D<'a> {
             .ok_or_else(|| format!("Texture {id} does not exist"))
     }
 
+    /// The entities of the current scene.
     pub fn entities_mut(&mut self) -> impl Iterator<Item = (i32, &mut Entity)> {
-        self.world.entities.iter_mut().enumerate().filter_map(|(i, e)| e.as_mut().map(|e| (i as i32 + 1, e)))
+        let scene = self.world.current_scene;
+        self.world.entities.iter_mut().enumerate().filter_map(move |(i, e)| e.as_mut().filter(|e| e.scene == scene).map(|e| (i as i32 + 1, e)))
     }
 
+    /// The entities of the current scene.
     pub fn entities(&self) -> impl Iterator<Item = (i32, &Entity)> {
-        self.world.entities.iter().enumerate().filter_map(|(i, e)| e.as_ref().map(|e| (i as i32 + 1, e)))
+        let scene = self.world.current_scene;
+        self.world.entities.iter().enumerate().filter_map(move |(i, e)| e.as_ref().filter(|e| e.scene == scene).map(|e| (i as i32 + 1, e)))
     }
 }
 
@@ -903,7 +965,7 @@ impl Host3D<'_> {
     /// Draws text the program printed (graphics mode) at the `Locate` cursor.
     pub fn drain_print(&mut self) {
         let text = std::mem::take(&mut *self.world.print_sink.borrow_mut());
-        if text.is_empty() || self.scene.is_none() {
+        if text.is_empty() || !self.has_graphics() {
             return;
         }
         let line_h = self.world.canvas.font.height();

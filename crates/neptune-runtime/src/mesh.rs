@@ -374,7 +374,7 @@ impl Host3D<'_> {
         }
         self.rebuild_terrains()?;
         let dirty: Vec<usize> =
-            self.world.surfaces.iter().enumerate().filter(|(_, s)| s.as_ref().is_some_and(|s| s.dirty)).map(|(i, _)| i).collect();
+            self.world.surfaces.iter().enumerate().filter(|(_, s)| s.as_ref().is_some_and(|s| s.dirty && !self.elsewhere(s.entity))).map(|(i, _)| i).collect();
         for i in dirty {
             let Some(info) = self.world.surfaces[i].as_mut() else { continue };
             info.dirty = false;
@@ -404,7 +404,7 @@ impl Host3D<'_> {
 
     /// Forgets surfaces of entities that no longer exist.
     pub fn prune_surfaces(&mut self) {
-        let alive: Vec<bool> = self.world.surfaces.iter().map(|s| s.as_ref().is_some_and(|s| self.ent(s.entity).is_ok())).collect();
+        let alive: Vec<bool> = self.world.surfaces.iter().map(|s| s.as_ref().is_some_and(|s| self.ent_any(s.entity).is_some())).collect();
         for (s, ok) in self.world.surfaces.iter_mut().zip(alive) {
             if !ok {
                 *s = None;
