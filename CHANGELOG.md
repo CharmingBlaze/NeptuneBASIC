@@ -4,6 +4,22 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Sound mixing and effects
+
+* **Audio buses** – `CreateAudioBus` makes mixer channels that sounds play
+  into, each with its own volume (`BusVolume`): music, effects and voices
+  can have separate volume sliders. Bus 0 is the master bus. `SoundBus`
+  chooses the bus for a sound's channels, `ChannelBus` moves a playing
+  channel (such as music).
+* **Reverb** – `BusReverb` gives a bus the echoes of a room, hall or cave
+  (how long they last, how much of the original is kept, how bright).
+* **Filters** – `BusFilter` muffles a bus (low-pass: underwater, behind a
+  wall), thins it (high-pass: a radio) or changes its bass or treble;
+  `FILTER_LOWPASS` and the other kinds are named constants.
+* **Guide** – [docs/SOUND.md](docs/SOUND.md) explains sound from playing
+  a file to 3D sound, buses and effects. Example: `examples/soundfx.nb`.
+
+
 ## The shader manual
 
 * **Manual** – the shader guide is now a manual in ten chapters

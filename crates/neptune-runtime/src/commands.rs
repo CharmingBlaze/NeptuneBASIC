@@ -417,7 +417,7 @@ fn append_surfaces(h: &mut Host3D, src: i32, dst: i32) -> Result<(), String> {
 fn load_sound(h: &mut Host3D, path: &str, spatial: bool) -> Result<Value, String> {
     match crate::sound::load(path, false) {
         Ok((buffer, rate)) => {
-            let info = crate::sound::SoundInfo { buffer, looping: false, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial, path: path.to_string() };
+            let info = crate::sound::SoundInfo { buffer, looping: false, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial, path: path.to_string(), bus: 0 };
             int(h.add_sound(info))
         }
         Err(e) => {
@@ -1059,6 +1059,14 @@ pub fn constants() -> Vec<(String, ConstVal)> {
         ("SHADOW_OFF".into(), ConstVal::Int(0)),
         ("SHADOW_HARD".into(), ConstVal::Int(1)),
         ("SHADOW_SOFT".into(), ConstVal::Int(2)),
+        // (ext) BusFilter kinds
+        ("FILTER_NONE".into(), ConstVal::Int(crate::audiobus::FILTER_NONE)),
+        ("FILTER_LOWPASS".into(), ConstVal::Int(crate::audiobus::FILTER_LOWPASS)),
+        ("FILTER_HIGHPASS".into(), ConstVal::Int(crate::audiobus::FILTER_HIGHPASS)),
+        ("FILTER_BANDPASS".into(), ConstVal::Int(crate::audiobus::FILTER_BANDPASS)),
+        ("FILTER_LOWSHELF".into(), ConstVal::Int(crate::audiobus::FILTER_LOWSHELF)),
+        ("FILTER_HIGHSHELF".into(), ConstVal::Int(crate::audiobus::FILTER_HIGHSHELF)),
+        ("FILTER_ALLPASS".into(), ConstVal::Int(crate::audiobus::FILTER_ALLPASS)),
         ("SHADING_TOON".into(), ConstVal::Int(0)),
         ("SHADING_CEL".into(), ConstVal::Int(1)),
         ("SHADING_FLAT".into(), ConstVal::Int(2)),
@@ -2846,7 +2854,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.scene()?;
         match crate::sound::load(&a[0].str(), true) {
             Ok((buffer, rate)) => {
-                let info = crate::sound::SoundInfo { buffer, looping: a[1].int() != 0, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial: false, path: String::new() };
+                let info = crate::sound::SoundInfo { buffer, looping: a[1].int() != 0, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial: false, path: String::new(), bus: 0 };
                 int(h.play(&info, 0)?)
             }
             Err(e) => {
@@ -2861,6 +2869,30 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("PauseChannel%channel", |h, a, _| with_channel(h, a[0].int(), |c| c.pause())),
     ("ResumeChannel%channel", |h, a, _| with_channel(h, a[0].int(), |c| c.play())),
+    // (ext) audio buses and sound effects (see audiobus.rs)
+    ("%CreateAudioBus$name=\"\"%parent=0", |h, a, _| int(h.create_audio_bus(&a[0].str(), a[1].int())?)),
+    ("BusVolume%bus#volume", |h, a, _| {
+        h.bus_volume(a[0].int(), a[1].float())?;
+        VOID
+    }),
+    ("BusReverb%bus#decay_seconds#dry=1#brightness=11000", |h, a, _| {
+        h.bus_reverb(a[0].int(), a[1].float(), a[2].float(), a[3].float())?;
+        VOID
+    }),
+    ("BusFilter%bus%kind#frequency=1000#quality=0.7#gain=1", |h, a, _| {
+        h.bus_filter(a[0].int(), a[1].int(), a[2].float(), a[3].float(), a[4].float())?;
+        VOID
+    }),
+    ("SoundBus%sound%bus", |h, a, _| {
+        h.world.audio.get(a[1].int())?;
+        h.sound_mut(a[0].int())?.bus = a[1].int();
+        VOID
+    }),
+    ("ChannelBus%channel%bus", |h, a, _| {
+        h.sync_buses()?;
+        let name = h.bus_name(a[1].int())?;
+        with_channel(h, a[0].int(), |c| c.set_audio_bus(name))
+    }),
     ("ChannelVolume%channel#volume", |h, a, _| {
         let v = a[1].float().max(0.0);
         with_channel(h, a[0].int(), |c| {

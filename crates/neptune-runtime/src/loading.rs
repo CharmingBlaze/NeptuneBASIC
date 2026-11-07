@@ -81,7 +81,7 @@ pub fn load_sound(h: &mut Host3D, path: &str, spatial: bool) -> Result<i32, Stri
         return Ok(0);
     }
     let (buffer, rate) = crate::sound::silence();
-    let info = crate::sound::SoundInfo { buffer, looping: false, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial, path: path.to_string() };
+    let info = crate::sound::SoundInfo { buffer, looping: false, volume: 1.0, pan: 0.0, pitch: 1.0, rate, spatial, path: path.to_string(), bus: 0 };
     let sound = h.add_sound(info);
     let (tx, rx) = channel();
     let file = path.to_string();

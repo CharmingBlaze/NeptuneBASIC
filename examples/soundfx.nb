@@ -1,0 +1,63 @@
+; Sound effects: audio buses with reverb and filters.
+; Run from the repository root: neptune run examples/soundfx.nb
+; A hum plays on the "music" bus and blips on the "effects" bus.
+; 1 room  2 hall  3 cave  4 no reverb (on the effects bus)
+; U underwater (muffles everything: a low-pass filter on the master bus)
+; R radio (thins the music: a high-pass filter)
+; Up/Down music volume   Space blip   Esc quit
+
+Graphics3D 800, 400
+AppTitle "NeptuneBASIC - Sound effects"
+
+hum = LoadSound("examples/media/hum.wav")
+blip = LoadSound("examples/media/blip.wav")
+If hum = 0 Or blip = 0 Then RuntimeError "examples/media sounds are missing (run from the repository root)"
+
+music = CreateAudioBus("music")
+effects = CreateAudioBus("effects")
+SoundBus hum, music
+SoundBus blip, effects
+LoopSound hum
+humChannel = PlaySound(hum)
+
+musicVolume# = 0.6
+BusVolume music, musicVolume
+room$ = "none"
+underwater = 0
+radio = 0
+frames = 0
+nextBlip = MilliSecs()
+While True
+    frames = frames + 1
+    If KeyHit(KEY_1) Then BusReverb effects, 0.6, 1, 9000 : room$ = "room"
+    If KeyHit(KEY_2) Then BusReverb effects, 2.5, 0.8, 7000 : room$ = "hall"
+    If KeyHit(KEY_3) Then BusReverb effects, 6, 0.6, 4000 : room$ = "cave"
+    If KeyHit(KEY_4) Then BusReverb effects, 0 : room$ = "none"
+    If KeyHit(KEY_U)
+        underwater = 1 - underwater
+        If underwater Then BusFilter 0, FILTER_LOWPASS, 500 Else BusFilter 0, FILTER_NONE
+    EndIf
+    If KeyHit(KEY_R)
+        radio = 1 - radio
+        If radio Then BusFilter music, FILTER_HIGHPASS, 1500, 1.2 Else BusFilter music, FILTER_NONE
+    EndIf
+    If KeyDown(KEY_UP) Then musicVolume = Min(1, musicVolume + 0.01) : BusVolume music, musicVolume
+    If KeyDown(KEY_DOWN) Then musicVolume = Max(0, musicVolume - 0.01) : BusVolume music, musicVolume
+    ; a blip every second, or on Space
+    If KeyHit(KEY_SPACE) Or MilliSecs() > nextBlip
+        PlaySound blip
+        nextBlip = MilliSecs() + 1000
+    EndIf
+
+    Cls
+    Color 255, 255, 255
+    Text 20, 20, "1 room   2 hall   3 cave   4 no reverb   U underwater   R radio   Up/Down music   Space blip"
+    Text 20, 60, $"reverb on the effects bus: {room$}"
+    underText$ = "off" : If underwater Then underText$ = "on"
+    radioText$ = "off" : If radio Then radioText$ = "on"
+    Text 20, 90, $"underwater (low-pass on the master bus): {underText$}"
+    Text 20, 120, $"radio (high-pass on the music bus): {radioText$}"
+    Text 20, 150, $"music volume: {Int(musicVolume * 100)}%"
+    Flip
+    If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+Wend

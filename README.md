@@ -102,6 +102,7 @@ neptune run examples/games/orbrun.nb
 * [Command reference](docs/COMMANDS.md): every command explained
 * [Language reference](docs/LANGUAGE.md)
 * [Shaders, materials and post-processing](docs/SHADERS.md)
+* [Sound: playing, 3D sound, mixing and effects](docs/SOUND.md)
 * [Changelog](CHANGELOG.md): what changed, commit by commit
 * [Architecture](docs/ARCHITECTURE.md)
 * [Implementation status](docs/STATUS.md)

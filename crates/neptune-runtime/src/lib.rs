@@ -61,6 +61,7 @@ pub mod gui_dialogs;
 pub mod gui_editors;
 pub mod physics;
 pub mod pick;
+pub mod audiobus;
 pub mod prefab;
 pub mod probe;
 pub mod primitive;

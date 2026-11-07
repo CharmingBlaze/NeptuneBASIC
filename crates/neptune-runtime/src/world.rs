@@ -211,6 +211,8 @@ pub struct World {
     /// per scene
     /// (see `probe.rs`).
     pub probes_around_cameras: std::collections::HashMap<usize, Vec<Option<Handle<Node>>>>,
+    /// (ext) Audio buses and their effects (see `audiobus.rs`).
+    pub audio: crate::audiobus::Buses,
     /// (ext) 2D physics: bodies, joints, pixels per metre, per-body
     /// (friction, bounce, density, sensor), the last ray hit.
     pub bodies2d: Vec<Option<crate::physics2d::Body2D>>,
@@ -373,6 +375,7 @@ impl Default for World {
             ui: Default::default(),
             texture_cameras: Vec::new(),
             probes_around_cameras: Default::default(),
+            audio: Default::default(),
             graded_cameras: Default::default(),
             gamma: Default::default(),
             gamma_dirty: false,

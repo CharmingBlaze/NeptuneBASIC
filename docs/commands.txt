@@ -459,6 +459,12 @@ StopChannel: Stops the sound playing on channel.
 PauseChannel: Pauses the sound playing on channel.
 ResumeChannel: Resumes a channel paused with PauseChannel.
 ChannelVolume: Sets the volume of channel, from 0 (silent) to 1 (full).
+CreateAudioBus: (ext) Creates an audio bus (a mixer channel that sounds play into) feeding parent (0, the default, is the master bus everything ends in) and returns its handle; name is optional. Use one bus each for music, effects and voices to set their volumes apart, or to give a group of sounds a reverb or filter.
+BusVolume: (ext) Sets the volume of bus (0 is the master bus), from 0 (silent) to 1 (full); above 1 is louder.
+BusReverb: (ext) Gives bus a reverb, the echoes of a room, hall or cave: decay_seconds is how long the echoes last (0 removes the reverb), dry how much of the original sound is kept (0-1), brightness the highest frequency the echoes keep in Hz (lower is duller).
+BusFilter: (ext) Gives bus a filter of kind FILTER_LOWPASS (muffles: underwater, behind a wall), FILTER_HIGHPASS (thins: a radio, a telephone), FILTER_BANDPASS, FILTER_LOWSHELF, FILTER_HIGHSHELF or FILTER_ALLPASS at frequency in Hz, with quality (the width around it) and gain; FILTER_NONE removes it. The filter comes before the reverb.
+SoundBus: (ext) Makes the channels that sound plays from now on go into bus.
+ChannelBus: (ext) Moves a playing channel into bus.
 ChannelPan: Sets the pan of channel, from -1 (left) to 1 (right).
 ChannelPitch: Sets the playback rate of channel, in Hz.
 ChannelPlaying: Returns 1 if channel is playing, otherwise 0.

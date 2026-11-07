@@ -37,6 +37,8 @@ pub struct SoundInfo {
     pub spatial: bool,
     /// File the sound was loaded from (for `SoundName` and reloading).
     pub path: String,
+    /// (ext) Audio bus its channels play into (`SoundBus`, 0 = master).
+    pub bus: i32,
 }
 
 /// Decodes a sound file into a buffer. `stream` decodes while playing (music).
@@ -115,7 +117,11 @@ impl Host3D<'_> {
         let emitter_node = if emitter != 0 { Some(self.ent(emitter)?.node) } else { None };
         let rolloff = self.world.listener_rolloff;
         let distance = self.world.listener_distance;
+        // the bus must exist in this scene's sound engine
+        self.sync_buses()?;
+        let bus = self.bus_name(info.bus).unwrap_or_else(|_| fyrox::scene::sound::AudioBusGraph::PRIMARY_BUS.to_string());
         let node = SoundBuilder::new(BaseBuilder::new().with_name("Channel"))
+            .with_audio_bus(bus)
             .with_buffer(Some(info.buffer.clone()))
             .with_looping(info.looping)
             .with_play_once(!info.looping)
