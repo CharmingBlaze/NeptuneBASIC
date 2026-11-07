@@ -567,7 +567,7 @@ vec3 nb_saturate(vec3 c, float amount) { return mix(vec3(nb_luminance(c)), c, am
 pub const PRESETS: &[&str] = &[
     "unlit", "textured", "vertexcolor", "diffuse", "phong", "blinnphong", "pbr", "normalmap", "metal", "glass", "water", "toon",
     "cel", "outline", "rim", "hologram", "dissolve", "fire", "smoke", "forcefield", "gradient", "noise", "procedural", "matcap",
-    "flat", "ps1", "pixelart", "vertexlit", "wind", "displace", "posterize", "handpainted",
+    "flat", "ps1", "pixelart", "vertexlit", "wind", "displace", "posterize", "handpainted", "terrain",
 ];
 
 /// Source of a ready-made shader.
@@ -719,6 +719,7 @@ void nb_surface(inout NbSurface s) {
 "
         .into(),
         "water" => WATER.into(),
+        "terrain" => TERRAIN.into(),
         "toon" | "cel" => format!(
             "//! lighting toon
 //! shadows on
@@ -1186,6 +1187,116 @@ void nb_surface(inout NbSurface s) {
     s.specularColor = vec3(1.0);
     s.shininess = 128.0;
     s.emission = refl * reflection * fr;
+}
+";
+
+const TERRAIN: &str = "// Terrain (ext): grass, rock, sand and snow worked out per pixel, with dry
+// patches in the grass, layered and craggy rock, rippled sand that darkens
+// where it is wet, and detail that fades with distance so nothing shimmers.
+// The layers come from height and slope, or (painted = 1) from the weights
+// painted with PaintTerrain / ModifyTerrainLayer: layer 1 rock, 2 sand, 3 snow.
+// Drawn in the deferred pass, so it is lit by Fyrox and receives shadows.
+// Optional textures (grassMap, rockMap, sandMap, snowMap) multiply the
+// colours; rock is mapped from three sides so cliffs do not stretch.
+//! pass gbuffer
+//! shadows on
+#include <neptune/noise.glsl>
+uniform vec3 grassColor = vec3(0.33, 0.47, 0.18);
+uniform vec3 dryGrassColor = vec3(0.56, 0.55, 0.27);
+uniform vec3 rockColor = vec3(0.58, 0.53, 0.47);
+uniform vec3 rockColor2 = vec3(0.41, 0.38, 0.34);
+uniform vec3 sandColor = vec3(0.87, 0.80, 0.63);
+uniform vec3 snowColor = vec3(0.95, 0.97, 1.0);
+uniform float seaLevel = -1.0e9;
+uniform float sandHeight = 2.5;
+uniform float snowHeight = 1.0e9;
+uniform vec2 rockSlope = vec2(0.30, 0.50);
+uniform float painted = 0.0;
+uniform float detail = 1.0;
+uniform float bumpStrength = 1.0;
+uniform sampler2D grassMap; //! fallback white
+uniform sampler2D rockMap; //! fallback white
+uniform sampler2D sandMap; //! fallback white
+uniform sampler2D snowMap; //! fallback white
+uniform float mapScale = 0.25;
+//! fragment
+vec3 nb_terrainTri(sampler2D t, vec3 p, vec3 w) {
+    return texture(t, p.zy * mapScale).rgb * w.x + texture(t, p.xz * mapScale).rgb * w.y + texture(t, p.xy * mapScale).rgb * w.z;
+}
+void nb_surface(inout NbSurface s) {
+    vec3 p = nb_worldPos;
+    vec3 n = normalize(nb_normal);
+    float dist = length(fyrox_cameraData.position - p);
+    // small detail fades out with distance
+    float near = detail * (1.0 - smoothstep(40.0, 220.0, dist));
+    float macro = nb_fbm(p.xz * 0.011, 4);
+    float mid = nb_fbm(p.xz * 0.08 + 3.7, 3);
+    float fine = nb_valueNoise(p.xz * 1.9);
+    float wobble = mid - 0.5;
+
+    // how much of each layer
+    float slope = 1.0 - n.y;
+    float rock, sand, snow;
+    if (painted > 0.5) {
+        // painted weights, sharpened per pixel along the noise for crisp edges
+        rock = smoothstep(0.25, 0.75, nb_color.r + wobble * 0.6);
+        sand = smoothstep(0.25, 0.75, nb_color.g + wobble * 0.6);
+        snow = smoothstep(0.25, 0.75, nb_color.b + wobble * 0.6);
+    } else {
+        rock = smoothstep(rockSlope.x, rockSlope.y, slope + wobble * 0.12);
+        float above = p.y - seaLevel;
+        sand = (1.0 - smoothstep(sandHeight - 0.7, sandHeight + 0.7, above + wobble * 2.5)) * (1.0 - rock * 0.85);
+        snow = smoothstep(snowHeight - 5.0, snowHeight + 5.0, p.y + wobble * 16.0) * (1.0 - smoothstep(rockSlope.y, rockSlope.y + 0.3, slope));
+    }
+
+    // craggy bumps, mostly on rock
+    float c0 = nb_perlin3(p * 0.55);
+    float b0 = nb_perlin3(p * 0.13);
+    vec3 g = vec3(nb_perlin3(p * 0.55 + vec3(0.1, 0.0, 0.0)) - c0, nb_perlin3(p * 0.55 + vec3(0.0, 0.1, 0.0)) - c0, nb_perlin3(p * 0.55 + vec3(0.0, 0.0, 0.1)) - c0) * 4.0;
+    g += vec3(nb_perlin3(p * 0.13 + vec3(0.4, 0.0, 0.0)) - b0, nb_perlin3(p * 0.13 + vec3(0.0, 0.4, 0.0)) - b0, nb_perlin3(p * 0.13 + vec3(0.0, 0.0, 0.4)) - b0) * 0.33;
+    g -= dot(g, n) * n;
+    float bump = bumpStrength * mix(0.12 * (0.3 + 0.7 * near), 1.0, rock) * (1.0 - snow * 0.6);
+    vec3 bn = normalize(n - g * bump);
+
+    // grass: green with dry patches, darker and lighter tufts close up
+    vec3 grass = mix(grassColor, dryGrassColor, smoothstep(0.42, 0.72, macro));
+    grass *= 0.84 + 0.32 * mid;
+    grass *= mix(1.0, 0.78 + 0.44 * fine, near);
+    grass *= texture(grassMap, p.xz * mapScale).rgb;
+    // rock: faint layers bent by the noise, darker in the cracks
+    float strata = sin((p.y * 0.8 + (macro - 0.5) * 30.0 + mid * 6.0) * 1.1) * 0.5 + 0.5;
+    vec3 rockC = mix(rockColor, rockColor2, smoothstep(0.2, 0.9, strata) * 0.5 + (1.0 - c0) * 0.5);
+    rockC *= 0.84 + 0.32 * mid;
+    rockC *= mix(1.0, 0.78 + 0.44 * nb_perlin3(p * 2.3), near);
+    vec3 tw = pow(abs(n), vec3(4.0));
+    rockC *= nb_terrainTri(rockMap, p, tw / (tw.x + tw.y + tw.z));
+    // sand: ripples, darker where wet
+    float ripple = sin(dot(p.xz, vec2(1.7, 0.6)) + mid * 9.0) * 0.5 + 0.5;
+    vec3 sandC = sandColor * (0.93 + (0.08 * ripple + 0.08 * (fine - 0.5)) * near);
+    // grains, only close by
+    sandC *= mix(1.0, 0.93 + 0.14 * nb_hash12(floor(p.xz * 30.0)), detail * (1.0 - smoothstep(4.0, 25.0, dist)));
+    sandC *= texture(sandMap, p.xz * mapScale).rgb;
+    float wet = 1.0 - smoothstep(0.05, 0.45, p.y - seaLevel + (fine - 0.5) * 0.15);
+    sandC *= mix(1.0, 0.66, wet);
+    // snow
+    vec3 snowC = snowColor * (0.94 + 0.06 * mid) * texture(snowMap, p.xz * mapScale).rgb;
+
+    vec3 c = mix(grass, rockC, rock);
+    c = mix(c, sandC, sand);
+    c = mix(c, snowC, snow);
+    s.albedo = c;
+    s.normal = bn;
+    float rough = mix(0.92, 0.82, rock);
+    rough = mix(rough, mix(0.95, 0.35, wet), sand);
+    s.roughness = mix(rough, 0.55, snow);
+    // crevices in the rock, a little in the grass
+    s.ao = mix(0.9 + 0.1 * fine * near + 0.1 * (1.0 - near), 0.55 + 0.45 * c0, rock);
+    // camera fog (CameraFogMode): the lit colour fades into the fog colour
+    if (nb_fogRange.y > nb_fogRange.x) {
+        float f = clamp((dist - nb_fogRange.x) / (nb_fogRange.y - nb_fogRange.x), 0.0, 1.0);
+        s.albedo *= 1.0 - f;
+        s.emission = nb_linear(nb_fogColor) * f;
+    }
 }
 ";
 

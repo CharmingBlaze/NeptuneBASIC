@@ -4,8 +4,8 @@
 //! An effect is a shader object whose pass is `post` (`//! pass post`):
 //! its fragment writes `FragColor` or defines `vec4 nb_post(vec2 uv)` and
 //! reads `nb_screenTexture` (the image so far), `nb_originalTexture` (the
-//! scene before any effect), `nb_depthTexture` and `nb_normalTexture`
-//! (G-buffer), with `nb_resolution`, `nb_time`, `nb_cameraPos`, `nb_clip`
+//! scene before any effect), `nb_depthTexture` (everything drawn,
+//! forward-drawn surfaces included) and `nb_normalTexture` (G-buffer), with `nb_resolution`, `nb_time`, `nb_cameraPos`, `nb_clip`
 //! (near, far), `nb_invViewProj` and `nb_prevViewProj` (last frame, for
 //! motion blur). `LoadPostProcess("builtin:<name>")` gives ready-made
 //! effects (see `BUILTIN`).
@@ -455,12 +455,24 @@ uniform float density = 0.03;
 uniform vec3 color = vec3(0.65, 0.72, 0.8);
 uniform float heightFalloff = 0.08;
 uniform float start = 0.0;
+// 0 leaves the sky (where nothing was drawn) as it is, except for the band
+// skyHorizon high (0-1, the height of the view direction) above the horizon,
+// which fades into the fog colour so the sky meets the fogged ground smoothly
+uniform float skyFog = 1.0;
+uniform float skyHorizon = 0.0;
 //! fragment
 vec4 nb_post(vec2 uv) {
     vec3 c = texture(nb_screenTexture, uv).rgb;
     vec3 p = nb_worldPosAt(uv);
     float d = max(distance(p, nb_cameraPos) - start, 0.0);
-    if (texture(nb_depthTexture, uv).r >= 1.0) d = 1.0e4;
+    if (texture(nb_depthTexture, uv).r >= 1.0) {
+        if (skyFog <= 0.0) {
+            float up = normalize(p - nb_cameraPos).y;
+            float band = skyHorizon > 0.0 ? 1.0 - smoothstep(0.0, skyHorizon, up) : 0.0;
+            return vec4(mix(c, color, band), 1.0);
+        }
+        d = 1.0e4;
+    }
     float h = exp(-max(p.y, 0.0) * heightFalloff);
     float f = 1.0 - exp(-d * density * h);
     return vec4(mix(c, color, clamp(f, 0.0, 1.0)), 1.0);
@@ -572,12 +584,44 @@ pub struct PostPass {
     outputs: HashMap<i32, Target>,
     prev_vp: HashMap<Handle<Node>, Matrix4<f32>>,
     tex_fbs: HashMap<usize, GpuFrameBuffer>,
+    /// copy of the scene's depth, forward-drawn surfaces included
+    depth_copy: Option<Target>,
     plugin: TypeId,
 }
 
 impl PostPass {
     pub fn new(frame: Rc<RefCell<Frame>>, failed: Rc<RefCell<HashMap<u64, String>>>, plugin: TypeId) -> Self {
-        PostPass { frame, failed, programs: HashMap::new(), targets: HashMap::new(), outputs: HashMap::new(), prev_vp: HashMap::new(), tex_fbs: HashMap::new(), plugin }
+        PostPass {
+            frame,
+            failed,
+            programs: HashMap::new(),
+            targets: HashMap::new(),
+            outputs: HashMap::new(),
+            prev_vp: HashMap::new(),
+            tex_fbs: HashMap::new(),
+            depth_copy: None,
+            plugin,
+        }
+    }
+
+    /// The depth of everything drawn so far. Fyrox's G-buffer depth leaves
+    /// out surfaces drawn in the forward pass (water, blended and classic
+    /// materials), so depth effects such as fog would look through them;
+    /// the frame buffer's own depth has them, and is copied because the
+    /// last effect draws into that frame buffer.
+    fn scene_depth(&mut self, ctx: &SceneRenderPassContext, w: usize, h: usize) -> Result<Option<GpuTexture>, FrameworkError> {
+        if ctx.framebuffer.depth_attachment().is_none() {
+            return Ok(None);
+        }
+        if self.depth_copy.as_ref().is_none_or(|t| t.size != (w, h)) {
+            let texture = ctx.server.create_2d_render_target("NeptunePostDepth", PixelKind::D24S8, w, h)?;
+            let fb = ctx.server.create_frame_buffer(Some(Attachment::depth_stencil(texture.clone())), vec![])?;
+            self.depth_copy = Some(Target { texture, fb, size: (w, h) });
+        }
+        let Some(t) = &self.depth_copy else { return Ok(None) };
+        let (w, h) = (w as i32, h as i32);
+        ctx.framebuffer.blit_to(&t.fb, 0, 0, w, h, 0, 0, w, h, false, true, true);
+        Ok(Some(t.texture.clone()))
     }
 
     fn target(&mut self, server: &dyn GraphicsServer, hdr: bool, slot: usize, w: usize, h: usize) -> Result<(GpuTexture, GpuFrameBuffer), FrameworkError> {
@@ -634,6 +678,7 @@ impl PostPass {
             GpuTextureKind::Rectangle { width, height } => (width, height),
             _ => return Ok(stats),
         };
+        let depth = self.scene_depth(ctx, fw, fh)?.unwrap_or_else(|| ctx.depth_texture.clone());
         let (original, original_fb) = self.target(server, hdr, 2, fw, fh)?;
         stats += Self::blit(ctx, &screen, &original_fb, viewport)?;
         let mut current = original.clone();
@@ -738,7 +783,7 @@ impl PostPass {
             let mut tex: Vec<(&str, GpuTexture, GpuSampler)> = vec![
                 ("nb_screenTexture", input.clone(), linear.clone()),
                 ("nb_originalTexture", original.clone(), linear.clone()),
-                ("nb_depthTexture", ctx.depth_texture.clone(), nearest.clone()),
+                ("nb_depthTexture", depth.clone(), nearest.clone()),
                 ("nb_normalTexture", ctx.normal_texture.clone(), nearest.clone()),
             ];
             tex.extend(user);

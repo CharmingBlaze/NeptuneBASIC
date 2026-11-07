@@ -3,36 +3,50 @@
 //   water = LoadShader("examples/media/water.shader")
 //   EntityShader sea, water
 //   ShaderFloat sea, "time", MilliSecs() / 1000.0     ; every frame
+//
+// The water is see-through: it reads the depth of the ground behind it
+// (Fyrox's scene depth), works out how far the light travels through the
+// water and absorbs red first, then green, so the real sea bed shows
+// through turquoise in the shallows and fades into deep blue. Over that go
+// the sky's reflection, sun glints, caustics on the bed, light through the
+// wave crests, foam lace at the shore and breaking lines rolling in.
+// The ground must be drawn in the deferred pass (standard or PBR materials,
+// or builtin:terrain) for the water to see it.
+//
 // Every vertex carries VertexData slot 0 = (depth of the water there in
-// metres, 0, 0, 0), read at location 8: shallow water shows the sea bed
-// (bedColor) through clear turquoise with caustics, deep water is dark
-// blue, and foam rolls in where it is shallowest. The water is opaque and
-// draws the bed itself, so it looks the same whatever is drawn first.
+// metres, 0, 0, 0), read at location 8: the swell dies out and the surge
+// runs up the beach where the water is shallow.
 // Colours are sRGB 0-1 (ShaderVector); directions are Fyrox world space
 // (X mirrored from Blitz space).
 (
     name: "NeptuneWater",
 
     resources: [
+        (name: "fyrox_sceneDepth", kind: Texture(kind: Sampler2D, fallback: White), binding: 0),
         (
             name: "properties",
             kind: PropertyGroup([
                 (name: "time", kind: Float(value: 0.0)),
-                (name: "shallowColor", kind: Vector4(value: (0.25, 0.85, 0.82, 1.0))),
-                (name: "deepColor", kind: Vector4(value: (0.06, 0.28, 0.55, 1.0))),
-                (name: "skyColor", kind: Vector4(value: (0.72, 0.84, 0.95, 1.0))),
+                // light scattered back by shallow and by deep water
+                (name: "shallowColor", kind: Vector4(value: (0.16, 0.74, 0.72, 1.0))),
+                (name: "deepColor", kind: Vector4(value: (0.03, 0.18, 0.40, 1.0))),
+                // reflected sky: at the horizon and overhead
+                (name: "skyColor", kind: Vector4(value: (0.74, 0.85, 0.95, 1.0))),
+                (name: "skyTopColor", kind: Vector4(value: (0.38, 0.62, 0.88, 1.0))),
+                // the colour of the sea bed (sand), for the tint and caustics
                 (name: "bedColor", kind: Vector4(value: (0.86, 0.80, 0.62, 1.0))),
                 (name: "sunColor", kind: Vector4(value: (1.0, 0.96, 0.88, 1.0))),
                 // direction towards the sun
                 (name: "sunDir", kind: Vector4(value: (0.4, 0.6, 0.5, 0.0))),
                 (name: "fogColor", kind: Vector4(value: (0.77, 0.85, 0.92, 1.0))),
                 // fog start and end distances, 0 0 for none
-                (name: "fogRange", kind: Vector4(value: (300.0, 1400.0, 0.0, 0.0))),
-                // depth where the water is fully deep, foam width (metres),
-                // wave strength, swell height
-                (name: "shape", kind: Vector4(value: (6.0, 1.2, 1.0, 0.12))),
-                // depth (metres) down to which the bed can be seen
-                (name: "clarity", kind: Vector4(value: (4.0, 0.0, 0.0, 0.0))),
+                (name: "fogRange", kind: Vector4(value: (0.0, 0.0, 0.0, 0.0))),
+                // depth (metres) where the water looks fully deep, foam width
+                // (metres of depth), wave strength, swell height
+                (name: "shape", kind: Vector4(value: (6.0, 1.2, 1.0, 0.15))),
+                // how far you can see through the water (metres), surge height,
+                // seconds between surges, ripple size
+                (name: "clarity", kind: Vector4(value: (5.0, 0.18, 7.0, 1.0))),
             ]),
             binding: 0
         ),
@@ -51,7 +65,17 @@
                 depth_write: true,
                 stencil_test: None,
                 depth_test: Some(Less),
-                blend: None,
+                // premultiplied: the shader adds its light and says how much
+                // of the ground behind still shows
+                blend: Some(BlendParameters(
+                    func: BlendFunc(
+                        sfactor: One,
+                        dfactor: OneMinusSrcAlpha,
+                        alpha_sfactor: One,
+                        alpha_dfactor: OneMinusSrcAlpha,
+                    ),
+                    equation: BlendEquation(rgb: Add, alpha: Add)
+                )),
                 stencil_op: StencilOp(fail: Keep, zfail: Keep, zpass: Keep, write_mask: 0xFFFF_FFFF),
                 scissor_box: None
             ),
@@ -60,27 +84,39 @@
                 layout(location = 8) in vec4 waterData;
 
                 out vec3 worldPos;
-                out float depth;
+                out float rise;
 
                 void main() {
                     vec4 world = fyrox_instanceData.worldMatrix * vec4(vertexPosition, 1.0);
-                    // a slow swell, flattening out where the water is shallow
                     float t = properties.time;
-                    float swell = sin(world.x * 0.045 + t * 0.9) * 0.6 + sin(world.z * 0.06 - t * 0.7) * 0.4;
+                    float d = waterData.x;
+                    // a slow swell from three directions, dying out in the shallows
+                    float swell = sin(dot(world.xz, vec2(0.040, 0.012)) + t * 0.85) * 0.55
+                                + sin(dot(world.xz, vec2(-0.018, 0.052)) - t * 0.70) * 0.35
+                                + sin(dot(world.xz, vec2(0.070, -0.050)) + t * 1.30) * 0.10;
+                    // the surge: near the shore the water runs up the beach and
+                    // draws back, a little out of step along the coast
+                    float phase = t * 6.2831853 / max(properties.clarity.z, 0.1)
+                                + sin(world.x * 0.031) * 1.7 + sin(world.z * 0.027) * 1.7;
+                    float run = 0.5 + 0.5 * sin(phase);
+                    run = run * run * (3.0 - 2.0 * run);
+                    float shore = 1.0 - smoothstep(0.5, 4.0, d);
+                    rise = run * properties.clarity.y * shore;
                     vec3 p = vertexPosition;
-                    p.y += swell * properties.shape.w * clamp(waterData.x / 3.0, 0.0, 1.0);
+                    p.y += swell * properties.shape.w * clamp(d / 3.0, 0.0, 1.0) + rise;
                     worldPos = (fyrox_instanceData.worldMatrix * vec4(p, 1.0)).xyz;
-                    depth = waterData.x;
                     gl_Position = fyrox_instanceData.worldViewProjection * vec4(p, 1.0);
                 }
             "#,
             fragment_shader: r#"
                 in vec3 worldPos;
-                in float depth;
+                in float rise;
                 out vec4 FragColor;
 
                 float hash(vec2 p) {
-                    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+                    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+                    p3 += dot(p3, p3.yzx + 33.33);
+                    return fract((p3.x + p3.y) * p3.z);
                 }
 
                 float noise(vec2 p) {
@@ -91,70 +127,110 @@
                                mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
                 }
 
-                // the ripples' height at p
-                float ripples(vec2 p, float t) {
-                    float h = sin(dot(p, vec2(0.21, 0.08)) + t * 1.3) * 0.30;
-                    h += sin(dot(p, vec2(-0.11, 0.26)) + t * 1.7) * 0.22;
-                    h += sin(dot(p, vec2(0.55, -0.37)) + t * 2.6) * 0.07;
-                    h += (noise(p * 0.9 + vec2(t * 0.5, t * 0.35)) - 0.5) * 0.30;
-                    h += (noise(p * 2.3 - vec2(t * 0.8, t * 0.25)) - 0.5) * 0.14;
+                // the surface's height at p: wave trains from four directions and
+                // drifting noise; the small waves fade out far away
+                float waves(vec2 p, float t, float near) {
+                    float h = sin(dot(p, vec2(0.23, 0.07)) + t * 1.25) * 0.28;
+                    h += sin(dot(p, vec2(-0.10, 0.27)) + t * 1.60) * 0.20;
+                    h += sin(dot(p, vec2(0.41, -0.33)) + t * 2.30) * 0.09 * (0.4 + 0.6 * near);
+                    h += sin(dot(p, vec2(-0.62, -0.21)) + t * 2.90) * 0.05 * near;
+                    h += (noise(p * 0.7 + vec2(t * 0.45, t * 0.30)) - 0.5) * 0.34;
+                    h += (noise(p * 1.9 - vec2(t * 0.70, -t * 0.20)) - 0.5) * 0.16 * (0.3 + 0.7 * near);
+                    h += (noise(p * 4.3 + vec2(-t * 1.10, t * 0.90)) - 0.5) * 0.07 * near;
                     return h;
+                }
+
+                float linearDepth(float d) {
+                    float zn = fyrox_cameraData.zNear;
+                    float zf = fyrox_cameraData.zFar;
+                    return (2.0 * zn * zf) / (zf + zn - (d * 2.0 - 1.0) * (zf - zn));
+                }
+
+                vec3 lin(vec4 c) {
+                    return S_SRGBToLinear(c).rgb;
                 }
 
                 void main() {
                     float t = properties.time;
-                    vec2 p = worldPos.xz;
                     vec3 toEye = fyrox_cameraData.position - worldPos;
                     float dist = length(toEye);
                     vec3 v = toEye / max(dist, 1e-4);
+                    float near = 1.0 - smoothstep(25.0, 240.0, dist);
 
-                    // normal from the ripples, calmer far away (less shimmer)
-                    float e = 0.12;
-                    float h0 = ripples(p, t);
-                    float k = properties.shape.z / (1.0 + dist * 0.02);
-                    vec3 n = normalize(vec3(-(ripples(p + vec2(e, 0.0), t) - h0) / e * k, 1.0,
-                                            -(ripples(p + vec2(0.0, e), t) - h0) / e * k));
+                    // the surface normal from the waves, calmer far away
+                    vec2 p = worldPos.xz / max(properties.clarity.w, 0.01);
+                    float e = 0.1;
+                    float h0 = waves(p, t, near);
+                    float k = properties.shape.z / (1.0 + dist * 0.012);
+                    vec3 n = normalize(vec3(-(waves(p + vec2(e, 0.0), t, near) - h0) / e * k, 1.0,
+                                            -(waves(p + vec2(0.0, e), t, near) - h0) / e * k));
 
-                    float d = max(depth, 0.0);
-                    float deepness = smoothstep(0.0, properties.shape.x, d);
-                    vec3 shallow = S_SRGBToLinear(properties.shallowColor).rgb;
-                    vec3 deep = S_SRGBToLinear(properties.deepColor).rgb;
-                    vec3 sun = S_SRGBToLinear(properties.sunColor).rgb;
-                    vec3 bed = S_SRGBToLinear(properties.bedColor).rgb;
+                    // how far the view travels through the water to the ground
+                    // behind it, and how deep that ground is
+                    vec2 suv = gl_FragCoord.xy / vec2(textureSize(fyrox_sceneDepth, 0));
+                    float raw = texture(fyrox_sceneDepth, suv).r;
+                    float here = linearDepth(gl_FragCoord.z);
+                    float along = raw >= 1.0 ? 1.0e4 : max(linearDepth(raw) - here, 0.0) * dist / max(here, 1e-3);
+                    float bedDepth = along * max(v.y, 0.0);
 
-                    // the bed, seen through the water (shifted a little by the ripples)
-                    vec2 cp = p * 0.9 + n.xz * 0.6;
-                    float c1 = noise(cp + vec2(t * 0.35, t * 0.2));
-                    float c2 = noise(cp * 1.6 - vec2(t * 0.3, -t * 0.25));
-                    float caustic = pow(1.0 - abs(c1 - c2), 10.0);
-                    float see = 1.0 - smoothstep(0.0, properties.clarity.x, d);
-                    vec3 under = bed * mix(vec3(1.0), shallow * 1.25, smoothstep(0.0, 1.5, d)) + sun * caustic * 0.5;
-                    vec3 water = mix(mix(shallow, deep, deepness), under, see * see);
+                    vec3 shallow = lin(properties.shallowColor);
+                    vec3 deep = lin(properties.deepColor);
+                    vec3 sun = lin(properties.sunColor);
+                    vec3 bed = lin(properties.bedColor);
+                    vec3 l = normalize(properties.sunDir.xyz);
+
+                    // light absorbed on the way: red first, then green, then blue
+                    vec3 absorb = vec3(2.4, 0.62, 0.42) / max(properties.clarity.x, 0.05);
+                    vec3 T = exp(-absorb * along);
+                    vec3 scatter = mix(shallow, deep, smoothstep(0.0, properties.shape.x, bedDepth));
+                    // caustics: light focused by the waves dancing on the bed
+                    vec3 bedPos = worldPos - v * min(along, 50.0);
+                    vec2 cp = bedPos.xz * 0.8 + n.xz * 0.8;
+                    float c1 = noise(cp + vec2(t * 0.35, t * 0.20));
+                    float c2 = noise(cp * 1.7 - vec2(t * 0.30, -t * 0.25));
+                    float caustic = pow(1.0 - abs(c1 - c2), 9.0) * (1.0 - smoothstep(0.5, 5.0, bedDepth)) * near;
+                    // what is added on top of the ground, and how much ground shows
+                    // (assuming the ground is about bedColor where it tints)
+                    vec3 color = scatter * (1.0 - T) + bed * (T - vec3(T.r)) + bed * sun * caustic * 0.55 * T;
+                    float through = T.r;
 
                     // the sky reflected, more at low angles
-                    float fresnel = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
-                    vec3 sky = S_SRGBToLinear(properties.skyColor).rgb;
-                    vec3 color = mix(water, sky, fresnel * 0.8);
+                    vec3 r = reflect(-v, n);
+                    r.y = abs(r.y);
+                    vec3 sky = mix(lin(properties.skyColor), lin(properties.skyTopColor), smoothstep(0.0, 0.55, r.y));
+                    float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+                    color = color * (1.0 - fresnel) + sky * fresnel;
+                    through *= 1.0 - fresnel;
 
-                    // sun glints
-                    vec3 l = normalize(properties.sunDir.xyz);
-                    float spec = pow(max(dot(reflect(-l, n), v), 0.0), 400.0);
-                    color += sun * spec * 5.0;
+                    // sun glints and a softer sheen around them
+                    float sr = max(dot(r, l), 0.0);
+                    color += sun * (pow(sr, 700.0) * 7.0 + pow(sr, 60.0) * 0.18);
+                    // light shining through the wave crests towards the viewer
+                    float back = pow(max(dot(-v, l) * 0.5 + 0.5, 0.0), 3.0);
+                    color += shallow * sun * back * max(h0, 0.0) * 0.35 * (1.0 - through);
 
-                    // foam rolling in where the water is shallowest
-                    float edge = 1.0 - smoothstep(0.0, properties.shape.y, d);
-                    float rolls = 0.5 + 0.5 * sin(d * 7.0 - t * 2.2 + noise(p * 0.5) * 5.0);
-                    float bubbles = noise(p * 4.0 + vec2(t * 0.4, 0.0));
-                    float foam = edge * smoothstep(0.55, 0.9, rolls * 0.55 + bubbles * 0.55) + pow(edge, 3.0) * 0.5;
-                    // right at the waterline the water thins out to wet sand
-                    color = mix(color, vec3(1.0), clamp(foam, 0.0, 1.0));
-                    color = mix(bed * 0.85, color, smoothstep(0.0, 0.08, d));
+                    // foam: lace near the shore, lines of breaking waves rolling in,
+                    // and the edge of the surge as it runs up the sand
+                    float fw = max(properties.shape.y, 1e-3);
+                    float edge = 1.0 - smoothstep(0.0, fw, bedDepth);
+                    float l1 = noise(p * 0.9 + vec2(t * 0.25, 0.0));
+                    float l2 = noise(p * 1.6 - vec2(0.0, t * 0.2));
+                    float lace = smoothstep(0.55, 0.9, pow(1.0 - abs(l1 - l2), 4.0) + noise(p * 3.1) * 0.35);
+                    float rolls = fract(bedDepth * 0.9 + t * 0.22 + noise(p * 0.12) * 1.3);
+                    float lines = smoothstep(0.82, 0.96, rolls) * (1.0 - smoothstep(0.0, fw * 2.5, bedDepth));
+                    float runEdge = smoothstep(0.02, 0.12, rise) * (1.0 - smoothstep(0.0, fw * 0.35, bedDepth));
+                    float foam = edge * edge * 0.45 + edge * lace * 0.8 + lines * (0.45 + 0.55 * lace) + runEdge * lace;
+                    foam = clamp(foam, 0.0, 1.0) * step(1e-3, properties.shape.y);
+                    vec3 foamColor = sun * (0.82 + 0.18 * max(dot(n, l), 0.0)) + sky * 0.15;
+                    color = color * (1.0 - foam) + foamColor * foam;
+                    through *= 1.0 - foam;
 
                     if (properties.fogRange.y > properties.fogRange.x) {
                         float f = clamp((dist - properties.fogRange.x) / (properties.fogRange.y - properties.fogRange.x), 0.0, 1.0);
-                        color = mix(color, S_SRGBToLinear(properties.fogColor).rgb, f);
+                        color = color * (1.0 - f) + lin(properties.fogColor) * f;
+                        through *= 1.0 - f;
                     }
-                    FragColor = vec4(color, 1.0);
+                    FragColor = vec4(color, 1.0 - through);
                 }
             "#,
         )

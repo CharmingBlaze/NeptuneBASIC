@@ -133,6 +133,9 @@ pub struct Entity {
     pub ragdoll: Option<crate::ragdoll::RagdollState>,
     /// (ext) `EntityShader` custom material
     pub shader: Option<Box<crate::shader::CustomMaterial>>,
+    /// Inside an `EntityBatch` drawn in the forward pass: standard materials
+    /// would be unlit there, so the classic material is used instead.
+    pub batch_forward: bool,
 }
 
 /// Program-visible state that persists across frames.
@@ -689,6 +692,7 @@ impl<'a> Host3D<'a> {
             lod: Vec::new(),
             emitter: None,
             shader: None,
+            batch_forward: false,
             ragdoll: None,
         };
         let id = match self.world.free.pop() {

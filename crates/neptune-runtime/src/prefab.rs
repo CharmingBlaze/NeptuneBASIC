@@ -84,6 +84,19 @@ impl Host3D<'_> {
         // the batches are drawn in the parent's pass: forward when anything
         // inside uses a forward material (the classic material, fog)
         let forward = graph.traverse_iter(node).any(|(_, n)| n.cast::<Mesh>().is_some_and(|m| m.render_path() == RenderPath::Forward));
+        // Fyrox's standard material is unlit in the forward pass, so in a
+        // forward batch the entities that use it switch to the classic one
+        let mut stack = vec![e];
+        while let Some(id) = stack.pop() {
+            let want = forward && mode != 0 && id != e;
+            let ent = self.ent_mut(id)?;
+            stack.extend(ent.children.iter().map(|c| *c as i32));
+            if ent.batch_forward != want {
+                ent.batch_forward = want;
+                self.refresh_material(id)?;
+            }
+        }
+        let graph = self.graph()?;
         let mesh = graph[node].cast_mut::<Mesh>().expect("checked above");
         mesh.set_render_path(if forward { RenderPath::Forward } else { RenderPath::Deferred });
         // turning it off first throws away an older bake

@@ -4,6 +4,36 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Better terrain and water
+
+* **Terrain shader** – `LoadShader("builtin:terrain")` draws a terrain per
+  pixel: grass with dry patches, layered and cracked rock on the slopes,
+  rippled sand that darkens and shines where the sea wets it, and snow,
+  with detail close up that fades with distance. It uses height and slope,
+  or the painted layer weights. It is drawn in the deferred pass, so the
+  terrain is lit like everything else and trees cast shadows on it.
+* **See-through water** – the example water shader
+  (`examples/media/water.shader`) now reads the depth of the ground behind
+  it: the real sea bed shows through, tinted turquoise in the shallows and
+  fading to deep blue, with caustics on the bed, a gradient sky
+  reflection, light through the wave crests, foam lace and breaking lines
+  at the shore, and a surge that runs up the beach and draws back.
+* **Fog that keeps shadows** – the island and beach demos use the
+  post-process fog (`builtin:fog`) instead of `CameraFogMode`, so trees and
+  rocks keep PBR lighting and shadows. The fog effect gained `skyFog` (0
+  leaves the sky alone) and `skyHorizon` (the sky near the horizon fades
+  into the fog, so the sea meets the sky without a line).
+* **Depth for post effects** – `nb_depthTexture` now includes surfaces
+  drawn in the forward pass (water, blended and classic materials), so
+  fog, depth of field and other depth effects no longer look through them.
+* **Batches with mixed materials** – when an `EntityBatch` has to be drawn
+  in the forward pass, its standard-material children use the classic
+  material instead of being drawn unlit.
+* **Demos** – the island and beach use all of this, with brighter exposure
+  and a sea that reaches the horizon. Measured with `neptune bench`: island
+  about 59 fps (was 78), beach about 104 fps (was 123); the difference is
+  the lighting and shadows the scenery now gets.
+
 ## Shaders, materials and post-processing
 
 A shader system: programs write, load, compile, change and apply GPU

@@ -2,8 +2,9 @@
 ; rippled sand, palm trees, rocks and grass.
 ; Run from the repository root: neptune run examples/beach.nb
 ; WASD walk, mouse or arrows look, Shift run, F fly, 1-4 quality, Esc quit.
-; The water is a custom shader (examples/media/water.shader); everything
-; else is made by the program from primitives and generated textures.
+; The water is a custom shader (examples/media/water.shader), the sand and
+; grass the built-in terrain shader; everything else is made by the
+; program from primitives and generated textures.
 
 Graphics3D 1280, 720
 AppTitle "NeptuneBASIC - Beach"
@@ -34,11 +35,19 @@ SetBuffer BackBuffer()
 SkyBox sky
 
 cam = CreateCamera()
-CameraRange cam, 0.2, 4000
+CameraRange cam, 0.2, 6500
+; a little more exposure: the tone mapping keeps bright sand and foam from looking grey
+CameraExposure cam, 0, 1.35
 CameraClsColor cam, 214, 228, 240
-CameraFogMode cam, 1
-CameraFogColor cam, 214, 228, 240
-CameraFogRange cam, 250, 2000
+; haze as a post-process effect: it fogs what is drawn by its distance and
+; leaves the sky alone, and everything keeps its shadows
+haze = LoadPostProcess("builtin:fog")
+AddPostProcess haze, cam
+SetPostProcessParameter haze, "color", "0.855, 0.918, 0.973"
+SetPostProcessParameter haze, "density", "0.0009"
+SetPostProcessParameter haze, "heightFalloff", "0.002"
+SetPostProcessParameter haze, "skyFog", "0"
+SetPostProcessParameter haze, "skyHorizon", "0.08"
 
 sun = CreateLight(1)
 RotateEntity sun, 48, -35, 0
@@ -96,37 +105,6 @@ Function Shore#(z#)
 End Function
 
 ; ---- textures ------------------------------------------------------------
-; rippled sand: wavy stripes, lighter crests
-Function SandTexture(r, g, b, contrast#)
-    t = CreateTexture(128, 128)
-    SetBuffer TextureBuffer(t)
-    For y = 0 To 127
-        For x = 0 To 127
-            wobble# = Octave(1, x / 128.0, y / 128.0) * 40 + Octave(3, x / 128.0, y / 128.0) * 8
-            k# = Sin(y * 22.5 + wobble * 9) * contrast + Rnd(-4, 4)
-            WritePixel x, y, $FF000000 Or (Int(r + k) Shl 16) Or (Int(g + k) Shl 8) Or Int(b + k * 0.8)
-        Next
-    Next
-    SetBuffer BackBuffer()
-    ScaleTexture t, 2, 2
-    Return t
-End Function
-
-Function Speckles(r, g, b, spread, size#)
-    t = CreateTexture(64, 64)
-    SetBuffer TextureBuffer(t)
-    ClsColor r, g, b
-    Cls
-    For i = 1 To 900
-        k = Rand(-spread, spread)
-        Color r + k, g + k * 1.2, b + k * 0.5
-        Rect Rand(0, 63), Rand(0, 63), Rand(1, 2), Rand(1, 4)
-    Next
-    SetBuffer BackBuffer()
-    ScaleTexture t, size, size
-    Return t
-End Function
-
 ; fluffy clouds: tiling noise turned into soft white shapes
 Function CloudTexture()
     t = CreateTexture(128, 128, 1 + 2)
@@ -177,21 +155,30 @@ For i = 0 To GRID
         ModifyTerrain ground, i, j, m / TALL
     Next
 Next
-TerrainLayer ground, Speckles(92, 148, 50, 18, 0.5), 0          ; grass
-TerrainLayer ground, SandTexture(238, 222, 182, 7), 1            ; dry sand
-TerrainLayer ground, SandTexture(206, 184, 138, 5), 2            ; wet sand
-TerrainLayer ground, Speckles(126, 110, 82, 16, 0.5), 3          ; earth
+; paint the layers: grass underneath, layer 1 earth patches in the grass,
+; layer 2 sand along the shore. The terrain shader (builtin:terrain) draws
+; them per pixel: rippled sand, darker and glossy where the sea wets it,
+; grass with dry patches, and bare earth
 For i = 0 To GRID
     For j = 0 To GRID
         u# = LEFT + i * CELL - Shore(SOUTH + j * CELL)
         ragged# = (Octave(3, i / 128.0, j / 128.0) - 0.5) * 6
         low# = 1 - SmoothStep(SEA + 1.2, SEA + 2.2, hgt(i, j) * TALL)
-        ModifyTerrainLayer ground, i, j, 1, Max(1 - SmoothStep(19, 24, u + ragged), low)
-        ModifyTerrainLayer ground, i, j, 2, 1 - SmoothStep(0.5, 3.5, u)
-        ModifyTerrainLayer ground, i, j, 3, SmoothStep(0.55, 0.8, Octave(2, i / 128.0 + 0.3, j / 128.0)) * SmoothStep(24, 30, u) * 0.7
+        ModifyTerrainLayer ground, i, j, 1, SmoothStep(0.55, 0.8, Octave(2, i / 128.0 + 0.3, j / 128.0)) * SmoothStep(24, 30, u) * 0.7
+        ModifyTerrainLayer ground, i, j, 2, Max(1 - SmoothStep(19, 24, u + ragged), low)
     Next
 Next
 EntityPickMode ground, 2
+land = LoadShader("builtin:terrain")
+EntityShader ground, land
+ShaderFloat ground, "painted", 1
+ShaderFloat ground, "seaLevel", SEA
+ShaderVector ground, "sandColor", 0.93, 0.87, 0.71
+ShaderVector ground, "grassColor", 0.36, 0.56, 0.20
+ShaderVector ground, "dryGrassColor", 0.52, 0.58, 0.26
+ShaderVector ground, "rockColor", 0.52, 0.44, 0.33       ; layer 1 is earth here
+ShaderVector ground, "rockColor2", 0.45, 0.37, 0.27
+ShaderFloat ground, "bumpStrength", 0.4
 
 ; ---- the sea: a custom shader on a fine grid near the shore and a coarse
 ; ring around it out to the horizon; every vertex knows the depth below it
@@ -252,16 +239,16 @@ sunY# = -TFormedY()
 sunZ# = -TFormedZ()
 For k = 0 To 1
     If k = 0 Then w = near Else w = far
+    ; the water sees the sand through the depth buffer; the haze fogs it
     EntityShader w, shader
     ShaderVector w, "sunDir", sunX, sunY, sunZ, 0
-    ShaderVector w, "fogColor", 214 / 255.0, 228 / 255.0, 240 / 255.0, 1
-    ShaderVector w, "fogRange", 250, 2000, 0, 0
-    ShaderVector w, "skyColor", 0.72, 0.84, 0.95, 1
-    ShaderVector w, "shape", 5, 0.7, 1, 0.12
-    ShaderVector w, "shallowColor", 0.16, 0.86, 0.82, 1
-    ShaderVector w, "deepColor", 0.04, 0.36, 0.62, 1
-    ShaderVector w, "clarity", 3.5, 0, 0, 0
-    ShaderVector w, "bedColor", 0.85, 0.77, 0.58, 1
+    ShaderVector w, "skyColor", 0.80, 0.88, 0.95, 1
+    ShaderVector w, "skyTopColor", 0.40, 0.64, 0.92, 1
+    ShaderVector w, "shape", 6, 0.45, 1, 0.12
+    ShaderVector w, "shallowColor", 0.14, 0.80, 0.78, 1
+    ShaderVector w, "deepColor", 0.03, 0.30, 0.56, 1
+    ShaderVector w, "clarity", 7, 0.2, 7, 1
+    ShaderVector w, "bedColor", 0.93, 0.87, 0.71, 1
 Next
 
 ; ---- clouds: a high, drifting layer that fades into the haze
@@ -381,7 +368,6 @@ End Function
 Function Rock(r, g, b)
     m = CreateSphere(4)
     EntityColor m, r, g, b
-    EntityFX m, 4             ; flat shading: a low-poly boulder
     Return CreatePrefab(m)
 End Function
 
@@ -392,8 +378,8 @@ palms(2) = Palm(frond, 8, 9)
 spiky = Spiky(frond)
 bush = Bush()
 tuft = Tuft()
-rock = Rock(96, 96, 94)
-pebble = Rock(70, 70, 70)
+rock = Rock(150, 146, 140)
+pebble = Rock(120, 116, 110)
 
 ; palms along the top of the beach, leaning out towards the sea
 For i = 1 To 26

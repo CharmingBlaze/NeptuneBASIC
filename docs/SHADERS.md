@@ -249,6 +249,28 @@ change with the `ShaderSet*` commands: `LoadShader("builtin:<name>")`.
 | `matcap`, `flat`, `ps1`, `pixelart`, `vertexlit`, `posterize`, `handpainted` | stylized looks | |
 | `wind` | swaying foliage | `windDirection`, `windStrength`, `windSpeed` |
 | `displace` | vertex displacement by height map and waves | `heightMap`, `amount`, `frequency` |
+| `terrain` | per-pixel grass, rock, sand and snow for terrains (deferred: lit with shadows) | see below |
+
+`builtin:terrain` draws a terrain made with `CreateTerrain` (any mesh
+works). It chooses rock by slope, sand near `seaLevel` and snow above
+`snowHeight`, or with `painted` set to 1 it uses the weights painted with
+`PaintTerrain` / `ModifyTerrainLayer` (layer 1 rock, 2 sand, 3 snow). Grass
+gets dry patches, rock gets layers and cracks, sand gets ripples and turns
+darker and glossy just above `seaLevel`, and small detail fades out with
+distance. Colours (sRGB 0-1): `grassColor`, `dryGrassColor`, `rockColor`,
+`rockColor2`, `sandColor`, `snowColor`; also `sandHeight`, `rockSlope`
+(start and full, as 1 - normal height), `detail`, `bumpStrength`, and
+optional textures `grassMap`, `rockMap` (mapped from three sides),
+`sandMap`, `snowMap` with `mapScale`. Camera fog (`CameraFogMode`) is
+applied; post-process fog works too and keeps PBR lighting on everything
+else.
+
+```basic
+land = LoadShader("builtin:terrain")
+EntityShader ground, land
+ShaderFloat ground, "seaLevel", 48
+ShaderFloat ground, "snowHeight", 130
+```
 
 `ShaderGetSource(shader, 0)` shows the source of any of them: they are
 written in exactly the language described below, so they make good
@@ -660,7 +682,7 @@ Built-in effects and their parameters (`SetPostProcessParameter`):
 | `motionblur` | `amount` (camera motion) |
 | `ssr` | `intensity`, `maxDistance`, `thickness` |
 | `ssao` | `radius`, `intensity` |
-| `fog` | `density`, `color`, `heightFalloff`, `start` |
+| `fog` | `density`, `color`, `heightFalloff`, `start`, `skyFog` (0 leaves the sky alone), `skyHorizon` (with `skyFog` 0: how high above the horizon the sky still fades into the fog) |
 | `underwater` | `waterLevel`, `color`, `density`, `distortion` |
 | `rain`, `snow` | `amount`, `speed` (`size` for snow) |
 | `invert` | |
@@ -690,7 +712,8 @@ or with `CreatePostProcess(source$)`. An effect reads:
 |---|---|
 | `nb_screenTexture` | the image so far |
 | `nb_originalTexture` | the scene before any effect |
-| `nb_depthTexture`, `nb_normalTexture` | depth and world normals (G-buffer) |
+| `nb_depthTexture` | depth of everything drawn, forward-drawn surfaces (water, blended and classic materials) included |
+| `nb_normalTexture` | world normals (G-buffer: deferred surfaces only) |
 | `nb_resolution`, `nb_time` | |
 | `nb_cameraPos`, `nb_clip` (near, far), `nb_invViewProj`, `nb_prevViewProj` | camera, for depth effects and motion blur |
 | `nb_texel()`, `nb_luma(c)`, `nb_linearDepth(uv)`, `nb_worldPosAt(uv)`, `nb_normalAt(uv)` | helpers |

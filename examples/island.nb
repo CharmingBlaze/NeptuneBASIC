@@ -4,9 +4,9 @@
 ; The camera circles the island. O lands you on the beach to walk:
 ; WASD move, mouse or arrows look, Shift run, F fly, O back to orbiting,
 ; 1-4 quality, Esc quit. Everything is made by the program: the island from
-; noise worn down by simulated rain (ErodeTerrain), the textures from
-; speckles, the trees from cones and spheres. The water is a custom shader
-; (examples/media/water.shader).
+; noise worn down by simulated rain (ErodeTerrain), the trees from cones and
+; spheres. The ground is drawn by the built-in terrain shader, the water by
+; a custom shader that sees the sea bed (examples/media/water.shader).
 
 Graphics3D 1280, 720
 AppTitle "NeptuneBASIC - Island"
@@ -37,11 +37,21 @@ SetBuffer BackBuffer()
 SkyBox sky
 
 cam = CreateCamera()
-CameraRange cam, 0.3, 2200
+CameraRange cam, 0.3, 6500
+; a little more exposure: the tone mapping keeps bright sand and foam from looking grey
+CameraExposure cam, 0, 1.35
 CameraClsColor cam, 196, 218, 236
-CameraFogMode cam, 1
-CameraFogColor cam, 196, 218, 236
-CameraFogRange cam, 300, 1400
+
+; haze as a post-process effect: it fogs whatever is drawn by its distance and
+; height and leaves the sky alone, and the trees keep their shadows (Blitz-style
+; CameraFogMode would switch everything to the fixed-function look)
+haze = LoadPostProcess("builtin:fog")
+AddPostProcess haze, cam
+SetPostProcessParameter haze, "color", "0.816, 0.910, 0.988"
+SetPostProcessParameter haze, "density", "0.0011"
+SetPostProcessParameter haze, "heightFalloff", "0.002"
+SetPostProcessParameter haze, "skyFog", "0"
+SetPostProcessParameter haze, "skyHorizon", "0.12"
 
 sun = CreateLight(1)
 RotateEntity sun, 42, 30, 0
@@ -49,6 +59,7 @@ LightColor sun, 255, 240, 214
 LightShadows sun, True
 AmbientLight 96, 104, 116
 GraphicsQuality QUALITY_HIGH
+SetShadowDistance 700
 
 ; ---- the island's shape: a round coast broken up by noise, a peak in the middle
 Dim noise#(3, 129, 129)
@@ -123,26 +134,10 @@ For x = 0 To GRID
     Next
 Next
 
-; ---- textures, and painting by height and slope -----------------------
-Function Speckles(r, g, b, spread)
-    t = CreateTexture(64, 64)
-    SetBuffer TextureBuffer(t)
-    ClsColor r, g, b
-    Cls
-    For i = 1 To 700
-        k = Rand(-spread, spread)
-        Color r + k, g + k, b + k
-        Rect Rand(0, 63), Rand(0, 63), Rand(1, 3), Rand(1, 3)
-    Next
-    SetBuffer BackBuffer()
-    ScaleTexture t, 0.25, 0.25   ; four repeats per terrain square
-    Return t
-End Function
-
-TerrainLayer ground, Speckles(96, 120, 56, 16), 0     ; grass
-TerrainLayer ground, Speckles(138, 120, 98, 24), 1    ; rock
-TerrainLayer ground, Speckles(214, 200, 160, 12), 2   ; sand
-TerrainLayer ground, Speckles(242, 246, 250, 6), 3    ; snow, and surf at the waterline
+; ---- painting by height and slope: grass underneath, then layer 1 rock,
+; 2 sand and 3 snow. The terrain shader (builtin:terrain) draws the layers
+; per pixel: grass with dry patches, layered rock, rippled sand that is darker
+; where wet, and snow; the trees are planted by the same weights
 For x = 0 To GRID
     For z = 0 To GRID
         metres# = hgt(x, z) * TALL
@@ -153,13 +148,16 @@ For x = 0 To GRID
         ; rise over run
         slope# = Sqr((hgt(x1, z) - hgt(x0, z)) ^ 2 + (hgt(x, z1) - hgt(x, z0)) ^ 2) * TALL / (2 * CELL)
         rock# = SmoothStep(0.55, 0.95, slope)
-        surf# = SmoothStep(SEA - 1.6, SEA - 0.4, metres) * (1 - SmoothStep(SEA + 0.1, SEA + 0.9, metres))
         ModifyTerrainLayer ground, x, z, 1, rock
         ModifyTerrainLayer ground, x, z, 2, 1 - SmoothStep(SEA + 1.5, SEA + 4, metres)
-        ModifyTerrainLayer ground, x, z, 3, surf * 0.85 + SmoothStep(128, 140, metres) * (1 - rock * 0.5)
+        ModifyTerrainLayer ground, x, z, 3, SmoothStep(128, 140, metres) * (1 - rock * 0.5)
     Next
 Next
 TerrainDetail ground, 90000
+land = LoadShader("builtin:terrain")
+EntityShader ground, land
+ShaderFloat ground, "painted", 1
+ShaderFloat ground, "seaLevel", SEA
 
 ; ---- the sea: the water shader on a grid over the island (every vertex
 ; knows the depth below it) and a ring around it out to the horizon
@@ -209,16 +207,17 @@ sunY# = -TFormedY()
 sunZ# = -TFormedZ()
 For k = 0 To 1
     If k = 0 Then w = water Else w = ocean
+    ; the water sees the ground through the depth buffer; the haze effect
+    ; fogs it, so its own fog stays off
     EntityShader w, shader
     ShaderVector w, "sunDir", sunX, sunY, sunZ, 0
-    ShaderVector w, "fogColor", 196 / 255.0, 218 / 255.0, 236 / 255.0, 1
-    ShaderVector w, "fogRange", 300, 1400, 0, 0
-    ShaderVector w, "skyColor", 0.70, 0.82, 0.93, 1
-    ShaderVector w, "shallowColor", 0.14, 0.78, 0.78, 1
-    ShaderVector w, "deepColor", 0.08, 0.26, 0.52, 1
-    ShaderVector w, "bedColor", 0.84, 0.78, 0.6, 1
-    ShaderVector w, "shape", 8, 1.0, 0.8, 0.2
-    ShaderVector w, "clarity", 4, 0, 0, 0
+    ShaderVector w, "skyColor", 0.77, 0.86, 0.93, 1
+    ShaderVector w, "skyTopColor", 0.50, 0.70, 0.87, 1
+    ShaderVector w, "shallowColor", 0.12, 0.70, 0.70, 1
+    ShaderVector w, "deepColor", 0.04, 0.20, 0.42, 1
+    ShaderVector w, "bedColor", 0.87, 0.80, 0.63, 1
+    ShaderVector w, "shape", 9, 1.1, 0.8, 0.2
+    ShaderVector w, "clarity", 6, 0.22, 7, 1
 Next
 
 ; ---- clouds: a high, drifting layer that fades into the haze
@@ -367,13 +366,14 @@ palmKind(2) = Palm(frond, 8, 9)
 tuft = Tuft()
 
 boulder = CreateSphere(4)
-EntityColor boulder, 120, 112, 100
-EntityFX boulder, 4            ; flat shading: a low-poly boulder
+EntityColor boulder, 156, 148, 136
 stone = CreatePrefab(boulder)
 
-; everything planted goes under one mesh that is drawn in a few batches
-; (EntityBatch), so thousands of copies stay fast
+; everything planted goes under two meshes that are each drawn in a few
+; batches (EntityBatch), so thousands of copies stay fast: the trees and
+; rocks, lit with shadows, and the two-sided palms and grass
 scenery = CreateMesh()
+foliage = CreateMesh()
 
 ; forests where the forest noise is high (clearings elsewhere), on grass,
 ; below the snow; pines higher up, oaks lower down
@@ -406,7 +406,7 @@ For tries = 1 To 6000
     tz# = Rnd(-half, half)
     ty# = TerrainY(ground, tx, 0, tz)
     If ty > SEA + 1.5 And ty < SEA + 8 And TerrainLayerWeight(ground, 2, tx, tz) > 0.3 And palms < 160
-        p = InstancePrefab(palmKind(Rand(0, 2)), scenery)
+        p = InstancePrefab(palmKind(Rand(0, 2)), foliage)
         PositionEntity p, tx, ty - 0.2, tz
         TurnEntity p, 0, Rnd(360), 0
         s# = Rnd(0.8, 1.2)
@@ -421,7 +421,7 @@ For tries = 1 To 40000
     tz# = Rnd(-half, half)
     ty# = TerrainY(ground, tx, 0, tz)
     If ty > SEA + 3 And ty < 120 And TerrainLayerWeight(ground, 0, tx, tz) > 0.75
-        p = InstancePrefab(tuft, scenery)
+        p = InstancePrefab(tuft, foliage)
         PositionEntity p, tx, ty, tz
         TurnEntity p, 0, Rnd(360), 0
         s# = Rnd(0.9, 1.8)
@@ -451,6 +451,7 @@ For i = 1 To 400
     EndIf
 Next
 EntityBatch scenery, 1
+EntityBatch foliage, 1
 
 ; ---- where walking starts: on the south beach --------------------------
 sx# = 0

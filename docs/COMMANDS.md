@@ -5913,7 +5913,7 @@ Returns 1 if nothing pickable as an obscurer blocks the line between src_entity 
 
 `EntityBatch entity%, [mode%=1]`
 
-**(ext)** Draws the children of mesh entity (one made with CreateMesh) merged into a few batches, one per material, instead of one by one: much faster for forests, rocks and other scenery made of many copies. Mode 1 bakes them where they are now (call again after adding or moving children), 2 merges them every frame so they can move, 0 turns batching off.
+**(ext)** Draws the children of mesh entity (one made with CreateMesh) merged into a few batches, one per material, instead of one by one: much faster for forests, rocks and other scenery made of many copies. Mode 1 bakes them where they are now (call again after adding or moving children), 2 merges them every frame so they can move, 0 turns batching off. A batch is drawn in one pass: if any child needs the forward pass (EntityFX, blending), all of them are drawn with the fixed-function-style material, so keep such children in a batch of their own to keep PBR lighting and received shadows on the rest.
 
 ### InstancePrefab
 

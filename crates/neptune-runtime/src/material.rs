@@ -39,7 +39,7 @@ impl Host3D<'_> {
     /// Does this entity need the classic material?
     fn needs_classic(&self, id: i32) -> Result<bool, String> {
         let e = self.ent(id)?;
-        if e.fx != 0 || e.blend != BLEND_ALPHA || e.shininess > 0.0 || e.color.a < 255 || e.order != 0 || e.mirror.is_some() {
+        if e.fx != 0 || e.blend != BLEND_ALPHA || e.shininess > 0.0 || e.color.a < 255 || e.order != 0 || e.mirror.is_some() || e.batch_forward {
             return Ok(true);
         }
         if self.world.classic.fog_mode != 0 || self.has_painted_surfaces(id) {
