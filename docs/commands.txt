@@ -891,6 +891,13 @@ BehaviorResult: (ext) Tells entity's behaviour that the current action finished:
 
 # Rendering effects
 CreateDecal: (ext) Creates a decal that projects texture onto the scene inside its box (size it with ScaleEntity) and returns its handle; parent is optional.
+CreateReflectionProbe: (ext) Creates a reflection probe and returns its handle: it takes a picture of the scene in all directions (resolution pixels square per face, default 256), and while the camera is inside its box (one unit across, size it with ScaleEntity) shiny PBR surfaces reflect that picture and are lit by it. The picture is taken once, on the next frame; parent is optional.
+ProbeRange: (ext) Sets the nearest and farthest distances probe sees (default 0.1 to 1000); nearer limits draw faster.
+ProbeMode: (ext) Sets when probe takes its picture: mode 0 once (UpdateProbe takes it again), 1 every frame (for moving things; draws the scene six more times).
+UpdateProbe: (ext) Makes probe take its picture again on the next frame, after the scene around it changed.
+ProbeOffset: (ext) Moves the point the probe takes its picture from by x, y, z (world directions) away from the probe's position, without moving its box.
+ProbeTexture: (ext) Returns the picture of probe as a cube map texture for custom shaders (ShaderTexture, ShaderSetCubeMap). An entity given it with ShaderTexture is left out of the probes' pictures.
+EnvironmentLighting: (ext) Chooses where ambient light and reflections come from: mode 0 the AmbientLight colour (the default, as in Blitz3D: no reflections), 1 the sky box, or the reflection probe around the camera, so shiny surfaces reflect it; brightness scales it. CreateReflectionProbe switches to 1.
 CreateEmitter: (ext) Creates a particle emitter using texture for the particles and returns its handle; parent is optional.
 EmitterRate: (ext) Sets how many particles emitter makes per_second.
 EmitterMax: (ext) Limits emitter to count particles alive at once; 0 means no limit.

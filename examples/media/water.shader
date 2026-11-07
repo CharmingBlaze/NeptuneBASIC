@@ -23,6 +23,8 @@
 
     resources: [
         (name: "fyrox_sceneDepth", kind: Texture(kind: Sampler2D, fallback: White), binding: 0),
+        // optional: a reflection probe's picture (ShaderTexture sea, "envMap", ProbeTexture(probe))
+        (name: "envMap", kind: Texture(kind: SamplerCube, fallback: White), binding: 1),
         (
             name: "properties",
             kind: PropertyGroup([
@@ -47,6 +49,8 @@
                 // how far you can see through the water (metres), surge height,
                 // seconds between surges, ripple size
                 (name: "clarity", kind: Vector4(value: (5.0, 0.18, 7.0, 1.0))),
+                // how much of envMap is reflected instead of the sky colours (0-1)
+                (name: "reflection", kind: Float(value: 0.0)),
             ]),
             binding: 0
         ),
@@ -198,6 +202,9 @@
                     vec3 r = reflect(-v, n);
                     r.y = abs(r.y);
                     vec3 sky = mix(lin(properties.skyColor), lin(properties.skyTopColor), smoothstep(0.0, 0.55, r.y));
+                    if (properties.reflection > 0.0) {
+                        sky = mix(sky, S_SRGBToLinear(texture(envMap, r)).rgb, properties.reflection);
+                    }
                     float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
                     color = color * (1.0 - fresnel) + sky * fresnel;
                     through *= 1.0 - fresnel;

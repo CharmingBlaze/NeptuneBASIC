@@ -4,6 +4,29 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Reflection probes
+
+* **Probes** – `CreateReflectionProbe` takes a picture of the scene in all
+  directions from its centre. While the camera is inside the probe's box
+  (sized with `ScaleEntity`), shiny PBR surfaces reflect that picture and
+  are lit by it, so a chrome ball shows the room around it instead of
+  only the sky. The picture is taken once (`UpdateProbe` takes it again)
+  or every frame (`ProbeMode`) for moving things; `ProbeRange` and
+  `ProbeOffset` set what it sees and where from.
+* **For shaders** – `ProbeTexture` gives the picture as a cube map for
+  custom shaders. The example water shader can reflect it (`envMap`,
+  `reflection`). An entity given it is left out of the probes' pictures,
+  so it never draws into the picture it reads.
+* **Environment lighting** – `EnvironmentLighting` chooses between the
+  flat `AmbientLight` colour (the Blitz3D default, which has no
+  reflections) and light and reflections from the sky box or the probe
+  around the camera. Before, NeptuneBASIC always used the flat colour, so
+  metal never reflected anything; creating a probe switches it on.
+* **Fixes** – post-process effects no longer run on the probes' pictures,
+  and when the camera moves into or out of a probe's box the lighting is
+  worked out again (Fyrox only did that when a probe took a picture).
+* **Example** – `examples/probes.nb`.
+
 ## Clean clippy
 
 * **Code** – `cargo clippy --all-targets` reports no warnings again. Small

@@ -660,6 +660,10 @@ impl PostPass {
 
     fn run(&mut self, ctx: &mut SceneRenderPassContext, hdr: bool) -> Result<RenderPassStatistics, FrameworkError> {
         let mut stats = RenderPassStatistics::default();
+        // effects are for the screen, not the pictures reflection probes take
+        if ctx.observer.reflection_probe_data.is_some() {
+            return Ok(stats);
+        }
         let cam = ctx.observer.handle;
         let frame = self.frame.clone();
         let frame = frame.borrow();

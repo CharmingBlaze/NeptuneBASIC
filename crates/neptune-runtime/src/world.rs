@@ -207,6 +207,10 @@ pub struct World {
     pub failed_textures: std::collections::HashSet<i32>,
     /// Cameras drawing into textures (`CameraToTexture`).
     pub texture_cameras: Vec<crate::camerafx::TextureCamera>,
+    /// The reflection probe around each drawing camera at the last render,
+    /// per scene
+    /// (see `probe.rs`).
+    pub probes_around_cameras: std::collections::HashMap<usize, Vec<Option<Handle<Node>>>>,
     /// (ext) 2D physics: bodies, joints, pixels per metre, per-body
     /// (friction, bounce, density, sensor), the last ray hit.
     pub bodies2d: Vec<Option<crate::physics2d::Body2D>>,
@@ -368,6 +372,7 @@ impl Default for World {
             anims2d: Vec::new(),
             ui: Default::default(),
             texture_cameras: Vec::new(),
+            probes_around_cameras: Default::default(),
             graded_cameras: Default::default(),
             gamma: Default::default(),
             gamma_dirty: false,

@@ -1484,6 +1484,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.in_each_scene(|h| {
             before_render(h, tween)?;
             h.retune_emitters(h.world.update_dt)?;
+            h.watch_probes()?;
             h.flush_meshes()?;
             h.face_sprites()
         })?;
@@ -1793,6 +1794,29 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     // ---- sprites
     // (ext) decals and particle emitters
     ("%CreateDecal%texture=0%parent=0", |h, a, _| int(crate::decal::create(h, a[0].int(), a[1].int())?)),
+    // (ext) reflection probes (see probe.rs)
+    ("%CreateReflectionProbe%resolution=256%parent=0", |h, a, _| int(crate::probe::create(h, a[0].int(), a[1].int())?)),
+    ("ProbeRange%probe#near#far", |h, a, _| {
+        h.probe_range(a[0].int(), a[1].float(), a[2].float())?;
+        VOID
+    }),
+    ("ProbeMode%probe%mode", |h, a, _| {
+        h.probe_mode(a[0].int(), a[1].int())?;
+        VOID
+    }),
+    ("UpdateProbe%probe", |h, a, _| {
+        h.update_probe(a[0].int())?;
+        VOID
+    }),
+    ("ProbeOffset%probe#x#y#z", |h, a, _| {
+        h.probe_offset(a[0].int(), a[1].float(), a[2].float(), a[3].float())?;
+        VOID
+    }),
+    ("%ProbeTexture%probe", |h, a, _| int(h.probe_texture(a[0].int())?)),
+    ("EnvironmentLighting%mode#brightness=1", |h, a, _| {
+        h.environment_lighting(a[0].int(), a[1].float())?;
+        VOID
+    }),
     ("%CreateEmitter%texture=0%parent=0", |h, a, _| int(crate::particles::create(h, a[0].int(), a[1].int())?)),
     ("EmitterRate%emitter#per_second", |h, a, _| emitter(h, a[0].int(), |s| s.rate = a[1].float().max(0.0).round() as u32)),
     ("EmitterMax%emitter%count", |h, a, _| emitter(h, a[0].int(), |s| s.max = (a[1].int() > 0).then_some(a[1].int() as u32))),
@@ -2606,6 +2630,10 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("ShaderTexture%entity$name%texture", |h, a, _| {
         h.texture(a[2].int())?;
         h.set_shader_prop(a[0].int(), &a[1].str(), crate::shader::Prop::Texture(a[2].int()))?;
+        // it must not draw into the picture it reads
+        if h.is_probe_texture(a[2].int()) {
+            h.hide_from_probes(a[0].int())?;
+        }
         VOID
     }),
     ("EntityNormalMap%entity%texture", |h, a, _| {

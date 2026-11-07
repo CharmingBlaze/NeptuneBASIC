@@ -1,0 +1,130 @@
+; Reflection probes: shiny metal reflects the courtyard around it.
+; Run from the repository root: neptune run examples/probes.nb
+; Space: probe on / off   M: update once / every frame   Esc: quit
+; A reflection probe takes a picture of the scene in all directions from
+; its centre. While the camera is inside the probe's box, every PBR surface
+; reflects that picture (and is lit by it) instead of only the sky.
+
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Reflection probes"
+
+; a sky to reflect when there is no probe
+sky = CreateTexture(64, 64, 1 + 128)
+For face = 0 To 5
+    SetCubeFace sky, face
+    SetBuffer TextureBuffer(sky)
+    For y = 0 To 63
+        t# = y / 63.0
+        If face = 4 Then t = 0
+        If face = 5 Then t = 1
+        Color 90 + t * 120, 140 + t * 90, 220 + t * 30
+        Rect 0, y, 64, 1
+    Next
+Next
+SetBuffer BackBuffer()
+SkyBox sky
+
+cam = CreateCamera()
+CameraRange cam, 0.1, 500
+
+sun = CreateLight(1)
+RotateEntity sun, 50, 30, 0
+LightShadows sun, True
+AmbientLight 70, 70, 80
+GraphicsQuality QUALITY_HIGH
+
+; the courtyard: a checked floor and coloured walls and pillars
+floor = CreateCube()
+ScaleEntity floor, 20, 0.2, 20
+PositionEntity floor, 0, -0.2, 0
+checks = LoadTexture("examples/media/checker.png")
+If checks Then EntityTexture floor, checks : ScaleTexture checks, 0.1, 0.1
+
+For k = 0 To 3
+    w = CreateCube()
+    ScaleEntity w, 20, 4, 0.5
+    If k = 0 Then EntityColor w, 220, 70, 60
+    If k = 1 Then EntityColor w, 60, 170, 90
+    If k = 2 Then EntityColor w, 60, 110, 220
+    If k = 3 Then EntityColor w, 235, 190, 60
+    ; one wall on each side
+    PositionEntity w, Sin(k * 90) * -20, 4, Cos(k * 90) * 20
+    RotateEntity w, 0, k * 90, 0
+Next
+For k = 0 To 7
+    p = CreateCylinder(16)
+    ScaleEntity p, 0.8, 3, 0.8
+    PositionEntity p, Sin(k * 45) * 12, 3, Cos(k * 45) * 12
+    EntityColor p, 240, 236, 226
+Next
+
+; the shiny things in the middle
+chrome = CreateSphere(32)
+ScaleEntity chrome, 2.5, 2.5, 2.5
+PositionEntity chrome, 0, 2.5, 0
+EntityColor chrome, 235, 235, 240
+EntityMetallic chrome, 1
+EntityRoughness chrome, 0.05
+
+gold = CreateSphere(32)
+ScaleEntity gold, 1.5, 1.5, 1.5
+PositionEntity gold, 6, 1.5, -2
+EntityColor gold, 255, 196, 90
+EntityMetallic gold, 1
+EntityRoughness gold, 0.2
+
+brushed = CreateCube()
+ScaleEntity brushed, 1.4, 1.4, 1.4
+PositionEntity brushed, -6, 1.4, 2
+TurnEntity brushed, 0, 30, 0
+EntityColor brushed, 200, 205, 215
+EntityMetallic brushed, 1
+EntityRoughness brushed, 0.35
+
+; something that moves, to show a probe that updates every frame
+mover = CreateCube()
+ScaleEntity mover, 0.8, 0.8, 0.8
+EntityColor mover, 255, 40, 200
+EntityEmissive mover, 255, 40, 200, 1.5
+
+; the probe: its box covers the courtyard, its picture is taken from just
+; above the chrome sphere's centre
+probe = CreateReflectionProbe(256)
+ScaleEntity probe, 40, 16, 40
+PositionEntity probe, 0, 8, 0
+ProbeOffset probe, 0, -3, 0
+ProbeRange probe, 0.1, 100
+; light from the probe's picture, a little dimmer than the sky would give
+EnvironmentLighting 1, 0.6
+probeOn = 1
+everyFrame = 0
+
+angle# = 0
+frames = 0
+While True
+    frames = frames + 1
+    If KeyHit(KEY_SPACE)
+        probeOn = 1 - probeOn
+        ; a probe only works while the camera is inside its box
+        If probeOn Then PositionEntity probe, 0, 8, 0 Else PositionEntity probe, 0, -1000, 0
+        UpdateProbe probe
+    EndIf
+    If KeyHit(KEY_M)
+        everyFrame = 1 - everyFrame
+        ProbeMode probe, everyFrame
+    EndIf
+
+    angle = angle + 0.3
+    PositionEntity cam, Sin(angle) * 11, 4, Cos(angle) * 11
+    LookAt cam, 0, 2, 0
+    PositionEntity mover, Sin(-angle * 3) * 5, 1 + Sin(angle * 5), Cos(-angle * 3) * 5
+    TurnEntity mover, 1, 2, 0
+
+    RenderWorld
+    Color 255, 255, 255
+    onText$ = "off" : If probeOn Then onText$ = "on"
+    modeText$ = "once" : If everyFrame Then modeText$ = "every frame"
+    Text 12, 12, $"Space: probe {onText$}   M: update {modeText$}   Esc: quit"
+    Flip
+    If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+Wend
