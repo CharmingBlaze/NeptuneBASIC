@@ -72,6 +72,34 @@ impl Host3D<'_> {
         Ok(e)
     }
 
+    /// `EntityBatch`: draws a mesh entity's children merged into a few
+    /// batches (0 off, 1 static: fast, for things that do not move, baked
+    /// again each time this is called; 2 dynamic: merged every frame).
+    pub fn entity_batch(&mut self, e: i32, mode: i32) -> Result<(), String> {
+        use fyrox::graph::SceneGraph;
+        use fyrox::scene::mesh::{BatchingMode, Mesh, RenderPath};
+        let node = self.ent(e)?.node;
+        let graph = self.graph()?;
+        graph[node].cast::<Mesh>().ok_or_else(|| format!("EntityBatch: entity {e} is not a mesh (use CreateMesh)"))?;
+        // the batches are drawn in the parent's pass: forward when anything
+        // inside uses a forward material (the classic material, fog)
+        let forward = graph.traverse_iter(node).any(|(_, n)| n.cast::<Mesh>().is_some_and(|m| m.render_path() == RenderPath::Forward));
+        let mesh = graph[node].cast_mut::<Mesh>().expect("checked above");
+        mesh.set_render_path(if forward { RenderPath::Forward } else { RenderPath::Deferred });
+        // turning it off first throws away an older bake
+        mesh.set_batching_mode(BatchingMode::None);
+        // the merged mesh's bounds are only known once it is baked, which
+        // happens when it is first drawn: never skip it as out of view
+        mesh.set_frustum_culling(mode == 0);
+        mesh.set_batching_mode(match mode {
+            0 => BatchingMode::None,
+            1 => BatchingMode::Static,
+            2 => BatchingMode::Dynamic,
+            _ => return Err(format!("EntityBatch: mode must be 0, 1 or 2, not {mode}")),
+        });
+        Ok(())
+    }
+
     pub fn prefab_name(&self, p: i32) -> Result<String, String> {
         Ok(match self.prefab(p)? {
             Prefab::File { path, .. } => path.clone(),

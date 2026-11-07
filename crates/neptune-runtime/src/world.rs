@@ -786,6 +786,9 @@ impl<'a> Host3D<'a> {
 
     /// Copies an entity and its child entities (`CopyEntity`).
     pub fn copy_entity(&mut self, id: i32, parent: i32) -> Result<i32, String> {
+        // a mesh built with AddVertex this frame is only on the GPU after a
+        // flush; copying before it would copy an empty mesh
+        self.flush_meshes()?;
         if let Some(res) = self.ent(id)?.model_res.clone() {
             // animated models need their own skeleton and animation player
             let loader = self.ent(id)?.loader;

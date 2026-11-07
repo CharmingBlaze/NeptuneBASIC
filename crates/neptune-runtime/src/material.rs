@@ -156,6 +156,9 @@ impl Host3D<'_> {
         };
         let normal_map = if normal_tex != 0 { Some(self.texture(normal_tex)?.resource.clone()) } else { None };
         let alpha_test = base_tex != 0 && self.texture(base_tex).is_ok_and(|t| t.flags & flags::MASKED != 0);
+        // an alpha texture (flag 2) blends the entity with what is behind it, as in Blitz3D
+        let alpha_tex = base_tex != 0 && self.texture(base_tex).is_ok_and(|t| t.flags & flags::ALPHA != 0);
+        let fx = if alpha_tex { fx | crate::classic::fx::FORCE_ALPHA } else { fx };
         let globals = self.world.classic;
         let nodes = self.entity_mesh_nodes(id)?;
         let had_originals = !self.ent(id)?.originals.is_empty();
@@ -231,7 +234,7 @@ impl Host3D<'_> {
                         });
                     }
                 }
-                s.set_material(surface_state.material(&globals));
+                s.set_material(surface_state.shared_material(&globals));
             }
             mesh.set_render_path(RenderPath::Forward);
         }
@@ -240,7 +243,10 @@ impl Host3D<'_> {
         if !had_originals {
             self.ent_mut(id)?.originals = originals;
         }
-        self.ent_mut(id)?.own_materials = true;
+        // shared materials (see ClassicState::shared_material) are copied
+        // before anything changes them in place; a mirror's is its own
+        let mirror = self.ent(id)?.mirror.is_some();
+        self.ent_mut(id)?.own_materials = mirror;
         Ok(())
     }
 

@@ -713,6 +713,8 @@ TerrainDetail: Sets terrain level of detail: about detail_level triangles are dr
 TerrainShading: Accepted for compatibility; terrain shading is handled by the GPU.
 TerrainLayer: (ext) Gives terrain a texture for layer 0 (the base, the same as EntityTexture) to 3. Layers 1 to 3 are painted over the base with PaintTerrain or LoadTerrainLayers (grass, rock, sand, snow...); scale them with ScaleTexture.
 PaintTerrain: (ext) Paints layer (0-3) of terrain with a soft round brush at world position x, z: radius in world units, strength 0-1 (how much a single stroke adds; negative removes). Painting a layer also uncovers it from the layers above it; painting layer 0 brings the base back.
+ErodeTerrain: (ext) Erodes terrain with simulated rain: droplets raindrops each run downhill, taking soil from the slopes and leaving it where they slow down, which carves gullies and ridges into mountains and fills valleys. More droplets erode more (try 50000 to 300000 for a 256 terrain); the same seed gives the same result. Set the terrain's ScaleEntity first: steepness depends on its proportions.
+ThermalErodeTerrain: (ext) Lets slopes of terrain steeper than max_angle degrees crumble down until they are no steeper, repeated iterations times: softens sharp peaks and builds scree at the foot of cliffs. Set the terrain's ScaleEntity first.
 ModifyTerrainLayer: (ext) Sets how much painted layer (1-3) covers terrain at grid point grid_x, grid_z, from 0 to 1, without changing the other layers (like ModifyTerrain for heights; layers above still cover it). Useful for painting by height or slope in a loop.
 TerrainLayerWeight: (ext) Returns how much of layer (0-3) shows on terrain at world position x, z, from 0 to 1 (for footstep sounds, placing trees on grass, slowing down in sand).
 LoadTerrainLayers: (ext) Paints terrain's layers 1, 2 and 3 from the red, green and blue of an image file (a splat map, as painted in another program), stretched over the whole terrain; the top of the image is the far (+Z) edge.
@@ -904,6 +906,7 @@ AssetsReloaded: (ext) Returns how many assets were reloaded (by ReloadAssets or 
 ModelName: (ext) Returns the file entity's model was loaded from, or "" if it is not a loaded model.
 LoadPrefab: (ext) Loads a model or saved scene file (from SaveScene or SaveEntity, the Fyrox editor, glTF or FBX) once as a prefab and returns its handle, or 0 if it cannot be loaded. Place it with InstancePrefab.
 CreatePrefab: (ext) Makes entity (built in the program, with its children) a prefab and returns its handle. The entity is hidden and kept as the original that InstancePrefab copies.
+EntityBatch: (ext) Draws the children of mesh entity (one made with CreateMesh) merged into a few batches, one per material, instead of one by one: much faster for forests, rocks and other scenery made of many copies. Mode 1 bakes them where they are now (call again after adding or moving children), 2 merges them every frame so they can move, 0 turns batching off.
 InstancePrefab: (ext) Places a new copy of prefab and returns the new entity (parent optional). Copies of a file prefab share its meshes, materials and textures, and ReloadAssets updates them all.
 PrefabName: (ext) Returns the file prefab was loaded from, or the name of its original entity.
 EntityPrefab: (ext) Returns the prefab entity was placed from with InstancePrefab, or 0.

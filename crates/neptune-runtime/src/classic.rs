@@ -113,6 +113,47 @@ impl ClassicState {
         MaterialResource::new_ok(Uuid::new_v4(), ResourceKind::Embedded, m)
     }
 
+    /// The material for these settings, shared with every other surface
+    /// that has exactly the same settings, so copies of an entity (forests,
+    /// rocks) use one material and can be drawn together (`EntityBatch`).
+    /// Mirrors are never shared: their material changes every frame.
+    pub fn shared_material(&self, globals: &Globals) -> MaterialResource {
+        if self.layers.iter().any(|l| l.cube == 4) {
+            return self.material(globals);
+        }
+        let mut key = format!(
+            "{:?}|{}|{}|{}|{}|{:?}|{:?}",
+            self.color,
+            self.shininess.to_bits(),
+            self.fx,
+            self.blend,
+            self.alpha_test,
+            self.normal_map.as_ref().map(|t| t.key()),
+            globals
+        );
+        for l in &self.layers {
+            key += &format!(
+                "|{:?},{},{:?},{:?},{},{},{},{},{}",
+                l.texture.key(),
+                l.blend,
+                (l.scale.0.to_bits(), l.scale.1.to_bits()),
+                (l.offset.0.to_bits(), l.offset.1.to_bits()),
+                l.rotation.to_bits(),
+                l.coords,
+                l.sphere_map,
+                l.cube,
+                l.splat
+            );
+        }
+        SHARED.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if cache.len() > 4096 {
+                cache.clear();
+            }
+            cache.entry(key).or_insert_with(|| self.material(globals)).clone()
+        })
+    }
+
     /// Writes every property into an existing classic material.
     pub fn apply(&self, m: &mut Material, globals: &Globals) {
         m.set_property("diffuseColor", self.color);
@@ -182,6 +223,7 @@ pub fn is_classic(m: &Material) -> bool {
 }
 
 thread_local! {
+    static SHARED: RefCell<HashMap<String, MaterialResource>> = RefCell::new(HashMap::new());
     static SHADERS: RefCell<HashMap<(i32, bool, bool), ShaderResource>> = RefCell::new(HashMap::new());
 }
 

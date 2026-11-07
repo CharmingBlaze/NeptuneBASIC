@@ -33,6 +33,9 @@ pub enum Prop {
 pub struct CustomMaterial {
     pub shader: i32,
     pub props: BTreeMap<String, Prop>,
+    /// The material on the entity's surfaces, changed in place by the
+    /// `Shader*` commands (rebuilding it every frame would be slow).
+    pub resource: Option<MaterialResource>,
 }
 
 /// Number of extra `vec4` values a vertex can carry.
@@ -61,14 +64,30 @@ impl Host3D<'_> {
             self.shader(s)?;
         }
         let ent = self.ent_mut(e)?;
-        ent.shader = (s != 0).then(|| Box::new(CustomMaterial { shader: s, props: BTreeMap::new() }));
+        ent.shader = (s != 0).then(|| Box::new(CustomMaterial { shader: s, props: BTreeMap::new(), resource: None }));
         self.refresh_material(e)
     }
 
     pub fn set_shader_prop(&mut self, e: i32, name: &str, p: Prop) -> Result<(), String> {
         let m = self.ent_mut(e)?.shader.as_mut().ok_or_else(|| format!("Entity {e} has no shader (use EntityShader)"))?;
-        m.props.insert(name.to_string(), p);
-        self.refresh_material(e)
+        m.props.insert(name.to_string(), p.clone());
+        let Some(res) = m.resource.clone() else { return self.refresh_material(e) };
+        // change the material the surfaces already use
+        let texture = match &p {
+            Prop::Texture(t) => Some(self.texture(*t)?.resource.clone()),
+            _ => None,
+        };
+        let mut mat = res.data_ref();
+        match p {
+            Prop::Float(v) => mat.set_property(name, v),
+            Prop::Vector(v) => mat.set_property(name, Vector4::new(v[0], v[1], v[2], v[3])),
+            Prop::Texture(_) => {
+                if let Some(t) = texture {
+                    mat.bind(name, t);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Gives an entity with a custom shader its material. False if the
@@ -88,6 +107,9 @@ impl Host3D<'_> {
             }
         }
         let material = MaterialResource::new_ok(Uuid::new_v4(), ResourceKind::Embedded, m);
+        if let Some(cm) = self.ent_mut(id)?.shader.as_mut() {
+            cm.resource = Some(material.clone());
+        }
         let nodes = self.entity_mesh_nodes(id)?;
         let graph = self.graph()?;
         for n in nodes {

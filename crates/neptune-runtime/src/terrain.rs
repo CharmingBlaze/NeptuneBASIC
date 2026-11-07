@@ -496,6 +496,22 @@ impl Host3D<'_> {
         self.refresh_material(e)
     }
 
+    /// `ErodeTerrain` / `ThermalErodeTerrain`: runs `f` on the heights in
+    /// grid squares (height times the Y scale over the X/Z scale).
+    pub fn erode_terrain(&mut self, e: i32, f: impl FnOnce(&mut [f32], usize)) -> Result<(), String> {
+        let s = self.ent(e)?.xf.scale;
+        let vertical = s.y.abs() / ((s.x.abs() + s.z.abs()) / 2.0).max(1e-6);
+        let t = self.terrain_mut(e)?;
+        let w = t.size + 1;
+        let mut grid: Vec<f32> = t.heights.iter().map(|h| h * vertical).collect();
+        f(&mut grid, w);
+        for (h, g) in t.heights.iter_mut().zip(grid) {
+            *h = (g / vertical.max(1e-6)).clamp(0.0, 1.0);
+        }
+        t.built_for = None;
+        Ok(())
+    }
+
     /// `TerrainDetail`: a triangle budget for level of detail (0 = full grid).
     pub fn terrain_detail(&mut self, e: i32, budget: i32) -> Result<(), String> {
         let t = self.terrain_mut(e)?;

@@ -316,6 +316,13 @@ PaintTerrain land, 1, x, z, 6, 0.5      ; brush at world x, z
 TerrainDetail land, 10000               ; level of detail: about 10000 triangles
 ```
 
+Mountains look worn when rain has run down them:
+
+```basic
+ErodeTerrain land, 200000          ; raindrops carve gullies, fill valleys
+ThermalErodeTerrain land, 10, 45   ; slopes over 45 degrees crumble
+```
+
 A prefab is a model or scene loaded once and placed many times:
 
 ```basic

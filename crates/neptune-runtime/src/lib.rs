@@ -18,6 +18,7 @@ pub mod classic;
 pub mod collision;
 pub mod commands;
 pub mod draw2d;
+pub mod erosion;
 pub mod gamma;
 pub mod image2d;
 pub mod input;

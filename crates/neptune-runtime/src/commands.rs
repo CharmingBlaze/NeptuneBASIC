@@ -1829,6 +1829,17 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.paint_terrain(a[0].int(), a[1].int(), a[2].float(), a[3].float(), a[4].float(), a[5].float())?;
         VOID
     }),
+    // (ext) erosion (see erosion.rs)
+    ("ErodeTerrain%terrain%droplets=50000%seed=0", |h, a, _| {
+        let (n, seed) = (a[1].int().max(0) as usize, a[2].int() as u64);
+        h.erode_terrain(a[0].int(), |g, w| crate::erosion::hydraulic(g, w, n, seed))?;
+        VOID
+    }),
+    ("ThermalErodeTerrain%terrain%iterations=30#max_angle=40", |h, a, _| {
+        let (n, talus) = (a[1].int().max(0) as usize, a[2].float().clamp(0.0, 89.0).to_radians().tan());
+        h.erode_terrain(a[0].int(), |g, w| crate::erosion::thermal(g, w, n, talus))?;
+        VOID
+    }),
     ("ModifyTerrainLayer%terrain%grid_x%grid_z%layer#weight", |h, a, _| {
         let e = a[0].int();
         let was = h.terrain(e)?.painted();
@@ -2087,6 +2098,10 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%EntityScene%entity", |h, a, _| int(h.entity_scene(a[0].int())?)),
     ("%LoadPrefab$file", |h, a, _| int(h.load_prefab(&a[0].str())?)),
     ("%CreatePrefab%entity", |h, a, _| int(h.create_prefab(a[0].int())?)),
+    ("EntityBatch%entity%mode=1", |h, a, _| {
+        h.entity_batch(a[0].int(), a[1].int())?;
+        VOID
+    }),
     ("%InstancePrefab%prefab%parent=0", |h, a, _| int(h.instance_prefab(a[0].int(), a[1].int())?)),
     ("$PrefabName%prefab", |h, a, _| Ok(Value::Str(h.prefab_name(a[0].int())?.as_str().into()))),
     ("%EntityPrefab%entity", |h, a, _| {

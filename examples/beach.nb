@@ -1,0 +1,530 @@
+; Beach: a tropical shore with clear water, rolling foam, drifting clouds,
+; rippled sand, palm trees, rocks and grass.
+; Run from the repository root: neptune run examples/beach.nb
+; WASD walk, mouse or arrows look, Shift run, F fly, 1-4 quality, Esc quit.
+; The water is a custom shader (examples/media/water.shader); everything
+; else is made by the program from primitives and generated textures.
+
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Beach"
+SeedRnd 11
+
+Const GRID = 128          ; terrain squares per side
+Const CELL# = 1.5         ; metres per square
+Const TALL# = 40          ; highest possible ground
+Const SEA# = 8            ; sea level
+Const LEFT# = -96         ; the terrain's west and south edges
+Const SOUTH# = -40
+
+; ---- sky, haze and sun -------------------------------------------------
+sky = CreateTexture(64, 64, 1 + 128)
+For face = 0 To 5
+    SetCubeFace sky, face
+    SetBuffer TextureBuffer(sky)
+    For y = 0 To 63
+        t# = y / 31.5
+        If t > 1 Then t = 1
+        If face = 4 Then t = 0
+        If face = 5 Then t = 1
+        Color 84 + t * 130, 150 + t * 78, 232 + t * 8
+        Rect 0, y, 64, 1
+    Next
+Next
+SetBuffer BackBuffer()
+SkyBox sky
+
+cam = CreateCamera()
+CameraRange cam, 0.2, 4000
+CameraClsColor cam, 214, 228, 240
+CameraFogMode cam, 1
+CameraFogColor cam, 214, 228, 240
+CameraFogRange cam, 250, 2000
+
+sun = CreateLight(1)
+RotateEntity sun, 48, -35, 0
+LightColor sun, 255, 246, 226
+LightShadows sun, True
+AmbientLight 120, 128, 140
+GraphicsQuality QUALITY_HIGH
+
+; ---- noise for shapes and textures -------------------------------------
+Dim noise#(3, 129, 129)
+For o = 0 To 3
+    For i = 0 To 129
+        For j = 0 To 129
+            noise(o, i, j) = Rnd(0, 1)
+        Next
+    Next
+Next
+; make every octave's lattice wrap, so textures made from it tile
+For o = 0 To 3
+    cells = 8 Shl o
+    For i = 0 To cells
+        noise(o, i, cells) = noise(o, i, 0)
+        noise(o, cells, i) = noise(o, 0, i)
+    Next
+Next
+
+; smooth value noise from octave o at u, v (repeats every 1)
+Function Octave#(o, u#, v#)
+    cells = 8 Shl o
+    u = u - Floor(u)
+    v = v - Floor(v)
+    x# = u * cells
+    y# = v * cells
+    i = Floor(x)
+    j = Floor(y)
+    fx# = x - i
+    fy# = y - j
+    fx = fx * fx * (3 - 2 * fx)
+    fy = fy * fy * (3 - 2 * fy)
+    a# = noise(o, i, j) + (noise(o, i + 1, j) - noise(o, i, j)) * fx
+    b# = noise(o, i, j + 1) + (noise(o, i + 1, j + 1) - noise(o, i, j + 1)) * fx
+    Return a + (b - a) * fy
+End Function
+
+Function SmoothStep#(lo#, hi#, x#)
+    t# = (x - lo) / (hi - lo)
+    If t < 0 Then t = 0
+    If t > 1 Then t = 1
+    Return t * t * (3 - 2 * t)
+End Function
+
+; where the water meets the sand, at distance z along the beach
+Function Shore#(z#)
+    Return -10 + 8 * Sin(z * 1.4) + 3 * Sin(z * 4)
+End Function
+
+; ---- textures ------------------------------------------------------------
+; rippled sand: wavy stripes, lighter crests
+Function SandTexture(r, g, b, contrast#)
+    t = CreateTexture(128, 128)
+    SetBuffer TextureBuffer(t)
+    For y = 0 To 127
+        For x = 0 To 127
+            wobble# = Octave(1, x / 128.0, y / 128.0) * 40 + Octave(3, x / 128.0, y / 128.0) * 8
+            k# = Sin(y * 22.5 + wobble * 9) * contrast + Rnd(-4, 4)
+            WritePixel x, y, $FF000000 Or (Int(r + k) Shl 16) Or (Int(g + k) Shl 8) Or Int(b + k * 0.8)
+        Next
+    Next
+    SetBuffer BackBuffer()
+    ScaleTexture t, 2, 2
+    Return t
+End Function
+
+Function Speckles(r, g, b, spread, size#)
+    t = CreateTexture(64, 64)
+    SetBuffer TextureBuffer(t)
+    ClsColor r, g, b
+    Cls
+    For i = 1 To 900
+        k = Rand(-spread, spread)
+        Color r + k, g + k * 1.2, b + k * 0.5
+        Rect Rand(0, 63), Rand(0, 63), Rand(1, 2), Rand(1, 4)
+    Next
+    SetBuffer BackBuffer()
+    ScaleTexture t, size, size
+    Return t
+End Function
+
+; fluffy clouds: tiling noise turned into soft white shapes
+Function CloudTexture()
+    t = CreateTexture(128, 128, 1 + 2)
+    SetBuffer TextureBuffer(t)
+    For y = 0 To 127
+        For x = 0 To 127
+            u# = x / 128.0
+            v# = y / 128.0
+            n# = 0.5 * Octave(0, u, v) + 0.28 * Octave(1, u, v) + 0.14 * Octave(2, u, v) + 0.08 * Octave(3, u, v)
+            a# = SmoothStep(0.5, 0.7, n)
+            shade = 236 + (n - 0.5) * 60
+            If shade > 255 Then shade = 255
+            WritePixel x, y, (Int(a * 235) Shl 24) Or (shade Shl 16) Or (shade Shl 8) Or 255
+        Next
+    Next
+    SetBuffer BackBuffer()
+    Return t
+End Function
+
+; ---- the shore -----------------------------------------------------------
+ground = CreateTerrain(GRID)
+ScaleEntity ground, CELL, TALL, CELL
+PositionEntity ground, LEFT, 0, SOUTH
+Dim hgt#(GRID, GRID)
+For i = 0 To GRID
+    For j = 0 To GRID
+        wx# = LEFT + i * CELL
+        wz# = SOUTH + j * CELL
+        u# = wx - Shore(wz)             ; metres inland from the waterline
+        If u < 0
+            ; a gentle shelf under the water, then a drop to the deep
+            m# = SEA + u * 0.12
+            If u < -20 Then m = m - (u + 20) * (u + 20) * 0.012
+            If m < 0.5 Then m = 0.5
+        ElseIf u < 20
+            m# = SEA + u * 0.07         ; the beach
+        Else
+            hills# = Octave(1, i / 128.0, j / 128.0) * 0.7 + Octave(2, i / 128.0, j / 128.0) * 0.3
+            m# = SEA + 1.4 + (u - 20) * 0.1 + hills * 16 * SmoothStep(20, 60, u)
+        EndIf
+        ; slope down into the sea near the back and side edges: an island
+        edge# = GRID * CELL - i * CELL
+        If j * CELL < edge Then edge = j * CELL
+        If GRID * CELL - j * CELL < edge Then edge = GRID * CELL - j * CELL
+        drop# = 1 - SmoothStep(0, 40, edge)
+        m = m + (0.5 - m) * drop
+        hgt(i, j) = m / TALL
+        ModifyTerrain ground, i, j, m / TALL
+    Next
+Next
+TerrainLayer ground, Speckles(92, 148, 50, 18, 0.5), 0          ; grass
+TerrainLayer ground, SandTexture(238, 222, 182, 7), 1            ; dry sand
+TerrainLayer ground, SandTexture(206, 184, 138, 5), 2            ; wet sand
+TerrainLayer ground, Speckles(126, 110, 82, 16, 0.5), 3          ; earth
+For i = 0 To GRID
+    For j = 0 To GRID
+        u# = LEFT + i * CELL - Shore(SOUTH + j * CELL)
+        ragged# = (Octave(3, i / 128.0, j / 128.0) - 0.5) * 6
+        low# = 1 - SmoothStep(SEA + 1.2, SEA + 2.2, hgt(i, j) * TALL)
+        ModifyTerrainLayer ground, i, j, 1, Max(1 - SmoothStep(19, 24, u + ragged), low)
+        ModifyTerrainLayer ground, i, j, 2, 1 - SmoothStep(0.5, 3.5, u)
+        ModifyTerrainLayer ground, i, j, 3, SmoothStep(0.55, 0.8, Octave(2, i / 128.0 + 0.3, j / 128.0)) * SmoothStep(24, 30, u) * 0.7
+    Next
+Next
+EntityPickMode ground, 2
+
+; ---- the sea: a custom shader on a fine grid near the shore and a coarse
+; ring around it out to the horizon; every vertex knows the depth below it
+shader = LoadShader("examples/media/water.shader")
+If shader = 0 Then RuntimeError "examples/media/water.shader is missing (run from the repository root)"
+
+Function WaterDepth#(ground, x#, z#)
+    If x < LEFT Or x > LEFT + GRID * CELL Or z < SOUTH Or z > SOUTH + GRID * CELL Then Return 30
+    Return SEA - TerrainY(ground, x, 0, z)
+End Function
+
+Const W0# = -260   ; the fine grid covers x W0..W1, z Z0..Z1
+Const W1# = 110
+Const Z0# = -100
+Const Z1# = 230
+Const CELLW# = 2
+near = CreateMesh()
+ns = CreateSurface(near)
+cols = (W1 - W0) / CELLW
+rows = (Z1 - Z0) / CELLW
+For j = 0 To rows
+    For i = 0 To cols
+        x# = W0 + i * CELLW
+        z# = Z0 + j * CELLW
+        v = AddVertex(ns, x, SEA, z)
+        VertexData ns, v, 0, WaterDepth(ground, x, z), 0, 0
+    Next
+Next
+For j = 0 To rows - 1
+    For i = 0 To cols - 1
+        a = j * (cols + 1) + i
+        AddTriangle ns, a + cols + 1, a + cols + 2, a + 1
+        AddTriangle ns, a + cols + 1, a + 1, a
+    Next
+Next
+
+far = CreateMesh()
+fs = CreateSurface(far)
+Const HORIZON# = 6000
+AddVertex fs, W0, SEA, Z0 : AddVertex fs, W1, SEA, Z0
+AddVertex fs, W1, SEA, Z1 : AddVertex fs, W0, SEA, Z1
+AddVertex fs, -HORIZON, SEA, -HORIZON : AddVertex fs, HORIZON, SEA, -HORIZON
+AddVertex fs, HORIZON, SEA, HORIZON : AddVertex fs, -HORIZON, SEA, HORIZON
+For k = 0 To 7
+    VertexData fs, k, 0, 30, 0, 0
+Next
+For k = 0 To 3
+    n = (k + 1) Mod 4
+    AddTriangle fs, k, n, n + 4
+    AddTriangle fs, k, n + 4, k + 4
+Next
+; the land side of the ring is under the sand anyway
+
+; the sun's direction for the water's glints, in Fyrox space (X mirrored)
+TFormVector 0, 0, 1, sun, 0
+sunX# = TFormedX()
+sunY# = -TFormedY()
+sunZ# = -TFormedZ()
+For k = 0 To 1
+    If k = 0 Then w = near Else w = far
+    EntityShader w, shader
+    ShaderVector w, "sunDir", sunX, sunY, sunZ, 0
+    ShaderVector w, "fogColor", 214 / 255.0, 228 / 255.0, 240 / 255.0, 1
+    ShaderVector w, "fogRange", 250, 2000, 0, 0
+    ShaderVector w, "skyColor", 0.72, 0.84, 0.95, 1
+    ShaderVector w, "shape", 5, 0.7, 1, 0.12
+    ShaderVector w, "shallowColor", 0.16, 0.86, 0.82, 1
+    ShaderVector w, "deepColor", 0.04, 0.36, 0.62, 1
+    ShaderVector w, "clarity", 3.5, 0, 0, 0
+    ShaderVector w, "bedColor", 0.85, 0.77, 0.58, 1
+Next
+
+; ---- clouds: a high, drifting layer that fades into the haze
+clouds = CreatePlane()
+PositionEntity clouds, 0, 320, 0
+cloudTex = CloudTexture()
+ScaleTexture cloudTex, 700, 700
+EntityTexture clouds, cloudTex
+EntityFX clouds, 1 + 16      ; full bright, seen from below
+
+; ---- plants and rocks -------------------------------------------------
+; a palm frond: a drooping leaf with a ragged edge
+frond = CreateMesh()
+fs = CreateSurface(frond)
+Const LEAF = 14
+For i = 0 To LEAF
+    t# = i / Float(LEAF)
+    lz# = t * 4.4
+    ly# = 1.2 * t - 2.7 * t * t
+    lw# = 0.8 * Sin(t * 180) ^ 0.6
+    If i Mod 2 = 1 Then lw = lw * 0.7
+    AddVertex fs, 0, ly + 0.06, lz
+    AddVertex fs, -lw, ly - 0.2 * lw, lz - 0.3 * lw
+    AddVertex fs, lw, ly - 0.2 * lw, lz - 0.3 * lw
+Next
+For i = 0 To LEAF - 1
+    a = i * 3
+    AddTriangle fs, a, a + 3, a + 1
+    AddTriangle fs, a + 1, a + 3, a + 4
+    AddTriangle fs, a, a + 2, a + 3
+    AddTriangle fs, a + 2, a + 5, a + 3
+Next
+UpdateNormals frond
+EntityColor frond, 70, 152, 44
+EntityFX frond, 16
+HideEntity frond
+
+Function Palm(frond, height#, lean#)
+    root = CreatePivot()
+    seg = root
+    For i = 0 To 9
+        piv = CreatePivot(seg)
+        If i > 0 Then PositionEntity piv, 0, height / 10, 0
+        TurnEntity piv, lean * (0.2 + i * 0.1), 0, 0
+        cyl = CreateCylinder(7, True, piv)
+        r# = 0.26 - i * 0.009
+        ScaleEntity cyl, r, height / 20 + 0.04, r
+        PositionEntity cyl, 0, height / 20, 0
+        If i Mod 2 = 0 Then EntityColor cyl, 140, 108, 74 Else EntityColor cyl, 118, 90, 62
+        seg = piv
+    Next
+    top = CreatePivot(seg)
+    PositionEntity top, 0, height / 10, 0
+    For k = 0 To 9
+        f = CopyEntity(frond, top)
+        ShowEntity f
+        RotateEntity f, Rnd(-15, 20), k * 36 + Rnd(-10, 10), Rnd(-10, 10)
+        s# = Rnd(0.85, 1.15)
+        ScaleEntity f, s, s, s
+    Next
+    For k = 0 To 2
+        nut = CreateSphere(6, top)
+        ScaleEntity nut, 0.16, 0.16, 0.16
+        PositionEntity nut, Cos(k * 120) * 0.25, -0.2, Sin(k * 120) * 0.25
+        EntityColor nut, 96, 74, 40
+    Next
+    Return CreatePrefab(root)
+End Function
+
+; a spiky plant: short fronds pointing up and out
+Function Spiky(frond)
+    root = CreatePivot()
+    For k = 0 To 11
+        f = CopyEntity(frond, root)
+        ShowEntity f
+        RotateEntity f, -50 + Rnd(-12, 12), k * 30 + Rnd(-8, 8), 0
+        ScaleEntity f, 0.35, 0.45, 0.35
+        EntityColor f, 60, 140, 52
+    Next
+    Return CreatePrefab(root)
+End Function
+
+Function Bush()
+    root = CreatePivot()
+    For k = 0 To 5
+        b = CreateSphere(5, root)
+        s# = Rnd(0.6, 1.1)
+        ScaleEntity b, s, s * 0.8, s
+        PositionEntity b, Rnd(-0.8, 0.8), s * 0.6 + Rnd(0, 0.4), Rnd(-0.8, 0.8)
+        EntityColor b, 50 + Rand(0, 20), 118 + Rand(0, 30), 36
+        EntityFX b, 4
+    Next
+    Return CreatePrefab(root)
+End Function
+
+Function Tuft()
+    m = CreateMesh()
+    s = CreateSurface(m)
+    For k = 0 To 8
+        a# = Rnd(360)
+        r# = Rnd(0, 0.12)
+        bx# = Cos(a) * r
+        bz# = Sin(a) * r
+        h# = Rnd(0.3, 0.65)
+        lean# = Rnd(0.05, 0.2)
+        v = AddVertex(s, bx - 0.03 * Sin(a), 0, bz + 0.03 * Cos(a))
+        AddVertex s, bx + 0.03 * Sin(a), 0, bz - 0.03 * Cos(a)
+        AddVertex s, bx + Cos(a) * lean, h, bz + Sin(a) * lean
+        AddTriangle s, v, v + 1, v + 2
+    Next
+    UpdateNormals m
+    EntityColor m, 112, 172, 60
+    EntityFX m, 16
+    Return CreatePrefab(m)
+End Function
+
+Function Rock(r, g, b)
+    m = CreateSphere(4)
+    EntityColor m, r, g, b
+    EntityFX m, 4             ; flat shading: a low-poly boulder
+    Return CreatePrefab(m)
+End Function
+
+Dim palms(2)
+palms(0) = Palm(frond, 9, 4)
+palms(1) = Palm(frond, 11, 6)
+palms(2) = Palm(frond, 8, 9)
+spiky = Spiky(frond)
+bush = Bush()
+tuft = Tuft()
+rock = Rock(96, 96, 94)
+pebble = Rock(70, 70, 70)
+
+; palms along the top of the beach, leaning out towards the sea
+For i = 1 To 26
+    z# = Rnd(-20, 170)
+    x# = Shore(z) + Rnd(19, 34)
+    p = InstancePrefab(palms(Rand(0, 2)))
+    PositionEntity p, x, TerrainY(ground, x, 0, z) - 0.2, z
+    TurnEntity p, 0, Rnd(60, 120), 0       ; the lean points towards the sea
+    s# = Rnd(0.85, 1.2)
+    ScaleEntity p, s, s, s
+Next
+; bushes and spiky plants behind them, grass all over the green
+For i = 1 To 70
+    z# = Rnd(-30, 180)
+    x# = Shore(z) + Rnd(21, 60)
+    If Rand(0, 2) = 0 Then p = InstancePrefab(spiky) Else p = InstancePrefab(bush)
+    PositionEntity p, x, TerrainY(ground, x, 0, z), z
+    TurnEntity p, 0, Rnd(360), 0
+    s# = Rnd(0.8, 1.6)
+    ScaleEntity p, s, s, s
+Next
+For i = 1 To 1400
+    z# = Rnd(-35, 185)
+    x# = Shore(z) + Rnd(17, 70)
+    If TerrainLayerWeight(ground, 0, x, z) > 0.4
+        p = InstancePrefab(tuft)
+        PositionEntity p, x, TerrainY(ground, x, 0, z), z
+        TurnEntity p, 0, Rnd(360), 0
+        s# = Rnd(0.8, 1.5)
+        ScaleEntity p, s, s, s
+    EndIf
+Next
+; boulders at the water's edge with pebbles around them, and a few more
+For group = 0 To 5
+    gz# = Rnd(0, 160)
+    gx# = Shore(gz) + Rnd(-1, 3)
+    For k = 0 To Rand(1, 3)
+        p = InstancePrefab(rock)
+        rx# = gx + Rnd(-1.5, 1.5)
+        rz# = gz + Rnd(-1.5, 1.5)
+        PositionEntity p, rx, TerrainY(ground, rx, 0, rz) + 0.2, rz
+        RotateEntity p, Rnd(-20, 20), Rnd(360), Rnd(-20, 20)
+        ScaleEntity p, Rnd(0.8, 1.4), Rnd(0.5, 0.8), Rnd(0.7, 1.2)
+    Next
+    For k = 0 To 12
+        p = InstancePrefab(pebble)
+        rx# = gx + Rnd(-4, 5)
+        rz# = gz + Rnd(-4, 4)
+        PositionEntity p, rx, TerrainY(ground, rx, 0, rz) + 0.02, rz
+        TurnEntity p, 0, Rnd(360), 0
+        ScaleEntity p, Rnd(0.08, 0.16), Rnd(0.05, 0.08), Rnd(0.07, 0.12)
+    Next
+Next
+
+; ---- start on the sand, looking along the shore -------------------------
+sz# = 25
+sx# = Shore(sz) + 7
+PositionEntity cam, sx, TerrainY(ground, sx, 0, sz) + 1.7, sz
+yaw# = -8
+pitch# = 6
+fly = 0
+HidePointer
+MoveMouse 640, 360
+MouseXSpeed() : MouseYSpeed()
+
+frames = 0
+fps# = 60
+prev = MilliSecs()
+While True
+    frames = frames + 1
+    now = MilliSecs()
+    dt# = (now - prev) / 1000.0
+    prev = now
+    If dt > 0.1 Then dt = 0.1
+    If dt > 0 Then fps = fps * 0.95 + (1 / dt) * 0.05
+
+    ; look
+    yaw = yaw - MouseXSpeed() * 0.14
+    pitch = pitch + MouseYSpeed() * 0.14
+    yaw = yaw + (KeyDown(KEY_LEFT) - KeyDown(KEY_RIGHT)) * 80 * dt
+    pitch = pitch + (KeyDown(KEY_DOWN) - KeyDown(KEY_UP)) * 50 * dt
+    If pitch > 80 Then pitch = 80
+    If pitch < -80 Then pitch = -80
+    RotateEntity cam, pitch, yaw, 0
+    MoveMouse 640, 360
+
+    If KeyHit(KEY_F) Then fly = 1 - fly
+    If KeyHit(KEY_1) Then GraphicsQuality QUALITY_LOW
+    If KeyHit(KEY_2) Then GraphicsQuality QUALITY_MEDIUM
+    If KeyHit(KEY_3) Then GraphicsQuality QUALITY_HIGH
+    If KeyHit(KEY_4) Then GraphicsQuality QUALITY_ULTRA
+
+    spd# = 4
+    If KeyDown(KEY_LSHIFT) Then spd = 12
+    If fly Then spd = spd * 4
+    spd = spd * dt
+    fwd# = (KeyDown(KEY_W) - KeyDown(KEY_S)) * spd
+    side# = (KeyDown(KEY_D) - KeyDown(KEY_A)) * spd
+    If fly
+        MoveEntity cam, side, 0, fwd
+    Else
+        TurnEntity cam, -pitch, 0, 0
+        MoveEntity cam, side, 0, fwd
+        TurnEntity cam, pitch, 0, 0
+    EndIf
+    ; stay on the land, or wade in up to the knees
+    px# = EntityX(cam)
+    pz# = EntityZ(cam)
+    If px < W0 Then px = W0
+    If px > LEFT + GRID * CELL - 2 Then px = LEFT + GRID * CELL - 2
+    If pz < Z0 Then pz = Z0
+    If pz > Z1 Then pz = Z1
+    h# = SEA - 0.6
+    If px > LEFT And pz > SOUTH And pz < SOUTH + GRID * CELL Then h = TerrainY(ground, px, 0, pz)
+    If h < SEA - 0.6 Then h = SEA - 0.6
+    py# = EntityY(cam)
+    If fly = 0 Then py = h + 1.7
+    If fly = 1 And py < h + 2 Then py = h + 2
+    PositionEntity cam, px, py, pz
+
+    ; the water moves, the clouds drift
+    ShaderFloat near, "time", now / 1000.0
+    ShaderFloat far, "time", now / 1000.0
+    PositionTexture cloudTex, now / 400000.0, now / 900000.0
+
+    RenderWorld
+    Color 255, 255, 255
+    mode$ = "walk"
+    If fly Then mode$ = "fly"
+    Text 12, 12, "WASD move   Shift run   F fly / walk   1-4 quality   Esc quit"
+    Text 12, 32, $"fps {Int(fps)}   {mode$}"
+    Flip
+    If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+Wend

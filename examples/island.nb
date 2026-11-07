@@ -1,10 +1,12 @@
 ; Island: a generated island with beaches and surf, pine and oak forests,
-; rocky slopes, a snowy peak and a deep blue sea.
+; eroded rocky slopes, a snowy peak, a clear sea and drifting clouds.
 ; Run from the repository root: neptune run examples/island.nb
 ; The camera circles the island. O lands you on the beach to walk:
 ; WASD move, mouse or arrows look, Shift run, F fly, O back to orbiting,
 ; 1-4 quality, Esc quit. Everything is made by the program: the island from
-; noise, the textures from speckles, the trees from cones and spheres.
+; noise worn down by simulated rain (ErodeTerrain), the textures from
+; speckles, the trees from cones and spheres. The water is a custom shader
+; (examples/media/water.shader).
 
 Graphics3D 1280, 720
 AppTitle "NeptuneBASIC - Island"
@@ -57,6 +59,14 @@ For o = 0 To 3
         Next
     Next
 Next
+; make every octave's lattice wrap, so textures made from it tile
+For o = 0 To 3
+    cells = 8 Shl o
+    For i = 0 To cells
+        noise(o, i, cells) = noise(o, i, 0)
+        noise(o, cells, i) = noise(o, 0, i)
+    Next
+Next
 
 ; smooth value noise from octave o at u, v (0 to 1)
 Function Octave#(o, u#, v#)
@@ -100,8 +110,16 @@ For x = 0 To GRID
         metres# = land * (52 + 26 * n) + peak * (95 * (0.6 + 0.4 * n))
         h# = metres / TALL
         If h > 1 Then h = 1
-        hgt(x, z) = h
         ModifyTerrain ground, x, z, h
+    Next
+Next
+; wear the mountain down: rain carves gullies and ridges and carries soil
+; down to the foot of the slopes, then the steepest slopes crumble a little
+ErodeTerrain ground, 300000, 2026
+ThermalErodeTerrain ground, 10, 50
+For x = 0 To GRID
+    For z = 0 To GRID
+        hgt(x, z) = TerrainHeight(ground, x, z)
     Next
 Next
 
@@ -143,10 +161,11 @@ For x = 0 To GRID
 Next
 TerrainDetail ground, 90000
 
-; ---- the sea: a grid over the island coloured by the depth below it
-; (clear turquoise over the shallows, deep blue further out), and an
-; opaque deep blue ring around it out to the horizon
-Const SEAGRID = 128
+; ---- the sea: the water shader on a grid over the island (every vertex
+; knows the depth below it) and a ring around it out to the horizon
+shader = LoadShader("examples/media/water.shader")
+If shader = 0 Then RuntimeError "examples/media/water.shader is missing (run from the repository root)"
+Const SEAGRID = 160
 half# = GRID * CELL / 2
 water = CreateMesh()
 ss = CreateSurface(water)
@@ -154,22 +173,17 @@ For j = 0 To SEAGRID
     For i = 0 To SEAGRID
         wx# = -half + i * 2 * half / SEAGRID
         wz# = -half + j * 2 * half / SEAGRID
-        v = AddVertex(ss, wx, SEA, wz, i / 8.0, j / 8.0)
-        deep# = SmoothStep(0, 9, SEA - hgt(i * GRID / SEAGRID, j * GRID / SEAGRID) * TALL)
-        VertexColor ss, v, 16 + deep * (30 - 16), 168 + deep * (78 - 168), 176 + deep * (138 - 176), 0.55 + deep * 0.45
+        v = AddVertex(ss, wx, SEA, wz)
+        VertexData ss, v, 0, SEA - TerrainY(ground, wx, 0, wz), 0, 0
     Next
 Next
 For j = 0 To SEAGRID - 1
     For i = 0 To SEAGRID - 1
         a = j * (SEAGRID + 1) + i
-        ; clockwise seen from above
         AddTriangle ss, a + SEAGRID + 1, a + SEAGRID + 2, a + 1
         AddTriangle ss, a + SEAGRID + 1, a + 1, a
     Next
 Next
-UpdateNormals water
-EntityFX water, 2 + 32       ; vertex colours, with their alpha
-EntityShininess water, 0.35
 
 ocean = CreateMesh()
 os = CreateSurface(ocean)
@@ -179,14 +193,58 @@ AddVertex os, -half, SEA, -half : AddVertex os, half, SEA, -half
 AddVertex os, half, SEA, half : AddVertex os, -half, SEA, half
 AddVertex os, -far, SEA, -far : AddVertex os, far, SEA, -far
 AddVertex os, far, SEA, far : AddVertex os, -far, SEA, far
+For k = 0 To 7
+    VertexData os, k, 0, 60, 0, 0
+Next
 For k = 0 To 3
     n = (k + 1) Mod 4
     AddTriangle os, k, n, n + 4
     AddTriangle os, k, n + 4, k + 4
 Next
-UpdateNormals ocean
-EntityColor ocean, 30, 78, 138
-EntityShininess ocean, 0.35
+
+; the sun's direction for the water's glints, in Fyrox space (X mirrored)
+TFormVector 0, 0, 1, sun, 0
+sunX# = TFormedX()
+sunY# = -TFormedY()
+sunZ# = -TFormedZ()
+For k = 0 To 1
+    If k = 0 Then w = water Else w = ocean
+    EntityShader w, shader
+    ShaderVector w, "sunDir", sunX, sunY, sunZ, 0
+    ShaderVector w, "fogColor", 196 / 255.0, 218 / 255.0, 236 / 255.0, 1
+    ShaderVector w, "fogRange", 300, 1400, 0, 0
+    ShaderVector w, "skyColor", 0.70, 0.82, 0.93, 1
+    ShaderVector w, "shallowColor", 0.14, 0.78, 0.78, 1
+    ShaderVector w, "deepColor", 0.08, 0.26, 0.52, 1
+    ShaderVector w, "bedColor", 0.84, 0.78, 0.6, 1
+    ShaderVector w, "shape", 8, 1.0, 0.8, 0.2
+    ShaderVector w, "clarity", 4, 0, 0, 0
+Next
+
+; ---- clouds: a high, drifting layer that fades into the haze
+Function CloudTexture()
+    t = CreateTexture(128, 128, 1 + 2)
+    SetBuffer TextureBuffer(t)
+    For y = 0 To 127
+        For x = 0 To 127
+            u# = x / 128.0
+            v# = y / 128.0
+            n# = 0.5 * Octave(0, u, v) + 0.28 * Octave(1, u, v) + 0.14 * Octave(2, u, v) + 0.08 * Octave(3, u, v)
+            a# = SmoothStep(0.5, 0.7, n)
+            shade = 236 + (n - 0.5) * 60
+            If shade > 255 Then shade = 255
+            WritePixel x, y, (Int(a * 235) Shl 24) Or (shade Shl 16) Or (shade Shl 8) Or 255
+        Next
+    Next
+    SetBuffer BackBuffer()
+    Return t
+End Function
+clouds = CreatePlane()
+PositionEntity clouds, 0, 520, 0
+cloudTex = CloudTexture()
+ScaleTexture cloudTex, 900, 900
+EntityTexture clouds, cloudTex
+EntityFX clouds, 1 + 16      ; full bright, seen from below
 
 ; ---- trees: a few shapes built once as prefabs, planted many times -----
 Function Pine(trunkH#, crownW#, layers, r, g, b)
@@ -228,25 +286,109 @@ kind(1) = Pine(3.0, 2.3, 3, 26, 78, 48)
 kind(2) = Oak(2.6, 2.4, 1, 62, 112, 44)
 kind(3) = Oak(2.4, 2.0, 3, 72, 118, 40)
 
-boulder = CreateSphere(5)
-ScaleEntity boulder, 1.1, 0.6, 0.9
-EntityColor boulder, 128, 116, 102
+; a palm frond: a drooping leaf with a ragged edge (as in examples/beach.nb)
+frond = CreateMesh()
+fs = CreateSurface(frond)
+Const LEAF = 14
+For i = 0 To LEAF
+    t# = i / Float(LEAF)
+    lz# = t * 4.4
+    ly# = 1.2 * t - 2.7 * t * t
+    lw# = 0.8 * Sin(t * 180) ^ 0.6
+    If i Mod 2 = 1 Then lw = lw * 0.7
+    AddVertex fs, 0, ly + 0.06, lz
+    AddVertex fs, -lw, ly - 0.2 * lw, lz - 0.3 * lw
+    AddVertex fs, lw, ly - 0.2 * lw, lz - 0.3 * lw
+Next
+For i = 0 To LEAF - 1
+    a = i * 3
+    AddTriangle fs, a, a + 3, a + 1
+    AddTriangle fs, a + 1, a + 3, a + 4
+    AddTriangle fs, a, a + 2, a + 3
+    AddTriangle fs, a + 2, a + 5, a + 3
+Next
+UpdateNormals frond
+EntityColor frond, 70, 146, 44
+EntityFX frond, 16
+HideEntity frond
+
+Function Palm(frond, height#, lean#)
+    root = CreatePivot()
+    seg = root
+    For i = 0 To 9
+        piv = CreatePivot(seg)
+        If i > 0 Then PositionEntity piv, 0, height / 10, 0
+        TurnEntity piv, lean * (0.2 + i * 0.1), 0, 0
+        cyl = CreateCylinder(7, True, piv)
+        r# = 0.26 - i * 0.009
+        ScaleEntity cyl, r, height / 20 + 0.04, r
+        PositionEntity cyl, 0, height / 20, 0
+        If i Mod 2 = 0 Then EntityColor cyl, 140, 108, 74 Else EntityColor cyl, 118, 90, 62
+        seg = piv
+    Next
+    top = CreatePivot(seg)
+    PositionEntity top, 0, height / 10, 0
+    For k = 0 To 9
+        f = CopyEntity(frond, top)
+        ShowEntity f
+        RotateEntity f, Rnd(-15, 20), k * 36 + Rnd(-10, 10), Rnd(-10, 10)
+        s# = Rnd(0.85, 1.15)
+        ScaleEntity f, s, s, s
+    Next
+    Return CreatePrefab(root)
+End Function
+
+; a tuft of grass blades
+Function Tuft()
+    m = CreateMesh()
+    s = CreateSurface(m)
+    For k = 0 To 8
+        a# = Rnd(360)
+        r# = Rnd(0, 0.15)
+        bx# = Cos(a) * r
+        bz# = Sin(a) * r
+        h# = Rnd(0.35, 0.8)
+        lean# = Rnd(0.05, 0.25)
+        v = AddVertex(s, bx - 0.04 * Sin(a), 0, bz + 0.04 * Cos(a))
+        AddVertex s, bx + 0.04 * Sin(a), 0, bz - 0.04 * Cos(a)
+        AddVertex s, bx + Cos(a) * lean, h, bz + Sin(a) * lean
+        AddTriangle s, v, v + 1, v + 2
+    Next
+    UpdateNormals m
+    EntityColor m, 104, 136, 54
+    EntityFX m, 16
+    Return CreatePrefab(m)
+End Function
+
+Dim palmKind(2)
+palmKind(0) = Palm(frond, 9, 4)
+palmKind(1) = Palm(frond, 11, 6)
+palmKind(2) = Palm(frond, 8, 9)
+tuft = Tuft()
+
+boulder = CreateSphere(4)
+EntityColor boulder, 120, 112, 100
+EntityFX boulder, 4            ; flat shading: a low-poly boulder
 stone = CreatePrefab(boulder)
+
+; everything planted goes under one mesh that is drawn in a few batches
+; (EntityBatch), so thousands of copies stay fast
+scenery = CreateMesh()
 
 ; forests where the forest noise is high (clearings elsewhere), on grass,
 ; below the snow; pines higher up, oaks lower down
-Const SPACING# = 4.6
+Const SPACING# = 4.2
 trees = 0
 For gx# = -half To half Step SPACING
     For gz# = -half To half Step SPACING
         tx# = gx + Rnd(-2, 2)
         tz# = gz + Rnd(-2, 2)
         forest# = Octave(1, tx / (half * 2) + 0.5, tz / (half * 2) + 0.73)
-        If forest > 0.48 + Rnd(0, 0.12)
+        If forest > 0.46 + Rnd(0, 0.12)
             ty# = TerrainY(ground, tx, 0, tz)
-            If ty > SEA + 2.5 And ty < 124 And TerrainLayerWeight(ground, 0, tx, tz) > 0.65
+            If ty > SEA + 4 And ty < 124 And TerrainLayerWeight(ground, 0, tx, tz) > 0.65
                 If ty > 85 + Rnd(-20, 20) Then k = Rand(0, 1) Else k = Rand(0, 3)
-                t = InstancePrefab(kind(k))
+                t = InstancePrefab(kind(k), scenery)
                 PositionEntity t, tx, ty - 0.3, tz
                 TurnEntity t, 0, Rnd(360), 0
                 s# = Rnd(0.8, 1.35)
@@ -256,20 +398,59 @@ For gx# = -half To half Step SPACING
         EndIf
     Next
 Next
-For i = 1 To 180
+
+; palms along the beaches, leaning out over the sand
+palms = 0
+For tries = 1 To 6000
     tx# = Rnd(-half, half)
     tz# = Rnd(-half, half)
-    If TerrainLayerWeight(ground, 1, tx, tz) > 0.3 Or Rnd(1) < 0.15
-        ty# = TerrainY(ground, tx, 0, tz)
-        If ty > SEA - 1
-            r = InstancePrefab(stone)
-            PositionEntity r, tx, ty, tz
-            TurnEntity r, Rnd(-10, 10), Rnd(360), 0
-            bs# = Rnd(0.8, 3)
-            ScaleEntity r, 1.1 * bs, 0.6 * bs, 0.9 * bs
-        EndIf
+    ty# = TerrainY(ground, tx, 0, tz)
+    If ty > SEA + 1.5 And ty < SEA + 8 And TerrainLayerWeight(ground, 2, tx, tz) > 0.3 And palms < 160
+        p = InstancePrefab(palmKind(Rand(0, 2)), scenery)
+        PositionEntity p, tx, ty - 0.2, tz
+        TurnEntity p, 0, Rnd(360), 0
+        s# = Rnd(0.8, 1.2)
+        ScaleEntity p, s, s, s
+        palms = palms + 1
     EndIf
 Next
+
+; grass tufts over the meadows
+For tries = 1 To 40000
+    tx# = Rnd(-half, half)
+    tz# = Rnd(-half, half)
+    ty# = TerrainY(ground, tx, 0, tz)
+    If ty > SEA + 3 And ty < 120 And TerrainLayerWeight(ground, 0, tx, tz) > 0.75
+        p = InstancePrefab(tuft, scenery)
+        PositionEntity p, tx, ty, tz
+        TurnEntity p, 0, Rnd(360), 0
+        s# = Rnd(0.9, 1.8)
+        ScaleEntity p, s, s, s
+    EndIf
+Next
+
+; boulders on the rocky slopes and along the shore, with pebbles
+For i = 1 To 400
+    tx# = Rnd(-half, half)
+    tz# = Rnd(-half, half)
+    ty# = TerrainY(ground, tx, 0, tz)
+    shore = ty > SEA - 1 And ty < SEA + 1.5
+    If ty > SEA - 1 And (TerrainLayerWeight(ground, 1, tx, tz) > 0.3 Or shore)
+        r = InstancePrefab(stone, scenery)
+        PositionEntity r, tx, ty, tz
+        RotateEntity r, Rnd(-20, 20), Rnd(360), Rnd(-20, 20)
+        bs# = Rnd(0.8, 3)
+        ScaleEntity r, 1.2 * bs, 0.6 * bs, 0.9 * bs
+        For k = 1 To 6
+            px# = tx + Rnd(-4, 4)
+            pz# = tz + Rnd(-4, 4)
+            r = InstancePrefab(stone, scenery)
+            PositionEntity r, px, TerrainY(ground, px, 0, pz), pz
+            ScaleEntity r, Rnd(0.1, 0.2), Rnd(0.06, 0.1), Rnd(0.08, 0.16)
+        Next
+    EndIf
+Next
+EntityBatch scenery, 1
 
 ; ---- where walking starts: on the south beach --------------------------
 sx# = 0
@@ -370,6 +551,11 @@ While True
         PositionEntity cam, px, py, pz
     EndIf
 
+    ; the water moves, the clouds drift
+    ShaderFloat water, "time", now / 1000.0
+    ShaderFloat ocean, "time", now / 1000.0
+    PositionTexture cloudTex, now / 500000.0, now / 1100000.0
+
     RenderWorld
     Color 255, 250, 236
     If orbit
@@ -380,7 +566,7 @@ While True
         Text 12, 12, "WASD move   Shift run   F fly / walk   O orbit   1-4 quality   Esc quit"
         Text 12, 52, $"{mode$}   height {Int(EntityY(cam) - SEA)} m"
     EndIf
-    Text 12, 32, $"fps {Int(fps)}   {trees} trees"
+    Text 12, 32, $"fps {Int(fps)}   {trees} trees   {palms} palms"
     Flip
     If frames > 8 And KeyHit(KEY_ESCAPE) Then End
 Wend

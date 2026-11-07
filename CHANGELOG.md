@@ -4,6 +4,30 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Beach demo, water, clouds and erosion
+
+* **`examples/beach.nb`** – A tropical shore: water you can see the sand
+  through in the shallows, turning deep blue further out, with foam
+  rolling onto the beach, moving caustics and sun glints; clouds drifting
+  overhead; rippled sand that is darker where it is wet; curved palm
+  trees, low-poly boulders, pebbles, bushes and grass.
+* **`examples/media/water.shader`** – The water, as a custom shader any
+  program can use with `LoadShader` and `EntityShader`; each vertex is
+  given the depth of the water there with `VertexData`.
+* **Erosion** – `ErodeTerrain` wears a terrain down with simulated rain
+  (gullies, ridges, sediment in the valleys) and `ThermalErodeTerrain` lets
+  too-steep slopes crumble. The island demo uses both.
+* **The island demo upgraded** – Eroded mountain, the new water, clouds,
+  palms along the beaches, grass, boulders and pebbles.
+* **`EntityBatch`** draws the children of a mesh merged into a few batches
+  (Fyrox batching), for scenery made of many copies. Entities with the same
+  classic look now share one material, so their copies can be merged.
+* **Fixes** – Setting a custom shader's values (`ShaderFloat` and friends)
+  every frame no longer rebuilds its material each time, which was slow.
+  `CopyEntity` of a mesh built this frame with `AddVertex` no longer makes
+  an empty copy. A texture loaded with the alpha flag (2) now makes the
+  entity see-through where the texture is, as in Blitz3D.
+
 ## Island demo
 
 * **`examples/island.nb`** – A whole island made by the program: its shape
