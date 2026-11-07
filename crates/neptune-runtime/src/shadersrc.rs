@@ -478,7 +478,16 @@ impl Pre<'_> {
             let target = t
                 .strip_prefix("#include")
                 .or_else(|| t.strip_prefix("//!").map(str::trim_start).and_then(|d| d.strip_prefix("include ")))
-                .map(str::trim);
+                .map(|t| {
+                    // a comment after the file name is not part of it
+                    let t = t.trim();
+                    let close = match t.chars().next() {
+                        Some('<') => t.find('>'),
+                        Some('"') => t[1..].find('"').map(|e| e + 1),
+                        _ => t.find("//").map(|e| e.saturating_sub(1)),
+                    };
+                    close.map_or(t, |e| &t[..=e]).trim()
+                });
             if let Some(target) = target {
                 let name = target.trim_matches(|c| c == '"' || c == '<' || c == '>').trim();
                 if name.is_empty() {
@@ -1390,7 +1399,7 @@ mod tests {
 
     #[test]
     fn library_includes_and_auto_parameters() {
-        let p = run("#include <neptune/noise.glsl>\n//! fragment\nvoid nb_surface(inout NbSurface s) { s.albedo = vec3(nb_fbm(nb_uv * 4.0 + nb_time, 4)); }").unwrap();
+        let p = run("#include <neptune/noise.glsl>   // noise, with a comment after it\n//! fragment\nvoid nb_surface(inout NbSurface s) { s.albedo = vec3(nb_fbm(nb_uv * 4.0 + nb_time, 4)); }").unwrap();
         assert!(p.param("nb_time").is_some());
         assert!(p.files.iter().any(|f| f == "<neptune/noise.glsl>"));
         parses(&p);

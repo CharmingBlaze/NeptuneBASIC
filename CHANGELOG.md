@@ -4,6 +4,27 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## The shader manual
+
+* **Manual** – the shader guide is now a manual in ten chapters
+  ([docs/SHADERS.md](docs/SHADERS.md) is its contents page, the chapters
+  are in `docs/shaders/`). It starts from nothing, with a glossary and a
+  guided tour of short programs, then covers every ready-made material
+  (with starting values for real materials and the default of every
+  setting), a step-by-step shader-writing tutorial, the shader language,
+  post-processing (all 30 effects and their parameters), shadows and how
+  to fix their usual problems, WGSL and Fyrox shader files, and debugging
+  and performance.
+* **Command reference** – every shader, material, post-processing and
+  shadow command (155 of them) has its own entry with its syntax, what
+  each argument means, what it returns, and an example.
+* **Checked examples** – `python tools/check_doc_examples.py` checks
+  every BASIC example in the manual with `neptune check`, and with
+  `--gpu` compiles every complete shader in it on the GPU.
+* **Fix** – a comment after an `#include` line
+  (`#include <neptune/noise.glsl>  // noise`) was read as part of the
+  file name, so the include failed. It is now ignored.
+
 ## Reflection probes
 
 * **Probes** – `CreateReflectionProbe` takes a picture of the scene in all
