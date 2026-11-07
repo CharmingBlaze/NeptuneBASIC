@@ -843,6 +843,25 @@ WGSL translation and every built-in shader and effect are also unit
 tested (`cargo test -p neptune-runtime`), which runs in CI on Windows,
 Linux and macOS.
 
+## Command index
+
+Every command of the shader system, by area. All of them are
+extensions. Arguments, defaults and a description of each are in the
+[command reference](COMMANDS.md); `LoadShader` is listed there with the
+3D commands.
+
+| Area | Commands |
+|---|---|
+| Shaders | `CreateShader`, `CompileShader`, `ReloadShader`, `FreeShader`, `ValidateShader`, `ShaderValidate`, `ShaderExists`, `ShaderCompiled`, `ShaderError`, `ShaderCompileError`, `ShaderLog`, `ShaderSource`, `ShaderVertexSource`, `ShaderFragmentSource`, `ShaderGeometrySource`, `ShaderComputeSource`, `ShaderGetSource`, `ShaderApply`, `EntityMaterial`, `ShaderEnable`, `ShaderDisable`, `ShaderClone`, `ShaderSave`, `ShaderHotReload`, `ShaderSetKeyword` |
+| Shader parameters | `ShaderSetParameter`, `ShaderGetParameter`, `ShaderSetFloat`, `ShaderSetInt`, `ShaderSetBool`, `ShaderSetVector2`, `ShaderSetVector3`, `ShaderSetVector4`, `ShaderSetMatrix3`, `ShaderSetMatrix4`, `ShaderSetColor`, `ShaderSetTexture`, `ShaderSetTextureArray`, `ShaderSetCubeMap`, `ShaderSetTime`, `ShaderSetResolution`, `ShaderSetCamera`, `ShaderSetLight`, `ShaderSetMaterial`, `ShaderSetBuffer`, `ShaderParameterExists`, `ShaderParameterCount`, `ShaderParameterName`, `ShaderParameterType` |
+| Shader debugging | `ShaderDebug`, `ShaderGetUniforms`, `ShaderGetAttributes`, `ShaderGetBindings`, `ShaderGetResourceInfo`, `ShaderGetCompilationStatus`, `ShaderGetBackend` |
+| PBR materials | `CreatePBRMaterial`, `SetAlbedo`, `SetAlbedoMap`, `SetMetallic`, `SetRoughness`, `SetEmissive`, `SetNormalMap`, `SetMetallicMap`, `SetRoughnessMap`, `SetAOMap`, `SetEmissiveMap`, `SetOpacityMap`, `SetOpacity`, `SetHeightMap`, `SetEnvironmentMap`, `SetReflectionIntensity`, `SetFresnel`, `SetParallaxScale`, `SetMaterialWorkflow` |
+| Toon and stylized materials | `CreateToonMaterial`, `SetToonRamp`, `SetLightingRamp`, `SetToonSteps`, `SetToonOutline`, `SetOutlineColor`, `SetOutlineWidth`, `SetRimLighting`, `SetRimColor`, `SetRimPower`, `SetShadingMode`, `SetVertexLighting`, `SetFlatShading`, `SetPixelShading` |
+| Water, wind and foliage | `CreateWaterMaterial`, `SetWaterWaves`, `SetWaterSpeed`, `SetWaterDepth`, `SetWaterReflection`, `SetWaterRefraction`, `SetWaterFoam`, `SetWaterColor`, `SetWindDirection`, `SetWindStrength`, `CreateFoliageMaterial`, `SetFoliageWind` |
+| Procedural materials | `CreateProceduralShader`, `SetGradient`, `SetGradientColor`, `SetGradientDirection`, `SetNoiseType`, `SetNoiseScale`, `SetNoiseSpeed`, `SetNoiseOctaves`, `SetNoisePersistence`, `SetNoiseLacunarity`, `SetNoiseStrength`, `SetPattern`, `SetPatternScale`, `SetPatternColor`, `SetPatternRotation`, `SetDistortion`, `SetProceduralSeed`, `BakeProceduralTexture` |
+| Post-processing | `CreatePostProcess`, `LoadPostProcess`, `AddPostProcess`, `RemovePostProcess`, `FreePostProcess`, `SetPostProcess`, `SetPostProcessParameter`, `SetPostProcessEnabled`, `SetPostProcessOrder`, `PostProcessInput`, `PostProcessOutput`, `PostProcessResolution`, `PostProcessCamera`, `PostProcessPriority`, `PostProcessShader`, `SetUnderwaterEffect`, `SetRainEffect`, `SetSnowEffect`, `SetAtmosphericFog` |
+| Shadows | `SetShadowMode`, `SetShadowQuality`, `SetShadowResolution`, `SetShadowBias`, `SetShadowSoftness`, `SetShadowDistance`, `SetShadowCascadeCount`, `EnableShadows`, `DisableShadows` |
+
 ## How it works
 
 | Piece | File |

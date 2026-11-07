@@ -4,6 +4,15 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Shader guide command index
+
+* **Docs** – the shader guide ([docs/SHADERS.md](docs/SHADERS.md)) now
+  ends with a command index naming all 147 shader, material,
+  post-processing and shadow commands by area, so commands the guide's
+  chapters skip (such as `ShaderSetInt`, `FreeShader`,
+  `RemovePostProcess`, `SetGradientColor` and `SetShadowSoftness`) can
+  be found from it.
+
 ## Better terrain and water
 
 * **Terrain shader** – `LoadShader("builtin:terrain")` draws a terrain per
