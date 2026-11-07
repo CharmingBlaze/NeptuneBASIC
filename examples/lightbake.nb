@@ -1,0 +1,87 @@
+; Baked lighting: soft sky light, darker corners and light bounced off a
+; red wall, worked out once with BakeLightmaps.
+; Run from the repository root: neptune run examples/lightbake.nb
+; B: baked light on / off (baking again takes a moment)   Esc: quit
+
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Baked lighting"
+
+cam = CreateCamera()
+CameraClsColor cam, 150, 190, 230
+CameraRange cam, 0.1, 300
+
+sun = CreateLight(1)
+RotateEntity sun, 55, -40, 0
+LightColor sun, 255, 244, 225
+LightShadows sun, True
+GraphicsQuality QUALITY_HIGH
+
+; the courtyard: everything still goes under one entity, so it can be
+; baked (and cleared) together
+yard = CreatePivot()
+
+Function Box(parent, x#, y#, z#, w#, h#, d#, r, g, b)
+    c = CreateCube(parent)
+    ScaleEntity c, w / 2, h / 2, d / 2
+    PositionEntity c, x, y, z
+    EntityColor c, r, g, b
+    Return c
+End Function
+
+Box(yard, 0, -0.1, 0, 24, 0.2, 24, 210, 205, 195)          ; floor
+Box(yard, 0, 3, 12, 24, 6, 0.4, 230, 226, 216)             ; back wall
+Box(yard, -12, 3, 0, 0.4, 6, 24, 200, 40, 30)              ; red wall
+Box(yard, 12, 1.5, 0, 0.4, 3, 24, 230, 226, 216)           ; low wall
+Box(yard, -7, 4.2, 7, 10, 0.3, 10, 230, 226, 216)          ; roof over a corner
+For i = 0 To 2
+    Box(yard, -2.5, 2, 2.5 + i * 3, 0.5, 4, 0.5, 240, 236, 228)   ; columns
+Next
+Box(yard, 3, 0.75, 4, 1.5, 1.5, 1.5, 150, 110, 70)          ; crates
+Box(yard, 4.2, 0.5, 2.6, 1, 1, 1, 150, 110, 70)
+Box(yard, 3.4, 2, 4.3, 1, 1, 1, 160, 120, 80)
+ball = CreateSphere(24, yard)
+ScaleEntity ball, 1.2, 1.2, 1.2
+PositionEntity ball, -6, 1.2, -3
+EntityColor ball, 240, 240, 240
+
+; sky light for the baking: the AmbientLight colour
+AmbientLight 120, 135, 160
+t = MilliSecs()
+count = BakeLightmaps(6, 1, 0, yard)
+bakeMs = MilliSecs() - t
+; the baked light now holds the sky light: keep a little for moving things
+AmbientLight 25, 28, 34
+baked = 1
+
+angle# = 210
+frames = 0
+While True
+    frames = frames + 1
+    If KeyHit(KEY_B)
+        baked = 1 - baked
+        If baked
+            AmbientLight 120, 135, 160
+            t = MilliSecs()
+            count = BakeLightmaps(6, 1, 0, yard)
+            bakeMs = MilliSecs() - t
+            AmbientLight 25, 28, 34
+        Else
+            ClearLightmaps yard
+            AmbientLight 120, 135, 160
+        EndIf
+    EndIf
+
+    angle = angle + 0.15
+    PositionEntity cam, Sin(angle) * 16, 7, Cos(angle) * 16
+    LookAt cam, -2, 1.5, 3
+
+    RenderWorld
+    Color 255, 255, 255
+    If baked
+        Text 12, 12, $"baked lighting: {count} surfaces in {bakeMs} ms   B: off   Esc: quit"
+    Else
+        Text 12, 12, "flat ambient light (not baked)   B: bake   Esc: quit"
+    EndIf
+    Flip
+    If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+Wend

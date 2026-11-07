@@ -2606,6 +2606,14 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("EntityEmissiveMap%entity%texture", |h, a, _| pbr_map(h, a, |p, t| p.emissive_map = t)),
     ("EntityAOMap%entity%texture", |h, a, _| pbr_map(h, a, |p, t| p.ao_map = t)),
     ("EntityLightmap%entity%texture", |h, a, _| pbr_map(h, a, |p, t| p.lightmap = t)),
+    // (ext) baked lighting (see lightbake.rs)
+    ("%BakeLightmaps#texels_per_unit=4%quality=1%direct=0%entity=0", |h, a, _| {
+        int(h.bake_lightmaps(a[0].float().max(0.1), a[1].int(), a[2].int() != 0, a[3].int())?)
+    }),
+    ("ClearLightmaps%entity=0", |h, a, _| {
+        h.clear_lightmaps(a[0].int())?;
+        VOID
+    }),
     // parallax mapping: a height map (white = high) and its depth
     ("EntityHeightMap%entity%texture#scale=0.08", |h, a, _| {
         let scale = a[2].float();

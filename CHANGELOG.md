@@ -4,6 +4,18 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Baked lighting
+
+* **Light baking** – `BakeLightmaps` works out soft lighting for still
+  scenery once, with a ray tracer on the CPU, and stores it in lightmaps:
+  sky light (the `AmbientLight` colour) that is dimmer in corners and under
+  things, and light bounced off nearby surfaces in their colours (a red
+  wall tints the floor beside it). Direct light can be baked too, with
+  shadows, so a level full of lamps can turn them off afterwards.
+  `ClearLightmaps` removes it again. Example: `examples/lightbake.nb`.
+* Fyrox has a light baker of its own, but it bakes only direct light and
+  puts sun shadows in the wrong place, so NeptuneBASIC has its own; it
+  uses Fyrox's UV generator and lightmap slot.
 ## Sound mixing and effects
 
 * **Audio buses** – `CreateAudioBus` makes mixer channels that sounds play

@@ -402,6 +402,8 @@ impl Host3D<'_> {
                         .build();
                 }
             }
+            // new geometry: a baked lightmap no longer fits it
+            self.drop_lightmap(node, index)?;
         }
         Ok(())
     }

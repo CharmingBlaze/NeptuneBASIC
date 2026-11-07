@@ -68,7 +68,9 @@ impl Host3D<'_> {
             self.apply_classic(id)
         } else {
             self.restore_originals(id)?;
-            self.apply_standard(id)
+            self.apply_standard(id)?;
+            // baked light survives material changes
+            self.rebind_entity_lightmaps(id)
         }
     }
 

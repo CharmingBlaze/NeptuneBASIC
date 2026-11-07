@@ -592,6 +592,8 @@ EntityRoughnessMap: (ext) Gives entity a texture controlling the roughness of ea
 EntityEmissiveMap: (ext) Gives entity a texture controlling which parts of it glow; 0 removes it.
 EntityAOMap: (ext) Gives entity an ambient occlusion texture that darkens creases and corners; 0 removes it.
 EntityLightmap: (ext) Gives entity a lightmap texture, read with the mesh's second UV set; 0 removes it.
+BakeLightmaps: (ext) Works out soft lighting for still scenery and stores it in lightmap textures, then returns how many surfaces were baked: sky light (the AmbientLight colour) dimmed in corners and under things, and light bounced off nearby surfaces in their colours. texels_per_unit sets the detail (default 4 per unit), quality 0 fast, 1 normal, 2 best, direct 1 also bakes the lights' direct light with shadows (then turn those lights off), entity limits it to one entity and its children. Only meshes with the standard (PBR) material are baked; it may take seconds. Turn AmbientLight down afterwards so the baked sky light shows.
+ClearLightmaps: (ext) Removes baked light from entity and its children, or from everything (0, the default).
 EntityHeightMap: (ext) Gives entity a height map texture (white is high) for parallax mapping, with depth scale (default 0.08); 0 removes it.
 CreatePBRMaterial: (ext) Creates a physically based material (metallic/roughness, normal maps, parallax, emission, environment reflections, shadows) and returns it. Draw entities with it using EntityMaterial.
 SetAlbedo: (ext) Sets the base colour of material, red, green, blue, alpha 0-255.

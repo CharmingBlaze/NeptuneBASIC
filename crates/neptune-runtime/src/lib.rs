@@ -62,6 +62,7 @@ pub mod gui_editors;
 pub mod physics;
 pub mod pick;
 pub mod audiobus;
+pub mod lightbake;
 pub mod prefab;
 pub mod probe;
 pub mod primitive;
