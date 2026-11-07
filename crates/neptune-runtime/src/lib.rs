@@ -62,9 +62,13 @@ pub mod gui_dialogs;
 pub mod gui_editors;
 pub mod physics;
 pub mod pick;
+pub mod actions;
 pub mod audiobus;
 pub mod lightbake;
+pub mod particles2d;
 pub mod prefab;
+pub mod screenfx;
+pub mod tween;
 pub mod probe;
 pub mod primitive;
 pub mod quality;
@@ -303,6 +307,7 @@ impl Plugin for NeptunePlugin {
             }
         }
         st.input.joys.poll();
+        st.input.update_actions();
         if let GraphicsContext::Initialized(g) = &*context.graphics_context {
             st.world.tris_rendered = g.renderer.get_statistics().geometry.triangles_rendered as i32;
         }

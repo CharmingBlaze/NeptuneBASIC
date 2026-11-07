@@ -4,6 +4,28 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Game essentials
+
+* **Input actions** – name the controls (`"jump"`, `"fire"`) and bind keys,
+  mouse buttons, gamepad buttons and sticks to them (`BindKey`, `BindJoy`,
+  `BindJoyAxis` ...); the game asks `ActionDown`, `ActionHit` or
+  `ActionValue`. `LastInput` and `InputName` make a "press a key for Jump"
+  menu easy, and `SaveActions`/`LoadActions` keep the player's choices.
+* **Settings and saves** – `UserFolder` gives the user's own data folder on
+  every system; `SetSetting`, `GetSetting`, `SaveSettings`,
+  `LoadSettings` and friends keep options, high scores and simple save games
+  in a readable text file.
+* **Tweens and easing** – `TweenPosition`, `TweenRotation`, `TweenScale`,
+  `TweenAlpha` and `TweenColor` change an entity smoothly over time along 17
+  easing curves (`EASE_OUT_BACK`, `EASE_OUT_BOUNCE` ...); `Ease` and
+  `EaseBetween` ease anything else.
+* **Camera shake and fades** – `CameraShake` jolts the picture for hits and
+  explosions; `ScreenFade` fades the whole screen to a colour and back.
+* **2D particles** – `CreateParticles2D` and friends: sparks, smoke, rain and
+  explosions for 2D games.
+* **Gamepad rumble** – `JoyRumble`.
+* **Example** – `examples/essentials.nb`; every new command has an example in
+  the command reference.
 ## Debug drawing
 
 * **Seeing what the game does** – `DebugLine`, `DebugBox`, `DebugSphere`,

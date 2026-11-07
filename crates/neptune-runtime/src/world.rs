@@ -217,6 +217,13 @@ pub struct World {
     pub lightmaps: crate::lightbake::Lightmaps,
     /// (ext) Debug lines for the next frame (see `debugdraw.rs`).
     pub debug: crate::debugdraw::DebugDraw,
+    /// (ext) Running tweens (see `tween.rs`).
+    pub tweens: Vec<crate::tween::Tween>,
+    /// (ext) `CameraShake` (see `screenfx.rs`).
+    pub shakes: Vec<crate::screenfx::Shake>,
+    /// (ext) 2D particle systems (see `particles2d.rs`) and their default dot.
+    pub particles2d: Vec<Option<crate::particles2d::System>>,
+    pub particle_dot: Option<fyrox::resource::texture::TextureResource>,
     /// (ext) 2D physics: bodies, joints, pixels per metre, per-body
     /// (friction, bounce, density, sensor), the last ray hit.
     pub bodies2d: Vec<Option<crate::physics2d::Body2D>>,
@@ -382,6 +389,10 @@ impl Default for World {
             audio: Default::default(),
             lightmaps: Default::default(),
             debug: Default::default(),
+            tweens: Vec::new(),
+            shakes: Vec::new(),
+            particles2d: Vec::new(),
+            particle_dot: None,
             graded_cameras: Default::default(),
             gamma: Default::default(),
             gamma_dirty: false,

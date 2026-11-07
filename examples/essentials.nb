@@ -1,0 +1,136 @@
+; Game essentials: input actions (keys and gamepad), tweens, camera shake,
+; screen fades, 2D particles, gamepad rumble and a saved best score.
+; Run from the repository root: neptune run examples/essentials.nb
+; Arrows / WASD / left stick: move   Space / A: dash   R: set the dash key
+; Esc: quit (the best score is saved)
+
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Game essentials"
+
+; ---- settings: the best score lives in the player's own folder
+folder$ = UserFolder("NeptuneBASIC essentials")
+LoadSettings folder + "settings.txt"
+best = GetSettingInt("best", 0)
+
+; ---- controls: named actions, with the player's own choices if saved
+If LoadActions(folder + "controls.txt") = 0
+    BindKey "left", KEY_LEFT : BindKey "left", KEY_A : BindJoyAxis "left", "x", -1
+    BindKey "right", KEY_RIGHT : BindKey "right", KEY_D : BindJoyAxis "right", "x", 1
+    BindKey "up", KEY_UP : BindKey "up", KEY_W : BindJoyAxis "up", "y", -1
+    BindKey "down", KEY_DOWN : BindKey "down", KEY_S : BindJoyAxis "down", "y", 1
+    BindKey "dash", KEY_SPACE : BindJoy "dash", JOY_A
+EndIf
+
+cam = CreateCamera()
+PositionEntity cam, 0, 14, -12
+LookAt cam, 0, 0, 0
+CameraClsColor cam, 20, 24, 36
+sun = CreateLight(1)
+RotateEntity sun, 50, 20, 0
+AmbientLight 70, 70, 90
+
+floor = CreateCube()
+ScaleEntity floor, 10, 0.1, 10
+PositionEntity floor, 0, -0.1, 0
+EntityColor floor, 60, 70, 90
+
+ship = CreateCone(16)
+RotateEntity ship, 90, 0, 0
+ScaleEntity ship, 0.5, 0.8, 0.5
+EntityColor ship, 90, 200, 255
+
+; gems pop up with a tween and spin
+Dim gems(4)
+Function PlaceGem(g)
+    PositionEntity g, Rnd(-8, 8), 0.6, Rnd(-8, 8)
+    ScaleEntity g, 0, 0, 0
+    TweenScale g, 0.5, 0.5, 0.5, 0.5, EASE_OUT_BACK
+End Function
+For i = 0 To 4
+    gems(i) = CreateSphere(12)
+    EntityColor gems(i), 255, 210, 60
+    PlaceGem gems(i)
+Next
+
+; sparks when a gem is taken
+sparks = CreateParticles2D()
+Particles2DSpeed sparks, 150, 350
+Particles2DLife sparks, 0.3, 0.7
+Particles2DGravity sparks, 0, 500
+Particles2DSize sparks, 1.5, 0.3
+Particles2DColor sparks, 255, 230, 120, 1
+Particles2DFadeColor sparks, 255, 80, 20, 0
+
+score = 0
+dashTime# = 0
+rebinding = 0
+ScreenFade 0, 0, 0, 1, 0          ; start black ...
+ScreenFade 0, 0, 0, 0, 0.8        ; ... and fade in
+prev = MilliSecs()
+frames = 0
+While True
+    frames = frames + 1
+    now = MilliSecs()
+    dt# = (now - prev) / 1000.0 : prev = now
+    If dt > 0.1 Then dt = 0.1
+
+    If rebinding
+        ; "press a key for dash": the next input pressed becomes the dash key
+        pressed$ = LastInput()
+        If pressed <> ""
+            ClearAction "dash"
+            BindAction "dash", pressed
+            rebinding = 0
+        EndIf
+    Else
+        If KeyHit(KEY_R) Then rebinding = 1 : LastInput() : LastInput()
+        speed# = 6
+        If ActionHit("dash") Then dashTime = 0.25 : JoyRumble 0.3, 0.6, 120
+        If dashTime > 0 Then speed = 18 : dashTime = dashTime - dt
+        dx# = ActionValue("right") - ActionValue("left")
+        dz# = ActionValue("up") - ActionValue("down")
+        TranslateEntity ship, dx * speed * dt, 0, dz * speed * dt
+        If Abs(EntityX(ship)) > 9.5 Or Abs(EntityZ(ship)) > 9.5
+            ; hit the edge: a jolt and a bounce back
+            CameraShake cam, 1.2, 0.35
+            JoyRumble 0.9, 0.4, 250
+            PositionEntity ship, Max(-9, Min(9, EntityX(ship))), 0, Max(-9, Min(9, EntityZ(ship)))
+        EndIf
+    EndIf
+
+    For i = 0 To 4
+        TurnEntity gems(i), 0, 120 * dt, 0
+        If EntityDistance(ship, gems(i)) < 1 And Not Tweening(gems(i))
+            score = score + 1
+            If score > best Then best = score
+            CameraProject cam, EntityX(gems(i)), EntityY(gems(i)), EntityZ(gems(i))
+            PositionParticles2D sparks, ProjectedX(), ProjectedY()
+            EmitParticles2D sparks, 60
+            PlaceGem gems(i)
+        EndIf
+    Next
+
+    RenderWorld
+    DrawParticles2D sparks
+    Color 255, 255, 255
+    Text 12, 12, $"score {score}   best {best}"
+    If rebinding
+        Text 12, 36, "press any key or button for DASH ..."
+    Else
+        Text 12, 36, "move: " + InputName("key:203") + " / stick   dash: " + InputName(Left(ActionInputs("dash"), Instr(ActionInputs("dash") + ",", ",") - 1)) + "   R: change   Esc: quit"
+    EndIf
+    Flip
+
+    If frames > 8 And KeyHit(KEY_ESCAPE)
+        ; save, then fade out
+        SetSetting "best", best
+        SaveSettings folder + "settings.txt"
+        SaveActions folder + "controls.txt"
+        ScreenFade 0, 0, 0, 1, 0.6
+        While ScreenFading()
+            RenderWorld
+            Flip
+        Wend
+        End
+    EndIf
+Wend

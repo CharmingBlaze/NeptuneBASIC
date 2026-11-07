@@ -200,6 +200,8 @@ pub struct Canvas2D {
     pub camera_on: bool,
     /// The transform the draw list is currently under.
     applied: Option<Matrix3<f32>>,
+    /// (ext) `ScreenFade`: a colour laid over the whole screen.
+    pub fade: Option<crate::screenfx::Fade>,
 }
 
 impl Default for Canvas2D {
@@ -215,6 +217,7 @@ impl Default for Canvas2D {
             camera: Default::default(),
             camera_on: false,
             applied: None,
+            fade: None,
         }
     }
 }
@@ -280,6 +283,13 @@ impl Canvas2D {
     }
 
     pub fn flip(&mut self) {
+        // a screen fade goes over everything drawn
+        if let Some(c) = self.fade.as_ref().map(|f| f.overlay(std::time::Instant::now())).filter(|c| c.a > 0) {
+            self.items.push(DrawOp::Transform { m: None });
+            self.items.push(DrawOp::Clip { rect: None });
+            self.items.push(DrawOp::Rect { x: -10.0, y: -10.0, w: 100_000.0, h: 100_000.0, color: c, solid: true });
+            self.applied = None;
+        }
         self.published = Some(std::mem::take(&mut self.items));
     }
 }

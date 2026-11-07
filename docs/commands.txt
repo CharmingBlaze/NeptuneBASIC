@@ -35,6 +35,8 @@ Min: (ext) Returns the smaller of a and b.
 Max: (ext) Returns the larger of a and b.
 Clamp: (ext) Returns value limited to the range low to high.
 Lerp: (ext) Returns the value a fraction t of the way from a to b (t = 0 gives a, t = 1 gives b).
+Ease: (ext) Returns how far along an easing curve is at time t (0 start, 1 end): EASE_LINEAR, EASE_IN (starts slow), EASE_OUT (ends slow), EASE_IN_OUT (the default), EASE_IN_CUBIC, EASE_OUT_CUBIC, EASE_IN_OUT_CUBIC, EASE_IN_SINE, EASE_OUT_SINE, EASE_IN_OUT_SINE, EASE_IN_BACK, EASE_OUT_BACK, EASE_IN_OUT_BACK (overshoot a little), EASE_IN_ELASTIC, EASE_OUT_ELASTIC (wobble), EASE_IN_BOUNCE, EASE_OUT_BOUNCE. Use it to move anything smoothly.
+EaseBetween: (ext) Returns the value between from and to at time t (0-1) along easing curve ease, for smooth movement of menus, counters and anything else.
 
 # Random numbers
 SeedRnd: Seeds the random number generator with seed so the same sequence of numbers is produced each run; MilliSecs() is a common seed.
@@ -74,6 +76,18 @@ ChangeDir: Makes path the current folder.
 ReadDir: Opens the folder dirname for listing and returns a handle, or 0 if it cannot be opened.
 NextFile: Returns the next name in the folder listing dir ("." and ".." come first), or an empty string when there are no more; use FileType to tell files from folders.
 CloseDir: Closes the folder listing dir.
+
+# Settings and save data
+UserFolder: (ext) Returns the folder (made if needed) where a game should keep its settings and saves: the user's application data folder with a folder named app in it (default "NeptuneBASIC"), ending in a path separator. It is writable on every system, unlike the game's own folder.
+SetSetting: (ext) Stores value as the setting called name (in memory; SaveSettings writes them all to a file). Names are not case sensitive and may use dots to group them, like "audio.music" or "slot1.level".
+GetSetting: (ext) Returns the setting called name, or default if there is none.
+GetSettingInt: (ext) Returns the setting called name as a whole number, or default if there is none or it is not a number.
+GetSettingFloat: (ext) Returns the setting called name as a number, or default if there is none or it is not a number.
+SettingExists: (ext) Returns 1 if there is a setting called name.
+DeleteSetting: (ext) Removes the setting called name.
+ClearSettings: (ext) Removes every setting from memory.
+SaveSettings: (ext) Writes every setting to file as name = value lines, a text file people can read and edit.
+LoadSettings: (ext) Reads settings from file (adding to or replacing those in memory) and returns 1, or 0 if the file does not exist.
 
 # Streams
 ReadFile: Opens the file at path for reading and returns a stream handle, or 0 if it cannot be opened.
@@ -203,6 +217,8 @@ UpdateWorld: Updates animations, collisions and physics for one frame; elapsed_t
 RenderWorld: Renders the 3D world from every active camera, covering any 2D drawn before it. tween (0 to 1) blends each entity between its CaptureWorld position and its current one, for smooth fixed-rate loops; 1 draws the current positions.
 Flip: Shows the finished frame on screen and ends the frame; vwait (default 1) waits for the vertical blank.
 WireFrame: Draws all 3D geometry as wireframe when enable is 1, solid when 0.
+ScreenFade: (ext) Fades a colour red, green, blue over the whole screen (3D and 2D) from its current opacity to alpha (0 clear, 1 solid) over seconds (default 0.5): fade to black between levels, flash white when hit. The colour stays at alpha until the next ScreenFade.
+ScreenFading: (ext) Returns 1 while a ScreenFade is still changing.
 
 # Gamma and quality
 GraphicsQuality: (ext) Sets the renderer quality preset: level 0 low, 1 medium, 2 high, 3 ultra (QUALITY_LOW to QUALITY_ULTRA). Use a low level for old graphics cards.
@@ -335,6 +351,22 @@ Anim2DPlaying: (ext) Returns 1 while anim is playing, 0 when paused or finished.
 DrawAnim2D: (ext) Draws the current frame of anim at x,y like DrawImage.
 FreeAnim2D: (ext) Frees anim (the image is not freed).
 
+# 2D particles
+CreateParticles2D: (ext) Creates a 2D particle system that throws out copies of image (default a soft white dot) and returns its handle: sparks, smoke, dust, rain and explosions for 2D games. Draw it every frame with DrawParticles2D.
+PositionParticles2D: (ext) Sets where particles come from, in 2D drawing coordinates.
+Particles2DRate: (ext) Makes the system emit per_second particles steadily (0, the default, emits only with EmitParticles2D).
+EmitParticles2D: (ext) Throws out count particles at once from the system's position: an explosion or a burst of sparks.
+Particles2DLife: (ext) Sets how long particles live, between min and max seconds.
+Particles2DSpeed: (ext) Sets how fast particles start, between min and max pixels a second, towards angle degrees (0 right, 90 down, -90 up, the default) spread over spread degrees (360, the default, is every way).
+Particles2DGravity: (ext) Sets the pull on particles in pixels a second per second: 0, 200 falls down, 0, -50 rises like smoke.
+Particles2DSize: (ext) Sets the particles' scale at birth and at death (1 is the image's own size).
+Particles2DSpin: (ext) Sets how fast particles turn, between min and max degrees a second.
+Particles2DColor: (ext) Sets the particles' colour and alpha (0-1) at birth; they change smoothly to the fade colour.
+Particles2DFadeColor: (ext) Sets the particles' colour and alpha at death (default the same colour, alpha 0: they fade out).
+DrawParticles2D: (ext) Moves the particles on by the time since the last call and draws them. Call it once a frame.
+Particles2DCount: (ext) Returns how many particles are alive.
+FreeParticles2D: (ext) Deletes a 2D particle system.
+
 # 2D physics
 Physics2DGravity: (ext) Sets 2D physics gravity to x,y in pixels per second squared (Y down) and starts the 2D physics world.
 Physics2DScale: (ext) Sets how many pixels make one physics metre (default 50). Set it before creating bodies.
@@ -443,6 +475,23 @@ JoyYDir: Returns the direction of the joystick's Y axis as -1, 0 or 1.
 JoyZDir: Returns the direction of the joystick's Z axis as -1, 0 or 1.
 JoyUDir: Returns the direction of the joystick's U axis as -1, 0 or 1.
 JoyVDir: Returns the direction of the joystick's V axis as -1, 0 or 1.
+JoyRumble: (ext) Makes a gamepad vibrate for milliseconds (default 300): strong is the heavy low motor and weak the light fast one, 0-1 (weak defaults to strong); port -1 (the default) shakes every gamepad. Returns 1 if a gamepad could rumble.
+
+# Input actions
+BindKey: (ext) Binds key (a scancode, like KEY_SPACE) to the action called action, so ActionDown(action) is true while it is held. An action can have any number of keys, buttons and sticks.
+BindMouse: (ext) Binds mouse button (1 left, 2 right, 3 middle) to action.
+BindJoy: (ext) Binds gamepad button (JOY_A, JOY_START, ...) to action, on any gamepad (port -1, the default) or one port.
+BindJoyAxis: (ext) Binds a gamepad stick pushed one way to action: axis "x" or "y" (left stick), "u" or "v" (right stick), "z" (triggers), direction 1 or -1; ActionValue follows how far it is pushed.
+BindAction: (ext) Binds an input written as text to action: "key:57", "mouse:1", "joy:1" (or "joy0:1" for the first gamepad only), "axis:x+" ("axis0:y-"), the form LastInput returns.
+ClearAction: (ext) Removes all of action's bindings ("" removes every action), for example before binding a new key chosen by the player.
+ActionDown: (ext) Returns 1 while any input bound to action is held.
+ActionHit: (ext) Returns how many times action was pressed since the last call.
+ActionValue: (ext) Returns how far action is pressed, 0-1: 1 for keys and buttons, between for a stick (with a small dead zone).
+ActionInputs: (ext) Returns action's bindings as text separated by commas (see BindAction), for showing in a controls menu with InputName.
+LastInput: (ext) Returns the input (as text, see BindAction) pressed most recently since the last call, or "": for "press a key for Jump" menus, bind it with BindAction.
+InputName: (ext) Returns a name to show players for an input written as text: "Space", "Mouse left", "Gamepad A", "Left stick right".
+SaveActions: (ext) Writes every action's bindings to file, one action=inputs line each.
+LoadActions: (ext) Reads action bindings from file (each action named there replaces its bindings) and returns 1, or 0 if the file does not exist.
 
 # Sound
 LoadSound: Loads a sound from file (WAV, OGG, MP3 or FLAC) and returns it, or 0 if it cannot be loaded.
@@ -517,6 +566,15 @@ EntityPitch: Returns entity's pitch in degrees, relative to its parent or in wor
 EntityYaw: Returns entity's yaw in degrees, relative to its parent or in world space when global is 1.
 EntityRoll: Returns entity's roll in degrees, relative to its parent or in world space when global is 1.
 
+# Tweens
+TweenPosition: (ext) Moves entity smoothly from where it is to x, y, z (local, like PositionEntity) over seconds, along easing curve ease (default EASE_IN_OUT): doors, lifts, menus, pickups.
+TweenRotation: (ext) Turns entity smoothly to pitch, yaw, roll (like RotateEntity) over seconds, along easing curve ease.
+TweenScale: (ext) Scales entity smoothly to x_scale, y_scale, z_scale over seconds, along easing curve ease: things that pop up or shrink away.
+TweenAlpha: (ext) Fades entity smoothly to alpha (0-1) over seconds, along easing curve ease.
+TweenColor: (ext) Changes entity's colour smoothly to red, green, blue over seconds, along easing curve ease.
+Tweening: (ext) Returns 1 while entity has a tween running (entity 0: while any entity has).
+StopTweens: (ext) Stops entity's tweens where they are (entity 0, the default: every tween).
+
 # Vectors and maths on entities
 TFormPoint: Transforms the point x, y, z from the space of source_entity to the space of dest_entity (0 means world space); read the result with TFormedX, TFormedY, TFormedZ.
 TFormVector: Transforms the direction x, y, z from the space of source_entity to the space of dest_entity (0 means world space), ignoring position; read the result with TFormedX, TFormedY, TFormedZ.
@@ -543,6 +601,7 @@ CameraProjMode: Sets camera's projection: 0 off (draws nothing), 1 perspective (
 CameraFogMode: Sets camera's fog: 0 off, 1 linear fog.
 CameraFogColor: Sets camera's fog colour, with red, green, blue from 0 to 255.
 CameraFogRange: Sets the distances where camera's fog starts (near) and becomes solid (far).
+CameraShake: (ext) Shakes camera's picture for a hit, explosion or landing: strength 1 (the default) is a solid jolt, more is stronger; it dies away over seconds (default 0.4). The camera itself does not move, so picks and its position are unaffected.
 
 # Lights
 AmbientLight: Sets the colour of the ambient light that lights every surface equally, using red, green and blue values 0-255.

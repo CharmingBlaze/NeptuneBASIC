@@ -1,0 +1,243 @@
+; Examples for easing, settings, input actions, tweens, camera shake, screen
+; fades, 2D particles and gamepad rumble. Format: see tools/check_doc_examples.py.
+
+=== Ease
+; a box that glides in from the left and settles
+For frame = 0 To 60
+    x# = -200 + 400 * Ease(frame / 60.0, EASE_OUT_CUBIC)
+Next
+
+=== EaseBetween
+; a score counter that rolls up from 0 to 1500 in one second
+shown = EaseBetween(0, 1500, 0.5, EASE_OUT)
+Print shown
+
+=== UserFolder
+; keep saves where the player's account can always write
+folder$ = UserFolder("My Space Game")
+SaveSettings folder + "settings.txt"
+
+=== SetSetting
+SetSetting "audio.music", 0.8
+SetSetting "player.name", "Ann"
+SetSetting "best.score", 12500
+
+=== GetSetting
+name$ = GetSetting("player.name", "Player")
+Print "Hello " + name
+
+=== GetSettingInt
+best = GetSettingInt("best.score", 0)
+
+=== GetSettingFloat
+volume# = GetSettingFloat("audio.music", 1.0)
+
+=== SettingExists
+If SettingExists("slot1.level") Then Print "Continue?"
+
+=== DeleteSetting
+DeleteSetting "slot1.level"        ; the save slot is empty again
+
+=== ClearSettings
+ClearSettings                      ; back to the defaults
+
+=== SaveSettings
+SetSetting "fullscreen", 1
+SaveSettings UserFolder("My Space Game") + "settings.txt"
+
+=== LoadSettings
+; the first time there is no file yet: keep the defaults
+If LoadSettings(UserFolder("My Space Game") + "settings.txt") = 0 Then Print "first run"
+
+=== JoyRumble
+; a heavy thump when the player lands
+JoyRumble 0.8, 0.3, 200
+
+=== BindKey
+BindKey "jump", KEY_SPACE
+BindKey "jump", KEY_W              ; an action can have several keys
+
+=== BindMouse
+BindMouse "fire", MOUSE_LEFT
+
+=== BindJoy
+BindJoy "jump", JOY_A
+BindJoy "pause", JOY_START
+
+=== BindJoyAxis
+BindJoyAxis "left", "x", -1        ; left stick pushed left
+BindJoyAxis "right", "x", 1
+
+=== BindAction
+BindAction "jump", "key:57"        ; the same as BindKey "jump", KEY_SPACE
+
+=== ClearAction
+ClearAction "jump"
+BindKey "jump", KEY_UP             ; the player chose a new key
+
+=== ActionDown
+BindKey "right", KEY_RIGHT
+BindJoyAxis "right", "x", 1
+If ActionDown("right") Then x = x + 3
+
+=== ActionHit
+BindKey "jump", KEY_SPACE
+BindJoy "jump", JOY_A
+If ActionHit("jump") Then Print "jump!"
+
+=== ActionValue
+; walk slowly when the stick is pushed a little
+BindJoyAxis "right", "x", 1
+x# = x + 4 * ActionValue("right")
+
+=== ActionInputs
+BindKey "jump", KEY_SPACE
+BindJoy "jump", JOY_A
+Print ActionInputs("jump")         ; key:57,joy:1
+
+=== LastInput
+; "press a key for Jump": wait for something, then bind it
+Graphics 640, 480
+Repeat
+    Flip
+    pressed$ = LastInput()
+Until pressed <> ""
+ClearAction "jump"
+BindAction "jump", pressed
+
+=== InputName
+Print InputName("key:57")          ; Space
+Print InputName("joy:1")           ; Gamepad A
+
+=== SaveActions
+SaveActions UserFolder("My Space Game") + "controls.txt"
+
+=== LoadActions
+If LoadActions(UserFolder("My Space Game") + "controls.txt") = 0
+    BindKey "jump", KEY_SPACE      ; the default controls
+EndIf
+
+=== TweenPosition
+; a door slides open over a second
+door = CreateCube()
+TweenPosition door, 2, 0, 0, 1
+
+=== TweenRotation
+; a coin turns half way round, springing past and back
+coin = CreateCylinder()
+TweenRotation coin, 0, 180, 0, 0.6, EASE_OUT_BACK
+
+=== TweenScale
+; a pickup pops into view
+gem = CreateSphere()
+ScaleEntity gem, 0, 0, 0
+TweenScale gem, 1, 1, 1, 0.4, EASE_OUT_BACK
+
+=== TweenAlpha
+; a ghost fades away
+ghost = CreateSphere()
+TweenAlpha ghost, 0, 2
+
+=== TweenColor
+; a lamp glows from white to red when the alarm goes off
+lamp = CreateSphere()
+TweenColor lamp, 255, 40, 40, 0.5
+
+=== Tweening
+door = CreateCube()
+TweenPosition door, 2, 0, 0, 1
+While Tweening(door)
+    RenderWorld
+    Flip
+Wend
+
+=== StopTweens
+lift = CreateCube()
+TweenPosition lift, 0, 10, 0, 5
+StopTweens lift                    ; the lift stops where it is
+
+=== CameraShake
+; an explosion nearby
+cam = CreateCamera()
+CameraShake cam, 1.5, 0.6
+
+=== ScreenFade
+; fade to black, load the next level, fade back in
+ScreenFade 0, 0, 0, 1, 0.5
+While ScreenFading()
+    RenderWorld
+    Flip
+Wend
+ScreenFade 0, 0, 0, 0, 0.5
+
+=== ScreenFading
+ScreenFade 255, 255, 255, 0, 0.3   ; a white flash fading out
+If ScreenFading() Then Print "fading"
+
+=== CreateParticles2D
+; sparks from a soft white dot
+sparks = CreateParticles2D()
+
+=== PositionParticles2D
+fire = CreateParticles2D()
+PositionParticles2D fire, 320, 400
+
+=== Particles2DRate
+smoke = CreateParticles2D()
+Particles2DRate smoke, 30          ; 30 a second, all the time
+
+=== EmitParticles2D
+; an explosion: 200 sparks at once where the ship was
+boom = CreateParticles2D()
+PositionParticles2D boom, 200, 150
+EmitParticles2D boom, 200
+
+=== Particles2DLife
+dust = CreateParticles2D()
+Particles2DLife dust, 0.3, 0.8
+
+=== Particles2DSpeed
+; a fountain: fast, upwards, in a narrow spray
+fountain = CreateParticles2D()
+Particles2DSpeed fountain, 200, 300, -90, 20
+
+=== Particles2DGravity
+fountain = CreateParticles2D()
+Particles2DGravity fountain, 0, 400        ; the water falls back down
+
+=== Particles2DSize
+smoke = CreateParticles2D()
+Particles2DSize smoke, 0.5, 3              ; puffs grow as they rise
+
+=== Particles2DSpin
+leaves = CreateParticles2D()
+Particles2DSpin leaves, -90, 90
+
+=== Particles2DColor
+fire = CreateParticles2D()
+Particles2DColor fire, 255, 220, 80, 1     ; bright yellow ...
+
+=== Particles2DFadeColor
+fire = CreateParticles2D()
+Particles2DFadeColor fire, 200, 30, 0, 0   ; ... to a fading red
+
+=== DrawParticles2D
+Graphics 640, 480
+rain = CreateParticles2D()
+PositionParticles2D rain, 320, -10
+Particles2DRate rain, 200
+Particles2DSpeed rain, 300, 400, 90, 10
+While Not KeyHit(KEY_ESCAPE)
+    Cls
+    DrawParticles2D rain
+    Flip
+Wend
+
+=== Particles2DCount
+sparks = CreateParticles2D()
+EmitParticles2D sparks, 50
+Print Particles2DCount(sparks)
+
+=== FreeParticles2D
+sparks = CreateParticles2D()
+FreeParticles2D sparks

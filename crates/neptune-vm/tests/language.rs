@@ -611,3 +611,15 @@ fn never_assigned_warning() {
     let src = "While n < 3\n    If shot = 0 Then shot = n\n    n = n + 1\nWend\nPrint shot\n";
     assert!(!warnings(src).contains("never assigned"), "{}", warnings(src));
 }
+
+#[test]
+fn settings_save_and_load() {
+    let file = std::env::temp_dir().join(format!("neptune-settings-{}.txt", std::process::id()));
+    let path = file.to_string_lossy().replace('\\', "/");
+    let src = format!(
+        "SetSetting \"Audio.Music\", 0.5\nSetSetting \"name\", \"Ann\"\nSetSetting \"best\", 1200\nSaveSettings \"{path}\"\nClearSettings\nPrint SettingExists(\"name\")\nPrint LoadSettings(\"{path}\")\nPrint GetSetting(\"NAME\") + \" \" + GetSettingInt(\"best\") + \" \" + GetSettingFloat(\"audio.music\")\nPrint GetSetting(\"missing\", \"none\") + \" \" + GetSettingInt(\"missing\", 7)\nDeleteSetting \"name\"\nPrint SettingExists(\"name\")\nPrint LoadSettings(\"no such file.txt\")\n"
+    );
+    let out = ok(&src);
+    std::fs::remove_file(&file).ok();
+    assert_eq!(out, "0\n1\nAnn 1200 0.5\nnone 7\n0\n0\n");
+}

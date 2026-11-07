@@ -10,9 +10,11 @@
 //! ```
 
 pub mod dynlib;
+pub mod ease;
 pub mod net;
 pub mod netgame;
 pub mod plugin;
+pub mod settings;
 pub mod stdlib;
 pub mod value;
 pub mod vm;

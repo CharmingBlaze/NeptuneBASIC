@@ -886,6 +886,8 @@ fn before_render(h: &mut Host3D, tween: f32) -> Result<(), String> {
             h.world.tweened.push(e);
         }
     }
+    // (ext) camera shake: a jolted picture, put back on the next render
+    h.apply_shakes()?;
     // auto-fade by distance from the first active camera
     let fading: Vec<(i32, (f32, f32))> = h.entities().filter_map(|(i, e)| e.auto_fade.map(|f| (i, f))).collect();
     if !fading.is_empty() {
@@ -1490,6 +1492,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.world.pick_gen += 1;
         let tween = a[0].float();
         h.in_each_scene(|h| {
+            h.apply_tweens()?;
             before_render(h, tween)?;
             h.retune_emitters(h.world.update_dt)?;
             h.watch_probes()?;
@@ -2448,6 +2451,42 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("PointEntity%entity%target#roll=0", |h, a, _| {
         let t = h.world_of(a[1].int())?.position();
         look_at(h, a[0].int(), t, a[2].float())
+    }),
+    // (ext) camera shake and screen fades (see screenfx.rs)
+    ("CameraShake%camera#strength=1#seconds=0.4", |h, a, _| {
+        h.camera_shake(a[0].int(), a[1].float(), a[2].float())?;
+        VOID
+    }),
+    ("ScreenFade#red#green#blue#alpha#seconds=0.5", |h, a, _| {
+        h.screen_fade(a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].float());
+        VOID
+    }),
+    ("%ScreenFading", |h, _, _| int(h.world.canvas.fade.as_ref().is_some_and(|f| f.running(std::time::Instant::now())) as i32)),
+    // (ext) tweens: smooth changes over time (see tween.rs)
+    ("TweenPosition%entity#x#y#z#seconds%ease=3", |h, a, _| {
+        h.tween_position(a[0].int(), v3(a, 1), a[4].float(), a[5].int())?;
+        VOID
+    }),
+    ("TweenRotation%entity#pitch#yaw#roll#seconds%ease=3", |h, a, _| {
+        h.tween_rotation(a[0].int(), a[1].float(), a[2].float(), a[3].float(), a[4].float(), a[5].int())?;
+        VOID
+    }),
+    ("TweenScale%entity#x_scale#y_scale#z_scale#seconds%ease=3", |h, a, _| {
+        h.tween_scale(a[0].int(), v3(a, 1), a[4].float(), a[5].int())?;
+        VOID
+    }),
+    ("TweenAlpha%entity#alpha#seconds%ease=3", |h, a, _| {
+        h.tween_alpha(a[0].int(), a[1].float(), a[2].float(), a[3].int())?;
+        VOID
+    }),
+    ("TweenColor%entity#red#green#blue#seconds%ease=3", |h, a, _| {
+        h.tween_color(a[0].int(), v3(a, 1), a[4].float(), a[5].int())?;
+        VOID
+    }),
+    ("%Tweening%entity=0", |h, a, _| int(h.tweening(a[0].int()) as i32)),
+    ("StopTweens%entity=0", |h, a, _| {
+        h.stop_tweens(a[0].int());
+        VOID
     }),
     // (ext) point an entity at a world position
     ("LookAt%entity#x#y#z#roll=0", |h, a, _| look_at(h, a[0].int(), v3(a, 1), a[4].float())),
@@ -3441,6 +3480,61 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("DrawImageEx%image#x#y%frame=0#rotation=0#scale_x=1#scale_y=1#alpha=1", |h, a, _| {
         draw_image_ex(h, a[0].int(), a[1].float(), a[2].float(), a[3].int(), a[4].float(), (a[5].float(), a[6].float()), a[7].float())
     }),
+    // (ext) 2D particles (see particles2d.rs)
+    ("%CreateParticles2D%image=0", |h, a, _| int(h.create_particles2d(a[0].int())?)),
+    ("PositionParticles2D%particles#x#y", |h, a, _| {
+        let s = h.particles2d(a[0].int())?;
+        (s.x, s.y) = (a[1].float(), a[2].float());
+        VOID
+    }),
+    ("Particles2DRate%particles#per_second", |h, a, _| {
+        h.particles2d(a[0].int())?.rate = a[1].float().max(0.0);
+        VOID
+    }),
+    ("EmitParticles2D%particles%count", |h, a, _| {
+        h.particles2d(a[0].int())?.emit(a[1].int().max(0) as usize);
+        VOID
+    }),
+    ("Particles2DLife%particles#min#max", |h, a, _| {
+        h.particles2d(a[0].int())?.life = (a[1].float().max(0.01), a[2].float().max(0.01));
+        VOID
+    }),
+    ("Particles2DSpeed%particles#min#max#angle=-90#spread=360", |h, a, _| {
+        let s = h.particles2d(a[0].int())?;
+        s.speed = (a[1].float(), a[2].float());
+        (s.angle, s.spread) = (a[3].float(), a[4].float().clamp(0.0, 360.0));
+        VOID
+    }),
+    ("Particles2DGravity%particles#x#y", |h, a, _| {
+        h.particles2d(a[0].int())?.gravity = (a[1].float(), a[2].float());
+        VOID
+    }),
+    ("Particles2DSize%particles#start#end", |h, a, _| {
+        h.particles2d(a[0].int())?.size = (a[1].float().max(0.0), a[2].float().max(0.0));
+        VOID
+    }),
+    ("Particles2DSpin%particles#min#max", |h, a, _| {
+        h.particles2d(a[0].int())?.spin = (a[1].float(), a[2].float());
+        VOID
+    }),
+    ("Particles2DColor%particles#red#green#blue#alpha=1", |h, a, _| {
+        h.particles2d(a[0].int())?.start = [a[1].float() / 255.0, a[2].float() / 255.0, a[3].float() / 255.0, a[4].float()];
+        VOID
+    }),
+    ("Particles2DFadeColor%particles#red#green#blue#alpha=0", |h, a, _| {
+        h.particles2d(a[0].int())?.end = [a[1].float() / 255.0, a[2].float() / 255.0, a[3].float() / 255.0, a[4].float()];
+        VOID
+    }),
+    ("DrawParticles2D%particles", |h, a, _| {
+        h.draw_particles2d(a[0].int())?;
+        VOID
+    }),
+    ("%Particles2DCount%particles", |h, a, _| int(h.particles2d(a[0].int())?.count() as i32)),
+    ("FreeParticles2D%particles", |h, a, _| {
+        h.particles2d(a[0].int())?;
+        h.world.particles2d[a[0].int() as usize - 1] = None;
+        VOID
+    }),
     // (ext) 2D camera: world coordinates for 2D drawing (see camera2d.rs)
     ("Camera2D#x#y#zoom=1#rotation=0", |h, a, _| {
         let screen = (h.world.width as f32, h.world.height as f32);
@@ -4034,7 +4128,59 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.input.flush_mouse();
         VOID
     }),
+    // (ext) gamepad vibration: 1 if a controller could rumble
+    ("%JoyRumble#strong#weak=-1%milliseconds=300%port=-1", |h, a, _| {
+        let strong = a[0].float();
+        let weak = if a[1].float() < 0.0 { strong } else { a[1].float() };
+        int(h.input.joys.rumble(a[3].int(), strong, weak, a[2].int().max(0) as u32) as i32)
+    }),
+    // (ext) input actions (see actions.rs)
+    ("BindKey$action%key", |h, a, _| bind_action(h, &a[0].str(), &format!("key:{}", a[1].int()))),
+    ("BindMouse$action%button", |h, a, _| bind_action(h, &a[0].str(), &format!("mouse:{}", a[1].int()))),
+    ("BindJoy$action%button%port=-1", |h, a, _| {
+        let port = if a[2].int() < 0 { String::new() } else { a[2].int().to_string() };
+        bind_action(h, &a[0].str(), &format!("joy{port}:{}", a[1].int()))
+    }),
+    ("BindJoyAxis$action$axis%direction%port=-1", |h, a, _| {
+        let port = if a[3].int() < 0 { String::new() } else { a[3].int().to_string() };
+        let sign = if a[2].int() < 0 { '-' } else { '+' };
+        bind_action(h, &a[0].str(), &format!("axis{port}:{}{sign}", a[1].str().trim().to_ascii_lowercase()))
+    }),
+    ("BindAction$action$input", |h, a, _| bind_action(h, &a[0].str(), &a[1].str())),
+    ("ClearAction$action=\"\"", |h, a, _| {
+        h.input.actions.clear(&a[0].str());
+        VOID
+    }),
+    ("%ActionDown$action", |h, a, _| int(h.input.actions.down(&a[0].str()) as i32)),
+    ("%ActionHit$action", |h, a, _| int(h.input.actions.hit(&a[0].str()))),
+    ("#ActionValue$action", |h, a, _| float(h.input.actions.value(&a[0].str()))),
+    ("$ActionInputs$action", |h, a, _| Ok(Value::Str(h.input.actions.inputs(&a[0].str()).as_str().into()))),
+    ("$LastInput", |h, _, _| Ok(Value::Str(h.input.actions.last_input().as_str().into()))),
+    ("$InputName$input", |_, a, _| {
+        let s = a[0].str();
+        let name = crate::actions::Binding::parse(&s).map(|b| b.name()).unwrap_or_default();
+        Ok(Value::Str(name.as_str().into()))
+    }),
+    ("SaveActions$file", |h, a, _| {
+        let path = a[0].str().to_string();
+        std::fs::write(&path, h.input.actions.save_text()).map_err(|e| format!("SaveActions: cannot write '{path}': {e}"))?;
+        VOID
+    }),
+    ("%LoadActions$file", |h, a, _| {
+        let Ok(text) = std::fs::read_to_string(a[0].str().to_string()) else { return int(0) };
+        h.input.actions.load_text(&text).map_err(|e| format!("LoadActions: {e}"))?;
+        int(1)
+    }),
 ];
+
+fn bind_action(h: &mut Host3D, action: &str, input: &str) -> Result<Value, String> {
+    if action.trim().is_empty() {
+        return Err("an action needs a name".into());
+    }
+    let b = crate::actions::Binding::parse(input).ok_or_else(|| format!("'{input}' is not an input (key:57, mouse:1, joy:1, axis:x+ ...)"))?;
+    h.input.actions.bind(action, b);
+    VOID
+}
 
 #[cfg(test)]
 mod tests {

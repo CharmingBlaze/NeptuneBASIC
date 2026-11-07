@@ -40,6 +40,11 @@ pub fn button_number(b: Button) -> Option<usize> {
     BUTTONS.iter().position(|(x, _)| *x == b).map(|i| i + 1)
 }
 
+/// Name of a Blitz button number ("A", "START").
+pub fn button_name(b: i32) -> Option<&'static str> {
+    usize::try_from(b - 1).ok().and_then(|i| BUTTONS.get(i)).map(|(_, n)| *n)
+}
+
 pub fn constants() -> Vec<(String, ConstVal)> {
     BUTTONS.iter().enumerate().map(|(i, (_, n))| (format!("JOY_{n}"), ConstVal::Int(i as i32 + 1))).collect()
 }
@@ -77,6 +82,8 @@ pub struct Joysticks {
     ports: Vec<GamepadId>,
     /// Presses not yet reported by `JoyHit`/`GetJoy`, per port and button.
     hits: Vec<[u32; 18]>,
+    /// (ext) `JoyRumble` effects playing (dropping one stops it).
+    rumbles: Vec<(i32, gilrs::ff::Effect)>,
 }
 
 impl std::fmt::Debug for Joysticks {
@@ -90,7 +97,7 @@ impl Default for Joysticks {
         let gilrs = Gilrs::new().ok();
         let ports = gilrs.as_ref().map(|g| g.gamepads().map(|(id, _)| id).collect()).unwrap_or_default();
         let n = Vec::len(&ports);
-        Joysticks { gilrs, ports, hits: vec![[0; 18]; n] }
+        Joysticks { gilrs, ports, hits: vec![[0; 18]; n], rumbles: Vec::new() }
     }
 }
 
@@ -120,6 +127,11 @@ impl Joysticks {
         let id = *self.ports.get(usize::try_from(port).ok()?)?;
         let g = self.gilrs.as_ref()?.connected_gamepad(id)?;
         Some(g)
+    }
+
+    /// How many ports there are (connected or not).
+    pub fn port_count(&self) -> usize {
+        self.ports.len()
     }
 
     /// 0 none, 1 digital, 2 analog (every gamepad gilrs finds has sticks).
@@ -187,6 +199,44 @@ impl Joysticks {
     pub fn hat(&self, port: i32) -> i32 {
         let Some(p) = self.pad(port) else { return -1 };
         hat(p.is_pressed(Button::DPadUp), p.is_pressed(Button::DPadDown), p.is_pressed(Button::DPadLeft), p.is_pressed(Button::DPadRight))
+    }
+
+    /// `JoyRumble`: shakes the controller on `port` (-1: all) with the
+    /// strong (low, heavy) and weak (high, light) motors, 0-1, for
+    /// `ms` milliseconds (0 stops). False if no such controller can rumble.
+    pub fn rumble(&mut self, port: i32, strong: f32, weak: f32, ms: u32) -> bool {
+        use gilrs::ff::{BaseEffect, BaseEffectType, EffectBuilder, Repeat, Replay, Ticks};
+        let targets: Vec<(i32, GamepadId)> = self
+            .ports
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| port < 0 || *i as i32 == port)
+            .map(|(i, id)| (i as i32, *id))
+            .collect();
+        self.rumbles.retain(|(p, _)| !targets.iter().any(|(t, _)| t == p));
+        let Some(g) = self.gilrs.as_mut() else { return false };
+        let level = |v: f32| (v.clamp(0.0, 1.0) * u16::MAX as f32) as u16;
+        let mut any = false;
+        for (p, id) in targets {
+            if ms == 0 || !g.connected_gamepad(id).is_some_and(|pad| pad.is_ff_supported()) {
+                continue;
+            }
+            let time = Ticks::from_ms(ms);
+            let replay = Replay { play_for: time, ..Default::default() };
+            let effect = EffectBuilder::new()
+                .add_effect(BaseEffect { kind: BaseEffectType::Strong { magnitude: level(strong) }, scheduling: replay, envelope: Default::default() })
+                .add_effect(BaseEffect { kind: BaseEffectType::Weak { magnitude: level(weak) }, scheduling: replay, envelope: Default::default() })
+                .repeat(Repeat::For(time))
+                .gamepads(&[id])
+                .finish(g);
+            if let Ok(effect) = effect {
+                if effect.play().is_ok() {
+                    self.rumbles.push((p, effect));
+                    any = true;
+                }
+            }
+        }
+        any
     }
 
     pub fn any_hit(&self) -> bool {

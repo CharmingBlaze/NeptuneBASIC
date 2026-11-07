@@ -51,6 +51,11 @@ const KEYS: &[(KeyCode, i32, &str)] = &[
     (KeyCode::SuperLeft, 219, "LWIN"), (KeyCode::SuperRight, 220, "RWIN"),
 ];
 
+/// Constant name of a scancode ("SPACE" for 57).
+pub fn key_name(k: i32) -> Option<&'static str> {
+    KEYS.iter().find(|(_, s, _)| *s == k).map(|(_, _, n)| *n)
+}
+
 pub fn scancode(k: KeyCode) -> Option<i32> {
     KEYS.iter().find(|(c, _, _)| *c == k).map(|(_, s, _)| *s)
 }
@@ -83,6 +88,8 @@ pub struct Input {
     raw: (f32, f32),
     last_z: f32,
     pub joys: crate::joy::Joysticks,
+    /// (ext) `BindKey`, `ActionDown`, ... (see `actions.rs`)
+    pub actions: crate::actions::Actions,
 }
 
 impl Default for Input {
@@ -100,6 +107,7 @@ impl Default for Input {
             raw: (0.0, 0.0),
             last_z: 0.0,
             joys: Default::default(),
+            actions: Default::default(),
         }
     }
 }

@@ -64,6 +64,8 @@ pub struct Core {
     net_msg: crate::netgame::Msg,
     /// Lines returned by `Input` when set (tests/embedding); otherwise stdin.
     pub input_lines: Option<std::collections::VecDeque<String>>,
+    /// (ext) `SetSetting`, `SaveSettings`, ...
+    settings: crate::settings::Settings,
 }
 
 impl Default for Core {
@@ -93,6 +95,7 @@ impl Core {
             net: None,
             net_msg: crate::netgame::Msg { kind: 0, from: 0, to: 0, data: String::new() },
             input_lines: None,
+            settings: Default::default(),
         }
     }
 
@@ -724,8 +727,47 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
         unsafe { std::env::set_var(&*a[0].str(), &*a[1].str()) };
         VOID
     }),
-    ("$SystemProperty$property", |a, _, _| {
-        let p = a[0].str().to_lowercase();
+    // (ext) easing curves (see ease.rs)
+    ("#Ease#t%ease=3", |a, _, _| ok_f(crate::ease::ease(a[0].float(), a[1].int()))),
+    ("#EaseBetween#from#to#t%ease=3", |a, _, _| {
+        let (from, to) = (a[0].float(), a[1].float());
+        ok_f(from + (to - from) * crate::ease::ease(a[2].float(), a[3].int()))
+    }),
+    // (ext) settings and save data (see settings.rs)
+    ("$UserFolder$app=\"\"", |a, _, _| ok_s(crate::settings::user_folder(&a[0].str())?)),
+    ("SetSetting$name$value", |a, c, _| {
+        c.settings.set(&a[0].str(), &a[1].str())?;
+        VOID
+    }),
+    ("$GetSetting$name$default=\"\"", |a, c, _| ok_s(c.settings.get(&a[0].str()).map(str::to_string).unwrap_or_else(|| a[1].str().to_string()))),
+    ("%GetSettingInt$name%default=0", |a, c, _| {
+        let v = c.settings.get(&a[0].str()).and_then(|s| s.trim().parse::<f64>().ok());
+        ok_int(v.map_or(a[1].int(), |f| f.round() as i32))
+    }),
+    ("#GetSettingFloat$name#default=0", |a, c, _| {
+        let v = c.settings.get(&a[0].str()).and_then(|s| s.trim().parse::<f32>().ok());
+        ok_f(v.unwrap_or(a[1].float()))
+    }),
+    ("%SettingExists$name", |a, c, _| ok_int(c.settings.get(&a[0].str()).is_some() as i32)),
+    ("DeleteSetting$name", |a, c, _| {
+        c.settings.delete(&a[0].str());
+        VOID
+    }),
+    ("ClearSettings", |_, c, _| {
+        c.settings.clear();
+        VOID
+    }),
+    ("SaveSettings$file", |a, c, _| {
+        let path = a[0].str().to_string();
+        std::fs::write(&path, c.settings.to_text()).map_err(|e| format!("SaveSettings: cannot write '{path}': {e}"))?;
+        VOID
+    }),
+    ("%LoadSettings$file", |a, c, _| {
+        let Ok(text) = std::fs::read_to_string(a[0].str().to_string()) else { return ok_int(0) };
+        c.settings.load_text(&text).map_err(|e| format!("LoadSettings: {e}"))?;
+        ok_int(1)
+    }),
+    ("$SystemProperty$property", |a, _, _| {        let p = a[0].str().to_lowercase();
         let dir = |p: Option<std::path::PathBuf>| p.map(|d| format!("{}{}", d.display(), std::path::MAIN_SEPARATOR)).unwrap_or_default();
         ok_s(match p.as_str() {
             "appdir" => dir(std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf()))),
@@ -939,7 +981,9 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
 
 /// Built-in constants available to every program.
 pub fn constants() -> Vec<(String, ConstVal)> {
-    vec![("PI2".to_string(), ConstVal::Float(std::f32::consts::TAU))]
+    let mut v = vec![("PI2".to_string(), ConstVal::Float(std::f32::consts::TAU))];
+    v.extend(crate::ease::constants());
+    v
 }
 
 /// Environment with the standard library and loaded plugins; hosts append
