@@ -2815,6 +2815,65 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.graph()?[light].set_cast_shadows(a[1].int() != 0);
         VOID
     }),
+    // (ext) brightness multiplier (HDR: above 1 is brighter than white)
+    ("LightIntensity%light#intensity", |h, a, _| {
+        let (light, kind) = light_of(h, a[0].int())?;
+        if let Some(l) = base_light_mut(h.graph()?, light, kind) {
+            l.set_intensity(a[1].float().max(0.0));
+        }
+        VOID
+    }),
+    // (ext) glow in the air around point and spot lights (EFFECT_LIGHT_SCATTER):
+    // amount is a multiple of the normal strength, 0 turns it off
+    ("LightScatter%light#amount#red=255#green=255#blue=255", |h, a, _| {
+        let (light, kind) = light_of(h, a[0].int())?;
+        let amount = a[1].float().max(0.0);
+        let tint = Vector3::new(a[2].float(), a[3].float(), a[4].float()).map(|c| c.clamp(0.0, 255.0) / 255.0);
+        if let Some(l) = base_light_mut(h.graph()?, light, kind) {
+            l.enable_scatter(amount > 0.0);
+            l.set_scatter(tint * (0.03 * amount));
+        }
+        VOID
+    }),
+    // (ext) a texture projected by a spot light (a gobo): window bars, leaves, stained glass
+    ("LightCookie%light%texture", |h, a, _| {
+        let (light, kind) = light_of(h, a[0].int())?;
+        if kind != LightKind::Spot {
+            return Err("LightCookie needs a spot light (CreateLight 3)".into());
+        }
+        let t = a[1].int();
+        let tex = if t != 0 { Some(h.texture(t)?.resource.clone()) } else { None };
+        if let Some(s) = h.graph()?[light].cast_mut::<SpotLight>() {
+            s.set_cookie_texture(tex);
+        }
+        VOID
+    }),
+    // (ext) shadow bias of one light (fixes stripes, "shadow acne")
+    ("LightShadowBias%light#bias", |h, a, _| {
+        let (light, kind) = light_of(h, a[0].int())?;
+        let b = a[1].float().max(0.0);
+        let node = &mut h.graph()?[light];
+        match kind {
+            LightKind::Directional => {
+                if let Some(l) = node.cast_mut::<DirectionalLight>() {
+                    let mut o = (*l.csm_options).clone();
+                    o.set_shadow_bias(b);
+                    l.csm_options.set_value_and_mark_modified(o);
+                }
+            }
+            LightKind::Point => {
+                if let Some(l) = node.cast_mut::<PointLight>() {
+                    l.set_shadow_bias(b);
+                }
+            }
+            LightKind::Spot => {
+                if let Some(l) = node.cast_mut::<SpotLight>() {
+                    l.set_shadow_bias(b);
+                }
+            }
+        }
+        VOID
+    }),
     // ---- sound (bbaudio.cpp)
     ("%LoadSoundAsync$file%spatial=0", |h, a, _| {
         h.scene()?;

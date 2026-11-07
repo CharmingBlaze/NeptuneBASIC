@@ -678,6 +678,37 @@ SetShadowSoftness 1
 fill = CreateLight(LIGHT_POINT)
 LightShadows fill, False
 
+=== LightIntensity
+; a lamp three times brighter than white, for a dazzling room
+lamp = CreateLight(LIGHT_POINT)
+LightColor lamp, 255, 230, 200
+LightIntensity lamp, 3
+
+=== LightScatter
+; a lantern in a misty cellar: thick orange haze around it
+PostEffect EFFECT_LIGHT_SCATTER, True
+lantern = CreateLight(LIGHT_POINT)
+LightColor lantern, 255, 150, 60
+LightScatter lantern, 3, 255, 170, 90
+
+=== LightCookie
+; moonlight through window bars: draw the bars into a texture
+bars = CreateTexture(128, 128)
+SetBuffer TextureBuffer(bars)
+ClsColor 255, 255, 255
+Cls
+Color 0, 0, 0
+Rect 60, 0, 8, 128
+Rect 0, 60, 128, 8
+SetBuffer BackBuffer()
+moon = CreateLight(LIGHT_SPOT)
+LightCookie moon, bars
+
+=== LightShadowBias
+; the floor shows stripes of shadow in the sun: push the shadow back a little
+sun = CreateLight()
+LightShadowBias sun, 0.002
+
 === ShaderGeometrySource
 ; always an error: the renderer has no geometry stage
 s = CreateShader()

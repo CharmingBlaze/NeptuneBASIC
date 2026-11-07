@@ -554,6 +554,10 @@ LightConeAngles: Sets a spot light's inner (full brightness) and outer cone angl
 SetLightDirection: (ext) Turns light so it shines along the direction x, y, z.
 SetEntityDirection: (ext) Turns entity so it faces along the direction x, y, z.
 LightShadows: (ext) Turns real-time shadows on (enable 1) or off (0) for light.
+LightIntensity: (ext) Sets how bright light is, multiplying its colour: 1 is normal, above 1 brighter than white (a lamp that lights up a room, the sun at noon), 0 off.
+LightScatter: (ext) Sets the glow a point or spot light makes in the air around it (light shafts in dusty or foggy air): amount is a multiple of the normal strength (0 turns it off, 3 is thick haze), red, green, blue tint it. Needs EFFECT_LIGHT_SCATTER, on at high and ultra quality.
+LightCookie: (ext) Projects texture through a spot light like a slide, multiplying its light: dark parts block light (window bars, leaves), coloured parts tint it (stained glass); 0 removes it. Affects surfaces with the standard (PBR) material.
+LightShadowBias: (ext) Sets the shadow bias of one light: raise it a little if lit surfaces show stripes or speckles of shadow ("shadow acne"); too high and shadows come loose from their objects.
 
 # Materials and textures
 LoadAnimTexture: Loads an image file holding several animation frames of frame_width by frame_height pixels as one texture, using frame_count frames starting at first_frame; returns its handle or 0 on failure.

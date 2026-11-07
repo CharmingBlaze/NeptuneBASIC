@@ -1,0 +1,111 @@
+; Light settings: spot lights shining through textures (cookies), glowing
+; air around lights (scattering) and brightness above white (intensity).
+; Run from the repository root: neptune run examples/lights.nb
+; C: cookies on / off   S: more or less glow   Esc: quit
+
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Light settings"
+GraphicsQuality QUALITY_HIGH          ; scattering needs high or ultra
+PostEffect EFFECT_LIGHT_SCATTER, True
+
+cam = CreateCamera()
+CameraClsColor cam, 4, 5, 8
+PositionEntity cam, 0, 4, -11
+LookAt cam, 0, 2, 2
+AmbientLight 12, 12, 16
+
+; a room: floor, back wall and two side walls
+Function Slab(x#, y#, z#, w#, h#, d#, shade)
+    s = CreateCube()
+    ScaleEntity s, w / 2, h / 2, d / 2
+    PositionEntity s, x, y, z
+    EntityColor s, shade, shade, shade
+    Return s
+End Function
+Slab(0, -0.1, 0, 24, 0.2, 24, 190)
+Slab(0, 4, 8, 24, 8, 0.3, 200)
+Slab(-9, 4, 0, 0.3, 8, 24, 170)
+Slab(9, 4, 0, 0.3, 8, 24, 170)
+pillar = Slab(0, 1.5, 2, 1, 3, 1, 220)
+
+; window bars: white light with dark bars
+bars = CreateTexture(128, 128)
+SetBuffer TextureBuffer(bars)
+ClsColor 255, 250, 235
+Cls
+Color 0, 0, 0
+For i = 0 To 3
+    Rect i * 32 + 14, 0, 6, 128
+Next
+Rect 0, 60, 128, 8
+SetBuffer BackBuffer()
+
+; stained glass: coloured panes with dark lead lines
+glass = CreateTexture(128, 128)
+SetBuffer TextureBuffer(glass)
+For y = 0 To 3
+    For x = 0 To 3
+        k = (x + y * 2) Mod 4
+        If k = 0 Then Color 230, 40, 40
+        If k = 1 Then Color 40, 90, 230
+        If k = 2 Then Color 240, 200, 40
+        If k = 3 Then Color 40, 180, 80
+        Rect x * 32 + 2, y * 32 + 2, 28, 28
+    Next
+Next
+SetBuffer BackBuffer()
+
+; a window spot light falling on the floor and wall on the left
+sun = CreateLight(3)
+PositionEntity sun, -6, 9, -4
+LookAt sun, -3, 0, 3
+LightRange sun, 25
+LightConeAngles sun, 20, 30
+LightIntensity sun, 2.5
+LightCookie sun, bars
+LightScatter sun, 1.5, 255, 240, 210
+
+; a stained-glass window on the right
+church = CreateLight(3)
+PositionEntity church, 6, 9, -4
+LookAt church, 4, 0, 4
+LightRange church, 25
+LightConeAngles church, 18, 28
+LightIntensity church, 2.5
+LightCookie church, glass
+
+; a lantern with a warm haze around it
+lantern = CreateLight(2)
+PositionEntity lantern, 0, 3.6, 2
+LightColor lantern, 255, 150, 60
+LightRange lantern, 9
+glow# = 3
+LightScatter lantern, glow, 255, 170, 90
+bulb = CreateSphere(12, lantern)
+ScaleEntity bulb, 0.15, 0.15, 0.15
+EntityColor bulb, 255, 200, 120
+EntityEmissive bulb, 255, 180, 90, 4
+
+cookies = 1
+frames = 0
+While True
+    frames = frames + 1
+    If KeyHit(KEY_C)
+        cookies = 1 - cookies
+        If cookies Then LightCookie sun, bars : LightCookie church, glass Else LightCookie sun, 0 : LightCookie church, 0
+    EndIf
+    If KeyHit(KEY_S)
+        glow = glow + 2
+        If glow > 7 Then glow = 0
+        LightScatter lantern, glow, 255, 170, 90
+    EndIf
+    ; the lantern sways
+    PositionEntity lantern, Sin(MilliSecs() / 15.0) * 0.4, 3.6, 2
+
+    RenderWorld
+    Color 255, 255, 255
+    onOff$ = "off" : If cookies Then onOff$ = "on"
+    Text 12, 12, $"C: cookies {onOff$}   S: lantern glow {Int(glow)}   Esc: quit"
+    Flip
+    If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+Wend

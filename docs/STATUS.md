@@ -59,7 +59,7 @@ gamepad constants, modern command names, ...).
 | Entities | done | `CreatePivot/Cube/Sphere/Cylinder/Cone/Plane`, `FreeEntity`, `CopyEntity`, parenting, names, `Hide/ShowEntity` |
 | Transforms | done | `Position/Move/Translate/Rotate/Turn/Scale/PointEntity`, `AlignToVector`, `EntityX/Y/Z`, `EntityPitch/Yaw/Roll`, `EntityDistance`, `EntityScaleX/Y/Z` (ext), `GetMatElement`, `TFormPoint/Vector/Normal` + `TFormedX/Y/Z`, `VectorYaw/Pitch`, `DeltaYaw/Pitch`, `EntityClass`, `LookAt`, `SetLightDirection`, `SetEntityDirection` (ext) |
 | Cameras | done | `CameraZoom`, `CameraRange`, `CameraViewport`, `CameraClsColor`, `CameraClsMode` (a camera that does not clear is drawn over the cameras before it), `CameraProjMode` 0/1/2 (orthographic), `CameraFogMode/Color/Range`, `CameraProject` |
-| Lights | done | directional, point, spot; `LightColor`, `LightRange`, `LightConeAngles`, `AmbientLight`, `LightShadows` (ext) |
+| Lights | done | directional, point, spot; `LightColor`, `LightRange`, `LightConeAngles`, `AmbientLight`; (ext) `LightShadows`, `LightIntensity` (brighter than white), `LightScatter` (glow in the air around point and spot lights, per light, tinted), `LightCookie` (spot lights project a texture: bars, leaves, stained glass), `LightShadowBias` |
 | Materials | done | `EntityColor`, `EntityAlpha`, `EntityAutoFade`, `EntityShininess`, `EntityBlend`, `EntityFX` (all six flags), `EntityOrder`, `WireFrame`, `EntityNormalMap` (ext) |
 | Textures | done | `LoadTexture` (colour, alpha, masked, clamp, sphere map and cube map flags, DDS files including DXT-compressed ones, flag 4096 (ext) to store a texture compressed), `LoadAnimTexture`, `CreateTexture`, `EntityTexture` layers 0-3 and frames, `TextureBlend`, `ScaleTexture`, `PositionTexture`, `RotateTexture`, `TextureCoords`, `TextureFilter`, `ClearTextureFilters`, `SetCubeFace`, `SetCubeMode`, `TextureWidth/Height/Name`, `ActiveTextures`, `FreeTexture` |
 | Mirrors | done | `CreateMirror` (the reflection is rendered from a reflected camera each frame, before the main view) |
@@ -235,6 +235,7 @@ and windowing (see the CI workflow for the list).
 | `examples/soundfx.nb` | audio buses: music and effects volumes, room, hall and cave reverb, underwater and radio filters |
 | `examples/probes.nb` | reflection probes: chrome, gold and brushed metal reflecting a courtyard; probe on/off and every-frame updates |
 | `examples/lightbake.nb` | baked lighting: soft sky light, shade under a roof and light bounced off a red wall; B toggles it |
+| `examples/lights.nb` | spot lights through window bars and stained glass (cookies), a lantern glowing in hazy air (scattering) |
 | `examples/rendering.nb` | sky box, PBR materials, glow, parallax, decal, soft particles, level of detail, a camera on a screen, automatic exposure, a custom shader |
 | `examples/movie.nb` | makes a movie from images, then plays it over a 3D scene |
 | `examples/games/starcourier.nb` | **complete 2D game**: shooter with states, pickups, particles, sound, gamepad, high score, attract mode |

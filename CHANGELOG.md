@@ -4,6 +4,19 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Light settings
+
+* **Cookies** – `LightCookie` makes a spot light project a texture like a
+  slide: dark parts block the light (window bars, leaves), coloured parts
+  tint it (stained glass).
+* **Glow in the air** – `LightScatter` sets how much a point or spot light
+  glows in the air around it, per light and tinted: a lantern in a misty
+  cellar, light shafts in a dusty room.
+* **Brightness** – `LightIntensity` makes a light brighter than white.
+* **Shadow bias** – `LightShadowBias` fixes shadow stripes on one light
+  without changing the others.
+* **Example** – `examples/lights.nb`.
+
 ## The NeptuneBASIC manual
 
 * **Manual** – [docs/MANUAL.md](docs/MANUAL.md) and 25 chapters in
