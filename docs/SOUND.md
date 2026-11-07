@@ -1,6 +1,6 @@
 # Sound
 
-Sound in NeptuneBASIC works as in Blitz3D, with extensions for mixing and
+Sound in NeptuneBASIC is simple to start with, with extensions for mixing and
 effects. Every command is also in the
 [command reference](COMMANDS.md#sound).
 

@@ -7,8 +7,8 @@ Rust, C, C++, Zig or anything else that can export a C function.
 Plugin commands are real BASIC commands: the compiler checks their
 arguments, editors complete them (`neptune lsp`), errors they report can be
 caught with `Try`, and `neptune build` copies them next to a packaged game.
-That makes them a better way to extend the language than Blitz3D's
-`CallDLL` (which still works, on every platform, for old programs).
+That makes them a better way to extend the language than `CallDLL`
+(which still works, on every platform, for old programs).
 
 ## Using a plugin
 
@@ -78,7 +78,7 @@ for each platform.
 
 ## Command signatures
 
-Signatures use Blitz3D's notation:
+Signatures use the notation of NeptuneBASIC's own command tables:
 
 | Signature | Means |
 |---|---|

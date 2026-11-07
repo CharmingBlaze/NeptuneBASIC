@@ -1,0 +1,970 @@
+; Examples for the core (system, console, maths, strings, files, banks, time, networking) commands. Format: see tools/check_doc_examples.py.
+
+=== RuntimeError
+; stop with a message if a required value is missing
+lives = 0
+If lives <= 0 Then RuntimeError "The player has no lives left"
+Print "never reached"
+
+=== CommandLine
+; read the arguments given after the program name
+args = CommandLine()
+If args = "" Then Print "No arguments given" Else Print "Arguments: " + args
+
+=== GetEnv
+; read an environment variable (empty if not set)
+user = GetEnv("USERNAME")
+If user = "" Then Print "USERNAME is not set" Else Print "Hello, " + user
+
+=== SetEnv
+; set a variable, then read it back
+SetEnv "GAME_MODE", "hard"
+Print GetEnv("GAME_MODE")   ; prints hard
+
+=== SystemProperty
+; ask the system about itself
+Print "Operating system: " + SystemProperty("os")
+Print "CPU cores: " + SystemProperty("cpucount")
+Print "Temp folder: " + SystemProperty("tempdir")
+
+=== ExecFile
+; open a web address with the default browser (does not wait)
+ExecFile "https://example.com"
+Print "Browser requested"
+
+=== Print
+; print text, numbers and an empty line
+score = 120
+Print "Score: " + score
+Print 3.5
+Print            ; an empty line
+
+=== Write
+; Write does not start a new line, so these join up
+Write "Loading"
+Write "..."
+Print " done"
+
+=== Input
+; ask the player a question and use the answer
+name = Input("What is your name? ")
+Print "Welcome, " + name
+
+=== DebugLog
+; send a message to the debug log instead of the console
+health = 75
+DebugLog "Player health is " + health
+
+=== Sqr
+; distance between two points with Pythagoras
+dx = 3.0
+dy = 4.0
+distance = Sqr(dx * dx + dy * dy)
+Print distance   ; 5
+
+=== Sin
+; height of a bobbing object, angle in degrees
+angle = 90
+Print Sin(angle)   ; 1
+Print Sin(0)       ; 0
+
+=== Cos
+; angles are in degrees
+Print Cos(0)     ; 1
+Print Cos(180)   ; -1
+
+=== Tan
+; tangent of 45 degrees is about 1
+Print Tan(45)
+
+=== ASin
+; the angle whose sine is 0.5
+angle = ASin(0.5)
+Print angle   ; about 30 (floats are approximate)
+
+=== ACos
+; the angle whose cosine is 0.5
+angle = ACos(0.5)
+Print angle   ; about 60
+
+=== ATan
+; the angle whose tangent is 1
+angle = ATan(1)
+Print angle   ; 45
+
+=== ATan2
+; direction from the origin to the point (x=1, y=1); y comes first
+angle = ATan2(1, 1)
+Print angle   ; 45
+
+=== Exp
+; e raised to the power 1
+Print Exp(1)   ; 2.71828
+
+=== Log
+; natural logarithm, the opposite of Exp
+Print Log(Exp(2))   ; 2
+
+=== Log10
+; how many digits: 1000 has a base-10 logarithm of 3
+Print Log10(1000)   ; 3
+
+=== Floor
+; round down to a whole number (still a float)
+Print Floor(3.7)    ; 3
+Print Floor(-3.2)   ; -4
+
+=== Ceil
+; round up to a whole number (still a float)
+Print Ceil(3.2)    ; 4
+Print Ceil(-3.7)   ; -3
+
+=== Min
+; the smaller of two values
+damage = Min(50, 20)
+Print damage   ; 20
+
+=== Max
+; the larger of two values
+health = Max(0, -5)
+Print health   ; 0
+
+=== Clamp
+; keep a value between 0 and 100
+health = Clamp(130, 0, 100)
+Print health   ; 100
+
+=== Lerp
+; halfway between 10 and 20
+x = Lerp(10, 20, 0.5)
+Print x   ; 15
+
+=== SeedRnd
+; the same seed always gives the same random numbers
+SeedRnd 1234
+roll_a = Rand(1, 100)
+SeedRnd 1234
+roll_b = Rand(1, 100)
+Print roll_a = roll_b   ; 1 (true)
+
+=== Rnd
+; a random float between 0 and 1, and between -5 and 5
+SeedRnd MilliSecs()
+chance = Rnd(1)
+offset = Rnd(-5, 5)
+Print chance
+Print offset
+
+=== Rand
+; roll a six-sided die
+SeedRnd MilliSecs()
+roll = Rand(6)
+Print "You rolled " + roll
+Print "Between 10 and 20: " + Rand(10, 20)
+
+=== RndSeed
+; read back the seed that was set
+SeedRnd 42
+Print RndSeed()   ; 42
+
+=== Left
+; the first 3 characters
+word = "Neptune"
+Print Left(word, 3)   ; Nep
+
+=== Right
+; the last 4 characters
+word = "Neptune"
+Print Right(word, 4)   ; tune
+
+=== Mid
+; 3 characters starting at character 2, and the rest of the text
+word = "Neptune"
+Print Mid(word, 2, 3)   ; ept
+Print Mid(word, 4)      ; tune
+
+=== Len
+; count the characters
+name = "Neptune"
+Print Len(name)   ; 7
+
+=== Upper
+; shout the text
+Print Upper("game over")   ; GAME OVER
+
+=== Lower
+; compare text without caring about case
+answer = "YES"
+If Lower(answer) = "yes" Then Print "Confirmed"
+
+=== Trim
+; remove spaces from both ends
+name = Trim("   Bob  ")
+Print "[" + name + "]"   ; [Bob]
+
+=== LSet
+; pad on the right to make columns line up
+Print LSet("Name", 10) + "|"    ; Name      |
+Print LSet("Neptune", 4) + "|"  ; Nept|
+
+=== RSet
+; pad on the left to right-align numbers
+Print RSet("42", 6)          ; "    42"
+Print RSet("123456789", 4)   ; 6789
+
+=== Instr
+; find where text appears (0 if it does not)
+sentence = "the quick brown fox"
+pos = Instr(sentence, "quick")
+Print pos   ; 5
+If Instr(sentence, "cat") = 0 Then Print "no cat"
+
+=== Replace
+; swap every occurrence of one piece of text for another
+text = "red car, red house"
+Print Replace(text, "red", "blue")   ; blue car, blue house
+
+=== String
+; repeat text to draw a bar
+health = 7
+Print "[" + String("#", health) + "]"
+
+=== Chr
+; character code 65 is the letter A
+letter = Chr(65)
+Print letter   ; A
+
+=== Asc
+; the character code of the first letter
+code = Asc("A")
+Print code   ; 65
+
+=== Hex
+; show a number as 8 hex digits
+Print Hex(255)        ; 000000FF
+Print Hex(16711680)   ; 00FF0000
+
+=== Bin
+; show the bits of a number as 32 binary digits
+Print Bin(5)   ; 00000000000000000000000000000101
+
+=== TypeOf
+; find out what kind of value a variable holds
+score = 10
+speed = 2.5
+name = "Bob"
+Print TypeOf(score)   ; Int
+Print TypeOf(speed)   ; Float
+Print TypeOf(name)    ; String
+
+=== FormatFloat
+; show a number with exactly 2 decimals
+price = 3.14159
+Print FormatFloat(price, 2)   ; 3.14
+
+=== FileType
+; 0 = does not exist, 1 = file, 2 = folder
+kind = FileType("save.dat")
+If kind = 0 Then Print "No save file"
+If kind = 1 Then Print "Found a file"
+If kind = 2 Then Print "That is a folder"
+
+=== FileSize
+; write a small file and measure it
+file = WriteFile("size_test.txt")
+WriteLine file, "hello"
+CloseFile file
+Print FileSize("size_test.txt") + " bytes"
+DeleteFile "size_test.txt"
+
+=== DeleteFile
+; remove a file if it exists
+file = WriteFile("old_save.dat")
+CloseFile file
+DeleteFile "old_save.dat"
+Print FileType("old_save.dat")   ; 0
+
+=== CopyFile
+; make a backup of a save file
+file = WriteFile("save.dat")
+WriteInt file, 100
+CloseFile file
+CopyFile "save.dat", "save_backup.dat"
+Print FileType("save_backup.dat")   ; 1
+DeleteFile "save.dat"
+DeleteFile "save_backup.dat"
+
+=== CreateDir
+; make a folder for save games
+CreateDir "saves"
+If FileType("saves") = 2 Then Print "Folder ready"
+DeleteDir "saves"
+
+=== DeleteDir
+; a folder must be empty before it can be deleted
+CreateDir "temp_stuff"
+DeleteDir "temp_stuff"
+Print FileType("temp_stuff")   ; 0
+
+=== CurrentDir
+; show the folder the program is working in
+Print "Working in " + CurrentDir()
+
+=== ChangeDir
+; move into a folder, then back again
+start = CurrentDir()
+CreateDir "levels"
+ChangeDir "levels"
+Print CurrentDir()
+ChangeDir start
+DeleteDir "levels"
+
+=== ReadDir
+; list everything in the current folder
+dir = ReadDir(".")
+If dir <> 0
+    name = NextFile(dir)
+    While name <> ""
+        Print name
+        name = NextFile(dir)
+    Wend
+    CloseDir dir
+EndIf
+
+=== NextFile
+; list the files (not the folders) of the current folder
+dir = ReadDir(".")
+name = NextFile(dir)
+While name <> ""
+    If FileType(name) = 1 Then Print name
+    name = NextFile(dir)
+Wend
+CloseDir dir
+
+=== CloseDir
+; always close a folder listing when finished
+dir = ReadDir(".")
+If dir <> 0 Then CloseDir dir
+
+=== ReadFile
+; read a text file line by line
+file = ReadFile("highscores.txt")
+If file = 0
+    Print "Could not open the file"
+Else
+    While Not Eof(file)
+        Print ReadLine(file)
+    Wend
+    CloseFile file
+EndIf
+
+=== WriteFile
+; create a text file and write two lines
+file = WriteFile("notes.txt")
+If file <> 0
+    WriteLine file, "First line"
+    WriteLine file, "Second line"
+    CloseFile file
+EndIf
+
+=== OpenFile
+; open an existing file to read and change it
+file = OpenFile("save.dat")
+If file <> 0
+    Print "Old value: " + ReadInt(file)
+    SeekFile file, 0       ; go back to the start
+    WriteInt file, 200     ; overwrite it
+    CloseFile file
+EndIf
+
+=== CloseFile
+; close the file so everything is saved
+file = WriteFile("log.txt")
+WriteLine file, "Game started"
+CloseFile file
+
+=== Eof
+; keep reading until the end of the file
+file = ReadFile("names.txt")
+If file <> 0
+    While Not Eof(file)
+        Print ReadLine(file)
+    Wend
+    CloseFile file
+EndIf
+
+=== ReadLine
+; read the first line of a file
+file = ReadFile("names.txt")
+If file <> 0
+    firstname = ReadLine(file)
+    Print "First name: " + firstname
+    CloseFile file
+EndIf
+
+=== WriteLine
+; write a line of text to a file
+file = WriteFile("log.txt")
+WriteLine file, "Player entered level 1"
+CloseFile file
+
+=== ReadByte
+; read a single byte (0 to 255)
+file = WriteFile("byte.dat")
+WriteByte file, 200
+CloseFile file
+file = ReadFile("byte.dat")
+Print ReadByte(file)   ; 200
+CloseFile file
+DeleteFile "byte.dat"
+
+=== ReadShort
+; read a 2-byte number (0 to 65535)
+file = WriteFile("short.dat")
+WriteShort file, 40000
+CloseFile file
+file = ReadFile("short.dat")
+Print ReadShort(file)   ; 40000
+CloseFile file
+DeleteFile "short.dat"
+
+=== ReadInt
+; read a 4-byte whole number
+file = WriteFile("score.dat")
+WriteInt file, 123456
+CloseFile file
+file = ReadFile("score.dat")
+score = ReadInt(file)
+Print score   ; 123456
+CloseFile file
+DeleteFile "score.dat"
+
+=== ReadFloat
+; read a 4-byte decimal number
+file = WriteFile("speed.dat")
+WriteFloat file, 2.5
+CloseFile file
+file = ReadFile("speed.dat")
+speed = ReadFloat(file)
+Print speed   ; 2.5
+CloseFile file
+DeleteFile "speed.dat"
+
+=== ReadString
+; read text saved with WriteString
+file = WriteFile("name.dat")
+WriteString file, "Captain"
+CloseFile file
+file = ReadFile("name.dat")
+name = ReadString(file)
+Print name   ; Captain
+CloseFile file
+DeleteFile "name.dat"
+
+=== WriteByte
+; save a value from 0 to 255
+file = WriteFile("level.dat")
+WriteByte file, 7
+CloseFile file
+DeleteFile "level.dat"
+
+=== WriteShort
+; save a value from 0 to 65535
+file = WriteFile("coins.dat")
+WriteShort file, 1500
+CloseFile file
+DeleteFile "coins.dat"
+
+=== WriteInt
+; save a whole number
+file = WriteFile("score.dat")
+WriteInt file, 99999
+CloseFile file
+DeleteFile "score.dat"
+
+=== WriteFloat
+; save a decimal number
+file = WriteFile("position.dat")
+WriteFloat file, 12.75
+CloseFile file
+DeleteFile "position.dat"
+
+=== WriteString
+; save text with its length, so ReadString can read it back
+file = WriteFile("player.dat")
+WriteString file, "Captain"
+WriteInt file, 3
+CloseFile file
+DeleteFile "player.dat"
+
+=== ReadAvail
+; how many bytes are left to read
+file = WriteFile("data.dat")
+WriteInt file, 1
+WriteInt file, 2
+CloseFile file
+file = ReadFile("data.dat")
+Print ReadAvail(file)   ; 8
+skipped = ReadInt(file)
+Print ReadAvail(file)   ; 4
+CloseFile file
+DeleteFile "data.dat"
+
+=== FilePos
+; see how far through the file we are
+file = WriteFile("pos.dat")
+WriteInt file, 10
+Print FilePos(file)   ; 4
+WriteInt file, 20
+Print FilePos(file)   ; 8
+CloseFile file
+DeleteFile "pos.dat"
+
+=== SeekFile
+; jump to the second number in a file
+file = WriteFile("numbers.dat")
+WriteInt file, 10
+WriteInt file, 20
+CloseFile file
+file = OpenFile("numbers.dat")
+newpos = SeekFile(file, 4)   ; skip the first 4 bytes
+Print ReadInt(file)          ; 20
+CloseFile file
+DeleteFile "numbers.dat"
+
+=== CopyStream
+; copy one file to another using streams
+source = ReadFile("level1.dat")
+If source <> 0
+    copy = WriteFile("level1_copy.dat")
+    CopyStream source, copy    ; default buffer size
+    CloseFile copy
+    CloseFile source
+EndIf
+
+=== CreateBank
+; make a bank of 16 bytes (filled with zeros)
+bank = CreateBank(16)
+Print BankSize(bank)   ; 16
+FreeBank bank
+
+=== FreeBank
+; free a bank when you no longer need it
+bank = CreateBank(1024)
+FreeBank bank
+
+=== BankSize
+; ask how big a bank is
+bank = CreateBank(256)
+Print "Bank holds " + BankSize(bank) + " bytes"
+FreeBank bank
+
+=== ResizeBank
+; grow a bank; the old data is kept and new bytes are zero
+bank = CreateBank(4)
+PokeInt bank, 0, 77
+ResizeBank bank, 8
+Print PeekInt(bank, 0)   ; 77
+Print PeekInt(bank, 4)   ; 0
+FreeBank bank
+
+=== CopyBank
+; copy 4 bytes from one bank into another
+source = CreateBank(8)
+target = CreateBank(8)
+PokeInt source, 0, 1234
+CopyBank source, 0, target, 4, 4   ; from source at 0 to target at 4, 4 bytes
+Print PeekInt(target, 4)           ; 1234
+FreeBank source
+FreeBank target
+
+=== PeekByte
+; read one byte from a bank
+bank = CreateBank(4)
+PokeByte bank, 2, 200
+Print PeekByte(bank, 2)   ; 200
+FreeBank bank
+
+=== PeekShort
+; read a 2-byte number from a bank
+bank = CreateBank(4)
+PokeShort bank, 0, 5000
+Print PeekShort(bank, 0)   ; 5000
+FreeBank bank
+
+=== PeekInt
+; read a 4-byte number from a bank
+bank = CreateBank(8)
+PokeInt bank, 4, 100000
+Print PeekInt(bank, 4)   ; 100000
+FreeBank bank
+
+=== PeekFloat
+; read a 4-byte decimal from a bank
+bank = CreateBank(8)
+PokeFloat bank, 0, 1.5
+Print PeekFloat(bank, 0)   ; 1.5
+FreeBank bank
+
+=== PokeByte
+; store a value from 0 to 255 at offset 0
+bank = CreateBank(4)
+PokeByte bank, 0, 255
+Print PeekByte(bank, 0)
+FreeBank bank
+
+=== PokeShort
+; store a 2-byte number at offset 2
+bank = CreateBank(4)
+PokeShort bank, 2, 60000
+Print PeekShort(bank, 2)
+FreeBank bank
+
+=== PokeInt
+; store a 4-byte number at offset 0
+bank = CreateBank(4)
+PokeInt bank, 0, -5
+Print PeekInt(bank, 0)   ; -5
+FreeBank bank
+
+=== PokeFloat
+; store a decimal number at offset 4
+bank = CreateBank(8)
+PokeFloat bank, 4, 3.25
+Print PeekFloat(bank, 4)   ; 3.25
+FreeBank bank
+
+=== ReadBytes
+; load the bytes of a file into a bank
+file = ReadFile("data.bin")
+If file <> 0
+    bank = CreateBank(64)
+    count = ReadBytes(bank, file, 0, 64)   ; up to 64 bytes, into the bank from offset 0
+    Print count + " bytes read"
+    CloseFile file
+    FreeBank bank
+EndIf
+
+=== WriteBytes
+; save the contents of a bank to a file
+bank = CreateBank(4)
+PokeInt bank, 0, 42
+file = WriteFile("bank.dat")
+written = WriteBytes(bank, file, 0, 4)   ; 4 bytes from bank offset 0
+Print written + " bytes written"
+CloseFile file
+FreeBank bank
+DeleteFile "bank.dat"
+
+=== MilliSecs
+; measure how long something takes
+start = MilliSecs()
+Delay 50
+elapsed = MilliSecs() - start
+Print "Took " + elapsed + " ms"
+
+=== Delay
+; pause for half a second
+Print "Wait..."
+Delay 500
+Print "Done"
+
+=== CurrentDate
+; show today's date, for example 07 Nov 2026
+Print "Today is " + CurrentDate()
+
+=== CurrentTime
+; show the time, for example 14:30:05
+Print "The time is " + CurrentTime()
+
+=== CreateTimer
+; a timer that ticks 60 times per second
+timer = CreateTimer(60)
+FreeTimer timer
+
+=== WaitTimer
+; run a loop at a steady 60 steps per second
+timer = CreateTimer(60)
+For frame = 1 To 3
+    ticks = WaitTimer(timer)   ; at least 1; more if the program fell behind
+    Print "Step " + frame + ", ticks passed: " + ticks
+Next
+FreeTimer timer
+
+=== FreeTimer
+; delete the timer when finished with it
+timer = CreateTimer(30)
+ticks = WaitTimer(timer)
+FreeTimer timer
+
+=== OpenTCPStream
+; connect to a server and send a line
+stream = OpenTCPStream("127.0.0.1", 5000)
+If stream = 0
+    Print "Could not connect"
+Else
+    WriteLine stream, "hello"
+    CloseTCPStream stream
+EndIf
+
+=== CloseTCPStream
+; close a connection when finished
+stream = OpenTCPStream("127.0.0.1", 5000)
+If stream <> 0 Then CloseTCPStream stream
+
+=== CreateTCPServer
+; start listening on port 5000
+server = CreateTCPServer(5000)
+If server = 0 Then Print "Could not start the server" Else Print "Listening"
+If server <> 0 Then CloseTCPServer server
+
+=== CloseTCPServer
+; stop the server
+server = CreateTCPServer(5001)
+If server <> 0 Then CloseTCPServer server
+
+=== AcceptTCPStream
+; check for a new client (0 means nobody is waiting)
+server = CreateTCPServer(5002)
+If server <> 0
+    client = AcceptTCPStream(server)
+    If client <> 0
+        Print "A player connected"
+        CloseTCPStream client
+    EndIf
+    CloseTCPServer server
+EndIf
+
+=== TCPStreamIP
+; show who connected
+server = CreateTCPServer(5003)
+If server <> 0
+    client = AcceptTCPStream(server)
+    If client <> 0 Then Print "From " + DottedIP(TCPStreamIP(client))
+    CloseTCPServer server
+EndIf
+
+=== TCPStreamPort
+; the port of the other end of a connection
+server = CreateTCPServer(5004)
+If server <> 0
+    client = AcceptTCPStream(server)
+    If client <> 0 Then Print "Remote port: " + TCPStreamPort(client)
+    CloseTCPServer server
+EndIf
+
+=== TCPTimeouts
+; wait up to 2 seconds for data, and 100 ms for a new client
+TCPTimeouts 2000, 100
+server = CreateTCPServer(5005)
+If server <> 0
+    client = AcceptTCPStream(server)   ; gives up after 100 ms
+    CloseTCPServer server
+EndIf
+
+=== CreateUDPStream
+; open a UDP stream on any free port
+udp = CreateUDPStream()
+If udp <> 0
+    Print "Using port " + UDPStreamPort(udp)
+    CloseUDPStream udp
+EndIf
+
+=== CloseUDPStream
+; close the UDP stream when finished
+udp = CreateUDPStream(6000)
+If udp <> 0 Then CloseUDPStream udp
+
+=== SendUDPMsg
+; write data into the stream, then send it as one message
+udp = CreateUDPStream()
+WriteInt udp, 42
+WriteString udp, "hello"
+SendUDPMsg udp, 2130706433, 6001   ; to 127.0.0.1, port 6001
+CloseUDPStream udp
+
+=== RecvUDPMsg
+; receive a message and read it with the stream commands
+udp = CreateUDPStream(6002)
+If udp <> 0
+    sender = RecvUDPMsg(udp)
+    If sender <> 0
+        Print "Message from " + DottedIP(sender)
+        Print ReadInt(udp)
+    EndIf
+    CloseUDPStream udp
+EndIf
+
+=== UDPStreamIP
+; the local address of the UDP stream
+udp = CreateUDPStream()
+If udp <> 0
+    Print "Local IP: " + DottedIP(UDPStreamIP(udp))
+    CloseUDPStream udp
+EndIf
+
+=== UDPStreamPort
+; the local port the stream is using
+udp = CreateUDPStream(0)
+If udp <> 0
+    Print "Port: " + UDPStreamPort(udp)
+    CloseUDPStream udp
+EndIf
+
+=== UDPMsgIP
+; where the last message came from
+udp = CreateUDPStream(6003)
+If udp <> 0
+    If RecvUDPMsg(udp) <> 0 Then Print "From " + DottedIP(UDPMsgIP(udp))
+    CloseUDPStream udp
+EndIf
+
+=== UDPMsgPort
+; the port the last message was sent from, so you can reply
+udp = CreateUDPStream(6004)
+If udp <> 0
+    If RecvUDPMsg(udp) <> 0 Then Print "Reply to port " + UDPMsgPort(udp)
+    CloseUDPStream udp
+EndIf
+
+=== UDPTimeouts
+; wait up to 50 ms for a message
+UDPTimeouts 50
+udp = CreateUDPStream(6005)
+If udp <> 0
+    If RecvUDPMsg(udp) = 0 Then Print "Nothing arrived"
+    CloseUDPStream udp
+EndIf
+
+=== StartNetGame
+; join a game on the network, or host one if none is found
+result = StartNetGame()
+If result = 1 Then Print "Joined a game"
+If result = 2 Then Print "Hosting a new game"
+If result = 0 Then Print "Could not start"
+StopNetGame
+
+=== HostNetGame
+; host a game that others can join
+If HostNetGame("Space Race") = 2
+    Print "Hosting"
+    StopNetGame
+Else
+    Print "Could not host"
+EndIf
+
+=== JoinNetGame
+; join a game on the local network (empty address = search)
+If JoinNetGame("Space Race", "") = 1
+    Print "Joined"
+    StopNetGame
+Else
+    Print "No game found"
+EndIf
+
+=== StopNetGame
+; leave the game when finished
+If HostNetGame("Space Race") = 2 Then StopNetGame
+
+=== CreateNetPlayer
+; add the local player to the game
+If HostNetGame("Space Race") = 2
+    player = CreateNetPlayer("Alice")
+    Print "My player id is " + player
+    StopNetGame
+EndIf
+
+=== DeleteNetPlayer
+; remove the local player from the game
+If HostNetGame("Space Race") = 2
+    player = CreateNetPlayer("Alice")
+    DeleteNetPlayer player
+    StopNetGame
+EndIf
+
+=== NetPlayerName
+; show the name of a player
+If HostNetGame("Space Race") = 2
+    player = CreateNetPlayer("Alice")
+    Print NetPlayerName(player)   ; Alice
+    StopNetGame
+EndIf
+
+=== NetPlayerLocal
+; true for players created on this computer
+If HostNetGame("Space Race") = 2
+    player = CreateNetPlayer("Alice")
+    If NetPlayerLocal(player) Then Print "That is me"
+    StopNetGame
+EndIf
+
+=== SendNetMsg
+; send a type-1 message from me to everyone (to_player = 0)
+If HostNetGame("Space Race") = 2
+    me = CreateNetPlayer("Alice")
+    ok = SendNetMsg(1, "hello everyone", me, 0)
+    If ok Then Print "Sent"
+    StopNetGame
+EndIf
+
+=== RecvNetMsg
+; handle every message that has arrived
+While RecvNetMsg()
+    Print "Type " + NetMsgType() + " from player " + NetMsgFrom() + ": " + NetMsgData()
+Wend
+
+=== NetMsgType
+; tell player messages apart from joins and leaves
+While RecvNetMsg()
+    kind = NetMsgType()
+    If kind = 100 Then Print "A player joined"
+    If kind = 101 Then Print "A player left"
+    If kind = 200 Then Print "The session was lost"
+    If kind >= 1 And kind <= 99 Then Print "Player message"
+Wend
+
+=== NetMsgFrom
+; find out who sent the message
+While RecvNetMsg()
+    sender = NetMsgFrom()
+    Print NetPlayerName(sender) + " says " + NetMsgData()
+Wend
+
+=== NetMsgTo
+; 0 means the message was sent to everyone
+While RecvNetMsg()
+    If NetMsgTo() = 0 Then Print "Broadcast: " + NetMsgData()
+Wend
+
+=== NetMsgData
+; read the text of the message
+While RecvNetMsg()
+    Print "Received: " + NetMsgData()
+Wend
+
+=== DottedIP
+; turn an integer address into text
+Print DottedIP(3232235521)   ; 192.168.0.1
+
+=== CountHostIPs
+; look up this computer's addresses
+count = CountHostIPs("")
+Print count + " address(es) found"
+For index = 1 To count
+    Print DottedIP(HostIP(index))
+Next
+
+=== HostIP
+; show the first address of a host
+If CountHostIPs("localhost") > 0
+    Print DottedIP(HostIP(1))
+EndIf
+
+=== CallDLL
+; call a function in a shared library, passing it a bank
+input = CreateBank(8)
+PokeInt input, 0, 21
+output = CreateBank(8)
+result = CallDLL("mylib", "Double", input, output)   ; the function can write into output
+Print "Function returned " + result
+Print "Output: " + PeekInt(output, 0)

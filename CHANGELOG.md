@@ -4,6 +4,37 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## The NeptuneBASIC manual
+
+* **Manual** – [docs/MANUAL.md](docs/MANUAL.md) and 25 chapters in
+  `docs/manual/` teach NeptuneBASIC from the beginning, for people who
+  have never programmed: getting started; the language (values and
+  variables, expressions, decisions, loops, functions, text, arrays and
+  data, types and objects, errors and debugging, organising programs);
+  and making games (the game loop, 2D graphics, 2D games, input, sound
+  and movies, 3D basics, models and looks, collisions and physics, AI,
+  building worlds, files, networking, user interfaces, sharing a game).
+  Each idea is explained in plain words with short programs, and the
+  examples that print something show exactly what they print.
+* **Every command has an example** – the command reference
+  (`docs/COMMANDS.md`) now shows an example under each of the 1055
+  commands. The examples live in `docs/examples/*.txt` and
+  `tools/gen_reference.py` puts them in.
+* **Checked examples** – `python tools/check_doc_examples.py` now checks
+  every example in the manual, the shader manual, the language summary
+  and the command reference (1459 of them) with `neptune check`, and
+  runs the 88 that show their output, comparing what they print.
+* **Language summary** – `docs/LANGUAGE.md` is now the whole language on
+  one page, each part linking to the chapter that explains it.
+* **Fewer old references** – the README, the reference and the guides
+  describe NeptuneBASIC on its own terms, and several command
+  descriptions are clearer (`CreateListener`, `PlayMusic`,
+  `SendNetMsg`, `SoundLoaded`, `CameraExposure`, `ReadAvail`).
+* **Fix** – `CommandLine()` returned the program's own file name with its
+  arguments (`neptune run game.nb easy` gave `"game.nb easy"`), and a
+  stand-alone game lost its first argument. It now returns just the
+  words after the program's name in both cases.
+
 ## Baked lighting
 
 * **Light baking** – `BakeLightmaps` works out soft lighting for still
@@ -30,7 +61,6 @@ the top. Every command mentioned here is explained in
   `FILTER_LOWPASS` and the other kinds are named constants.
 * **Guide** – [docs/SOUND.md](docs/SOUND.md) explains sound from playing
   a file to 3D sound, buses and effects. Example: `examples/soundfx.nb`.
-
 
 ## The shader manual
 

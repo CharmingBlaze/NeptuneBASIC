@@ -1,0 +1,564 @@
+; Examples for the input, sound and scene commands. Format: see tools/check_doc_examples.py.
+
+=== WaitKey
+Print "Press any key to start..."
+code = WaitKey()          ; pauses here until a key is pressed
+Print "You pressed key code " + code
+
+=== KeyDown
+Graphics3D 640, 480
+x = 0
+While Not KeyDown(KEY_ESCAPE)     ; keep going until Escape is held
+    If KeyDown(KEY_RIGHT) Then x = x + 1   ; true every frame the key is held
+    If KeyDown(KEY_LEFT) Then x = x - 1
+    Flip
+Wend
+
+=== KeyHit
+Graphics3D 640, 480
+jumps = 0
+While Not KeyDown(KEY_ESCAPE)
+    ; KeyHit counts presses since the last call, so holding the key counts once
+    jumps = jumps + KeyHit(KEY_SPACE)
+    Flip
+Wend
+Print "You jumped " + jumps + " times"
+
+=== GetKey
+Graphics3D 640, 480
+typed = ""
+While Not KeyDown(KEY_ENTER)
+    letter = GetKey()                       ; 0 when nothing was typed
+    If letter >= 32 Then typed = typed + Chr(letter)   ; keep printable characters only
+    Flip
+Wend
+Print "You typed: " + typed
+
+=== FlushKeys
+Graphics3D 640, 480
+Print "Press a key to continue"
+FlushKeys                  ; ignore keys pressed before this point
+code = WaitKey()
+
+=== HidePointer
+Graphics3D 640, 480
+HidePointer                ; the mouse arrow is no longer drawn over the window
+Flip
+
+=== ShowPointer
+Graphics3D 640, 480
+HidePointer
+Flip
+ShowPointer                ; bring the arrow back, for example for a menu
+Flip
+
+=== MoveMouse
+Graphics3D 640, 480
+MoveMouse 320, 240         ; put the pointer in the middle of the window
+Flip
+
+=== CaptureMouse
+Graphics3D 640, 480
+CaptureMouse 1             ; lock and hide the pointer for mouse-look
+Flip
+turn = MouseXSpeed()       ; still reports movement while captured
+CaptureMouse 0             ; release the pointer again
+
+=== MouseZSpeed
+Graphics3D 640, 480
+camera = CreateCamera()
+wheel = MouseZSpeed()      ; positive when the wheel is rolled forward
+MoveEntity camera, 0, 0, wheel   ; zoom in or out with the wheel
+Flip
+
+=== GetMouse
+Graphics3D 640, 480
+button = GetMouse()        ; 0 when no button was clicked
+If button = 1 Then Print "Left click"
+If button = 2 Then Print "Right click"
+If button = 3 Then Print "Middle click"
+Flip
+
+=== WaitMouse
+Print "Click a mouse button..."
+button = WaitMouse()       ; 1 left, 2 right, 3 middle
+Print "You clicked button " + button
+
+=== MouseX
+Graphics3D 640, 480
+cursorX = MouseX()         ; pixels from the left edge of the window
+cursorY = MouseY()
+Print "Pointer at " + cursorX + ", " + cursorY
+Flip
+
+=== MouseY
+Graphics3D 640, 480
+If MouseY() < 50 Then Print "The pointer is near the top of the window"
+Flip
+
+=== MouseZ
+Graphics3D 640, 480
+zoom = MouseZ()            ; total wheel position, starts at 0
+Print "Wheel position: " + zoom
+Flip
+
+=== MouseDown
+Graphics3D 640, 480
+While Not KeyDown(KEY_ESCAPE)
+    If MouseDown(1) Then Print "Left button is held"    ; 1 left, 2 right, 3 middle
+    Flip
+Wend
+
+=== MouseHit
+Graphics3D 640, 480
+shots = 0
+While Not KeyDown(KEY_ESCAPE)
+    shots = shots + MouseHit(1)    ; one count per click, however long it is held
+    Flip
+Wend
+Print "You fired " + shots + " shots"
+
+=== MouseXSpeed
+Graphics3D 640, 480
+camera = CreateCamera()
+turn = MouseXSpeed()               ; pixels moved sideways since the last call
+TurnEntity camera, 0, -turn * 0.2, 0   ; turn the camera with the mouse
+Flip
+
+=== MouseYSpeed
+Graphics3D 640, 480
+camera = CreateCamera()
+look = MouseYSpeed()               ; pixels moved up or down since the last call
+TurnEntity camera, look * 0.2, 0, 0
+Flip
+
+=== FlushMouse
+Graphics3D 640, 480
+FlushMouse                 ; forget clicks made while a menu was open
+clicks = MouseHit(1)       ; now 0
+Flip
+
+=== EnableDirectInput
+EnableDirectInput 1        ; remembered, but input always comes from the system
+Print DirectInputEnabled()
+
+=== DirectInputEnabled
+EnableDirectInput 0
+If DirectInputEnabled() = 0 Then Print "DirectInput is off"
+
+=== JoyType
+; 0 = no controller, 2 = gamepad
+If JoyType(0) = 0 Then Print "No controller on port 0" Else Print "Gamepad found"
+
+=== CountJoys
+pads = CountJoys()         ; how many controllers are connected
+Print "Controllers connected: " + pads
+
+=== JoyDown
+Graphics3D 640, 480
+While Not KeyDown(KEY_ESCAPE)
+    If JoyDown(1, 0) Then Print "Button 1 held on the first controller"
+    Flip
+Wend
+
+=== JoyHit
+Graphics3D 640, 480
+jumps = 0
+While Not KeyDown(KEY_ESCAPE)
+    jumps = jumps + JoyHit(1)      ; port is optional and defaults to 0
+    Flip
+Wend
+
+=== GetJoy
+Graphics3D 640, 480
+button = GetJoy(0)         ; 0 when no button was pressed
+If button > 0 Then Print "Button " + button + " was pressed"
+Flip
+
+=== WaitJoy
+Print "Press a button on the gamepad..."
+button = WaitJoy(0)        ; waits for a button on the first controller
+Print "You pressed button " + button
+
+=== FlushJoy
+Graphics3D 640, 480
+FlushJoy                   ; forget button presses from before this point
+presses = JoyHit(1)        ; now 0
+Flip
+
+=== JoyX
+Graphics3D 640, 480
+player = CreateCube()
+camera = CreateCamera()
+MoveEntity camera, 0, 0, -5
+MoveEntity player, JoyX(0) * 0.1, 0, 0   ; -1 (left) to 1 (right)
+Flip
+
+=== JoyY
+Graphics3D 640, 480
+player = CreateCube()
+camera = CreateCamera()
+MoveEntity camera, 0, 0, -5
+MoveEntity player, 0, 0, -JoyY(0) * 0.1  ; pushing the stick forward gives -1
+Flip
+
+=== JoyZ
+Graphics3D 640, 480
+throttle = JoyZ(0)         ; right trigger minus left trigger, -1 to 1
+Print "Throttle: " + throttle
+Flip
+
+=== JoyU
+Graphics3D 640, 480
+lookSide = JoyU(0)         ; right stick, left (-1) to right (1)
+Print "Right stick sideways: " + lookSide
+Flip
+
+=== JoyV
+Graphics3D 640, 480
+lookUp = JoyV(0)           ; right stick, vertical position -1 to 1
+Print "Right stick vertical: " + lookUp
+Flip
+
+=== JoyPitch
+Graphics3D 640, 480
+camera = CreateCamera()
+RotateEntity camera, JoyPitch(0) * 0.5, 0, 0   ; -180 to 180 degrees
+Flip
+
+=== JoyYaw
+Graphics3D 640, 480
+camera = CreateCamera()
+RotateEntity camera, 0, JoyYaw(0) * 0.5, 0     ; -180 to 180 degrees
+Flip
+
+=== JoyRoll
+Graphics3D 640, 480
+camera = CreateCamera()
+RotateEntity camera, 0, 0, JoyRoll(0) * 0.5    ; -180 to 180 degrees
+Flip
+
+=== JoyHat
+Graphics3D 640, 480
+hat = JoyHat(0)            ; 0 = up, 90 = right, 180 = down, 270 = left, -1 = not pressed
+If hat = 0 Then Print "D-pad up"
+If hat = 90 Then Print "D-pad right"
+If hat = -1 Then Print "D-pad released"
+Flip
+
+=== JoyXDir
+Graphics3D 640, 480
+If JoyXDir(0) = -1 Then Print "Pushing left"    ; -1, 0 or 1
+If JoyXDir(0) = 1 Then Print "Pushing right"
+Flip
+
+=== JoyYDir
+Graphics3D 640, 480
+If JoyYDir(0) = -1 Then Print "Pushing the stick forward"   ; -1, 0 or 1
+If JoyYDir(0) = 1 Then Print "Pulling the stick back"
+Flip
+
+=== JoyZDir
+Graphics3D 640, 480
+If JoyZDir(0) = 1 Then Print "Right trigger is pulled more than the left"
+Flip
+
+=== JoyUDir
+Graphics3D 640, 480
+If JoyUDir(0) <> 0 Then Print "Right stick is pushed sideways"
+Flip
+
+=== JoyVDir
+Graphics3D 640, 480
+If JoyVDir(0) <> 0 Then Print "Right stick is pushed up or down"
+Flip
+
+=== LoadSound
+blip = LoadSound("examples/media/blip.wav")
+If blip = 0 Then RuntimeError "Could not load the sound"   ; 0 means it failed
+PlaySound blip
+
+=== Load3DSound
+Graphics3D 640, 480
+engine = Load3DSound("examples/media/hum.wav")   ; to be played with EmitSound
+If engine = 0 Then RuntimeError "Could not load the sound"
+
+=== FreeSound
+blip = LoadSound("examples/media/blip.wav")
+PlaySound blip
+FreeSound blip             ; the handle must not be used after this
+
+=== LoopSound
+hum = LoadSound("examples/media/hum.wav")
+LoopSound hum              ; PlaySound now repeats the sound
+channel = PlaySound(hum)
+
+=== SoundVolume
+blip = LoadSound("examples/media/blip.wav")
+SoundVolume blip, 0.5      ; 0 = silent, 1 = full volume
+PlaySound blip
+
+=== SoundPan
+blip = LoadSound("examples/media/blip.wav")
+SoundPan blip, -1          ; -1 = left speaker, 0 = centre, 1 = right
+PlaySound blip
+
+=== SoundPitch
+blip = LoadSound("examples/media/blip.wav")
+SoundPitch blip, 22050     ; playback rate in Hz: lower is deeper and slower
+PlaySound blip
+
+=== PlaySound
+blip = LoadSound("examples/media/blip.wav")
+channel = PlaySound(blip)  ; the channel lets you control this playing copy
+If ChannelPlaying(channel) Then Print "Playing"
+
+=== PlayCDTrack
+channel = PlayCDTrack(2)   ; CD audio is not supported: does nothing, returns 0
+Print channel
+
+=== PlayMusic
+music = PlayMusic("theme.ogg", 1)   ; 1 = loop, 0 = play once
+If music = 0 Then Print "Could not load the music"
+
+=== StopChannel
+hum = LoadSound("examples/media/hum.wav")
+LoopSound hum
+channel = PlaySound(hum)
+StopChannel channel        ; silence it
+
+=== PauseChannel
+music = PlayMusic("theme.ogg", 1)
+PauseChannel music         ; for example when the game is paused
+
+=== ResumeChannel
+music = PlayMusic("theme.ogg", 1)
+PauseChannel music
+ResumeChannel music        ; carries on from where it stopped
+
+=== ChannelVolume
+hum = LoadSound("examples/media/hum.wav")
+channel = PlaySound(hum)
+ChannelVolume channel, 0.25   ; 0 = silent, 1 = full; only this playing copy
+
+=== CreateAudioBus
+; one bus each for music and effects, so their volumes can be set apart
+music = CreateAudioBus("music")
+effects = CreateAudioBus("effects")
+BusVolume music, 0.5
+SoundBus LoadSound("examples/media/hum.wav"), music
+
+=== BusVolume
+; the options menu's volume sliders set the buses
+effects = CreateAudioBus("effects")
+BusVolume effects, 0.8     ; 0 = silent, 1 = full
+BusVolume 0, 1             ; bus 0 is the master bus everything ends in
+
+=== BusReverb
+; sounds in a cave echo for three seconds
+cave = CreateAudioBus("cave")
+BusReverb cave, 3.0, 0.6, 6000   ; decay seconds, dry 0-1, brightness in Hz
+SoundBus LoadSound("examples/media/blip.wav"), cave
+BusReverb cave, 0                ; 0 removes the reverb again
+
+=== BusFilter
+; muffle everything while the player is under water
+world = CreateAudioBus("world")
+BusFilter world, FILTER_LOWPASS, 800     ; only sounds below about 800 Hz pass
+BusFilter world, FILTER_NONE             ; back to normal
+
+=== SoundBus
+; every later PlaySound of this sound goes into the voices bus
+voices = CreateAudioBus("voices")
+hello = LoadSound("examples/media/blip.wav")
+SoundBus hello, voices
+PlaySound hello
+
+=== ChannelBus
+; move a sound that is already playing into another bus
+radio = CreateAudioBus("radio")
+BusFilter radio, FILTER_HIGHPASS, 1500   ; thin, like a small speaker
+channel = PlaySound(LoadSound("examples/media/hum.wav"))
+ChannelBus channel, radio
+
+=== ChannelPan
+blip = LoadSound("examples/media/blip.wav")
+channel = PlaySound(blip)
+ChannelPan channel, 1      ; -1 = left, 1 = right
+
+=== ChannelPitch
+hum = LoadSound("examples/media/hum.wav")
+channel = PlaySound(hum)
+ChannelPitch channel, 44100   ; playback rate in Hz
+
+=== ChannelPlaying
+blip = LoadSound("examples/media/blip.wav")
+channel = PlaySound(blip)
+While ChannelPlaying(channel)   ; 1 while it plays, 0 once it has finished
+    Delay 10
+Wend
+Print "Sound finished"
+
+=== CreateListener
+Graphics3D 640, 480
+camera = CreateCamera()
+listener = CreateListener(camera)   ; the ears follow the camera
+engine = Load3DSound("examples/media/hum.wav")
+
+=== EmitSound
+Graphics3D 640, 480
+camera = CreateCamera()
+listener = CreateListener(camera)
+engine = Load3DSound("examples/media/hum.wav")
+car = CreateCube()
+MoveEntity car, 5, 0, 10            ; to the right and ahead of the camera
+channel = EmitSound(engine, car)    ; the sound comes from the car's position
+
+=== LoadSoundAsync
+Graphics3D 640, 480
+boom = LoadSoundAsync("explosion.wav")   ; returns at once; the game keeps running
+While SoundLoaded(boom) = 0
+    Flip                                 ; show a loading screen meanwhile
+Wend
+
+=== SoundLoaded
+Graphics3D 640, 480
+boom = LoadSoundAsync("explosion.wav")
+state = SoundLoaded(boom)   ; 1 = ready, 0 = still loading, -1 = failed
+If state = 1 Then PlaySound boom
+If state = -1 Then Print "Could not load explosion.wav"
+
+=== SoundName
+blip = LoadSound("examples/media/blip.wav")
+Print SoundName(blip)      ; the file the sound came from
+
+=== SaveScene
+Graphics3D 640, 480
+tower = CreateCube()
+ScaleEntity tower, 1, 4, 1
+If SaveScene("level1.rgs") Then Print "Scene saved"   ; 1 on success
+
+=== SaveEntity
+Graphics3D 640, 480
+house = CreateCube()
+roof = CreateCone()
+EntityParent roof, house
+If SaveEntity(house, "house.rgs") Then Print "House saved"   ; includes the roof
+
+=== ReloadAssets
+Graphics3D 640, 480
+tex = LoadTexture("examples/media/checker.png")
+count = ReloadAssets()     ; re-read every loaded file from disk
+Print count + " assets reloaded"
+
+=== WatchAssets
+Graphics3D 640, 480
+WatchAssets 1              ; edited textures and models update while the game runs
+tex = LoadTexture("examples/media/checker.png")
+Flip
+
+=== AssetsReloaded
+Graphics3D 640, 480
+WatchAssets 1
+Flip
+changed = AssetsReloaded()   ; assets reloaded since the last call
+If changed > 0 Then Print changed + " assets were updated"
+
+=== ModelName
+Graphics3D 640, 480
+fox = LoadMesh("examples/media/Fox.glb")
+Print ModelName(fox)       ; the file the model came from
+
+=== LoadPrefab
+Graphics3D 640, 480
+foxPrefab = LoadPrefab("examples/media/Fox.glb")
+If foxPrefab = 0 Then RuntimeError "Could not load the prefab"
+fox = InstancePrefab(foxPrefab)
+
+=== CreatePrefab
+Graphics3D 640, 480
+rock = CreateSphere()
+rockPrefab = CreatePrefab(rock)   ; the original is hidden and kept for copying
+copy = InstancePrefab(rockPrefab)
+
+=== EntityBatch
+Graphics3D 640, 480
+forest = CreateMesh()
+For i = 1 To 20
+    tree = CreateCube(forest)       ; children of the mesh are merged
+    PositionEntity tree, i * 2, 0, 0
+Next
+EntityBatch forest, 1               ; 1 = merge where they are now
+
+=== InstancePrefab
+Graphics3D 640, 480
+rockPrefab = CreatePrefab(CreateSphere())
+For i = 1 To 5
+    rock = InstancePrefab(rockPrefab)   ; a new copy each time
+    PositionEntity rock, i * 3, 0, 0
+Next
+
+=== PrefabName
+Graphics3D 640, 480
+foxPrefab = LoadPrefab("examples/media/Fox.glb")
+Print PrefabName(foxPrefab)   ; the file it was loaded from
+
+=== EntityPrefab
+Graphics3D 640, 480
+rockPrefab = CreatePrefab(CreateSphere())
+rock = InstancePrefab(rockPrefab)
+; 0 if the entity was not made from a prefab
+If EntityPrefab(rock) = rockPrefab Then Print "rock was made from rockPrefab"
+
+=== FreePrefab
+Graphics3D 640, 480
+rockPrefab = CreatePrefab(CreateSphere())
+rock = InstancePrefab(rockPrefab)
+FreePrefab rockPrefab       ; the copy already placed stays
+
+=== CreateScene
+Graphics3D 640, 480
+menuScene = CreateScene()   ; scene 1 is the one Graphics3D made
+SetScene menuScene
+camera = CreateCamera()     ; belongs to the new scene
+
+=== SetScene
+Graphics3D 640, 480
+mainScene = CurrentScene()
+menuScene = CreateScene()
+SetScene menuScene          ; new entities now go into the menu scene
+logo = CreateCube()
+SetScene mainScene          ; back to the game
+
+=== CurrentScene
+Graphics3D 640, 480
+Print "Current scene: " + CurrentScene()   ; 1 at the start
+
+=== ShowScene
+Graphics3D 640, 480
+pauseScene = CreateScene()
+HideScene pauseScene
+ShowScene pauseScene        ; drawn and updated again
+
+=== HideScene
+Graphics3D 640, 480
+interior = CreateScene()
+HideScene interior          ; not drawn or updated, but everything is kept
+
+=== SceneVisible
+Graphics3D 640, 480
+interior = CreateScene()
+HideScene interior
+If SceneVisible(interior) = 0 Then Print "Interior is hidden"
+
+=== FreeScene
+Graphics3D 640, 480
+interior = CreateScene()
+SetScene interior
+room = CreateCube()
+FreeScene interior          ; frees the room too; scene 1 becomes current
+
+=== EntityScene
+Graphics3D 640, 480
+cube = CreateCube()
+Print "Cube is in scene " + EntityScene(cube)

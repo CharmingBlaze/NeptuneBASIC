@@ -1,0 +1,697 @@
+; Examples for the shader, material, post-processing and shadow commands.
+; Copied from docs/shaders/10-reference.md; see tools/check_doc_examples.py for the format.
+
+=== LoadShader
+glow = LoadShader("shaders/glow.glsl")
+If ShaderCompiled(glow) = 0 Then RuntimeError ShaderError(glow)
+holo = LoadShader("builtin:hologram")
+
+=== CreateShader
+red = CreateShader("//! fragment" + Chr(10) + "void main() { FragColor = vec4(1.0, 0.0, 0.0, 1.0); }")
+CompileShader red
+empty = CreateShader()
+
+=== CompileShader
+s = CreateShader()
+ShaderSource s, "//! fragment" + Chr(10) + "void main() { FragColor = vec4(1.0); }"
+If CompileShader(s) = 0 Then DebugLog ShaderError(s)
+
+=== ValidateShader
+s = LoadShader("shaders/glow.glsl")
+ShaderSource s, "//! fragment" + Chr(10) + "void main() { FragColor = vec4(oops); }"
+If ValidateShader(s) = 0 Then DebugLog "edit rejected: " + ShaderError(s)
+
+=== ShaderValidate
+s = LoadShader("shaders/glow.glsl")
+If ShaderValidate(s) Then DebugLog "fine"
+
+=== ReloadShader
+s = LoadShader("shaders/glow.glsl")
+If KeyHit(KEY_F5) Then ReloadShader s
+
+=== ShaderHotReload
+s = LoadShader("shaders/water.glsl")
+ShaderHotReload s
+
+=== ShaderSource
+s = CreateShader()
+ShaderSource s, "uniform float level = 0.5;" + Chr(10) + "//! fragment" + Chr(10) + "void main() { FragColor = vec4(vec3(level), 1.0); }"
+CompileShader s
+
+=== ShaderVertexSource
+s = LoadShader("shaders/ball.glsl")
+ShaderVertexSource s, "void nb_displace(inout vec3 p, inout vec3 n, vec2 uv) { p *= 1.2; }"
+CompileShader s
+
+=== ShaderFragmentSource
+s = CreateShader()
+ShaderFragmentSource s, "void nb_surface(inout NbSurface s) { s.albedo = vec3(0.2, 0.6, 1.0); }"
+CompileShader s
+
+=== ShaderGetSource
+toon = LoadShader("builtin:toon")
+DebugLog ShaderGetSource(toon)        ; a good starting point for your own
+DebugLog ShaderGetSource(toon, 2)     ; what the GPU sees
+
+=== ShaderSetKeyword
+crystal = LoadShader("shaders/crystal.glsl")
+ShaderSetKeyword crystal, "GLOW", True
+ShaderSetKeyword crystal, "GLOW", False
+
+=== ShaderClone
+red = CreatePBRMaterial()
+SetAlbedo red, 220, 30, 30
+blue = ShaderClone(red)
+SetAlbedo blue, 30, 60, 220
+
+=== ShaderSave
+s = LoadShader("builtin:toon")
+ShaderSave s, "toon.glsl"           ; the source
+ShaderSave s, "toon_fyrox.shader"   ; the Fyrox shader
+
+=== FreeShader
+s = LoadShader("builtin:hologram")
+FreeShader s
+
+=== ShaderExists
+s = LoadShader("builtin:fire")
+FreeShader s
+If ShaderExists(s) = 0 Then DebugLog "gone"
+
+=== ShaderCompiled
+s = LoadShader("shaders/glow.glsl")
+If Not ShaderCompiled(s) Then DebugLog ShaderError(s)
+
+=== ShaderError
+s = LoadShader("shaders/glow.glsl")
+If ShaderError(s) <> "" Then RuntimeError ShaderError(s)
+
+=== ShaderCompileError
+s = LoadShader("shaders/glow.glsl")
+DebugLog ShaderCompileError(s)
+
+=== ShaderLog
+s = LoadShader("shaders/glow.glsl")
+DebugLog ShaderLog(s)          ; "compiled in 71.1 ms (1 passes)"
+
+=== ShaderApply
+holo = LoadShader("builtin:hologram")
+ball = CreateSphere(32)
+ShaderApply holo, ball
+ShaderApply 0, ball         ; normal again
+
+=== EntityMaterial
+gold = CreatePBRMaterial()
+SetMetallic gold, 1
+ring = CreateCylinder(32)
+EntityMaterial ring, gold
+
+=== EntityShader
+wave = LoadShader("examples/media/wave.shader")
+mesh = CreateCube()
+EntityShader mesh, wave
+
+=== ShaderEnable
+s = LoadShader("builtin:forcefield")
+ShaderDisable s
+ShaderEnable s
+
+=== ShaderDisable
+xray = LoadShader("shaders/xray.glsl")
+If KeyDown(KEY_X) Then ShaderEnable xray Else ShaderDisable xray
+
+=== ShaderSetFloat
+s = LoadShader("builtin:hologram")
+ShaderSetFloat s, "speed", 3.5
+
+=== ShaderSetInt
+s = LoadShader("shaders/levels.glsl")
+ShaderSetInt s, "steps", 4
+
+=== ShaderSetBool
+s = LoadShader("shaders/door.glsl")
+ShaderSetBool s, "locked", True
+
+=== ShaderSetVector2
+s = LoadShader("builtin:unlit")
+ShaderSetVector2 s, "uvScale", 4, 4      ; repeat the texture 4 times
+
+=== ShaderSetVector3
+s = LoadShader("shaders/explosion.glsl")
+ShaderSetVector3 s, "center", 0, 1, 0
+
+=== ShaderSetVector4
+s = LoadShader("builtin:unlit")
+ShaderSetVector4 s, "albedo", 1, 0.5, 0.2, 1
+
+=== ShaderSetColor
+s = LoadShader("builtin:forcefield")
+ShaderSetColor s, "color", 80, 255, 120
+
+=== ShaderSetMatrix3
+s = LoadShader("shaders/colormix.glsl")
+ShaderSetMatrix3 s, "mixer", "0.39,0.35,0.27, 0.77,0.69,0.53, 0.19,0.17,0.13"   ; sepia
+
+=== ShaderSetMatrix4
+s = LoadShader("shaders/projector.glsl")
+ShaderSetMatrix4 s, "projector", "1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1"
+
+=== ShaderSetBuffer
+s = LoadShader("shaders/blur.glsl")
+ShaderSetBuffer s, "weights", "0.06, 0.24, 0.4, 0.24, 0.06"
+
+=== ShaderSetParameter
+s = LoadShader("builtin:hologram")
+ShaderSetParameter s, "color", "1, 0.3, 0.8"
+ShaderSetParameter s, "speed", "2"
+
+=== ShaderGetParameter
+s = LoadShader("builtin:water")
+DebugLog ShaderGetParameter(s, "waveHeight")     ; "0.25"
+
+=== ShaderSetTexture
+s = LoadShader("builtin:unlit")
+ShaderSetTexture s, "albedoMap", LoadTexture("examples/media/checker.png")
+
+=== ShaderSetCubeMap
+s = LoadShader("builtin:glass")
+ShaderSetCubeMap s, "envMap", LoadTexture("sky.png", 128)
+
+=== ShaderSetTextureArray
+grass = LoadTexture("grass.png")
+dirt = LoadTexture("dirt.png")
+rock = LoadTexture("rock.png")
+s = LoadShader("shaders/layers.glsl")
+ShaderSetTextureArray s, "layers", Str(grass) + "," + Str(dirt) + "," + Str(rock)
+
+=== ShaderSetTime
+s = LoadShader("builtin:fire")
+ShaderSetTime s, 2.5       ; frozen at 2.5 seconds
+ShaderSetTime s            ; running again
+
+=== ShaderSetResolution
+s = LoadShader("shaders/pixel.glsl")
+ShaderSetResolution s, 320, 180
+
+=== ShaderSetCamera
+camera = CreateCamera()
+s = LoadShader("shaders/radar.glsl")
+ShaderSetCamera s, camera
+
+=== ShaderSetLight
+lamp = CreateLight(LIGHT_POINT)
+s = LoadShader("shaders/glowlamp.glsl")
+ShaderSetLight s, lamp
+
+=== ShaderSetMaterial
+old = LoadShader("builtin:toon")
+ShaderSetColor old, "albedo", 255, 100, 50
+newer = LoadShader("builtin:cel")
+n = ShaderSetMaterial(newer, old)       ; newer is orange too
+
+=== ShaderParameterExists
+s = LoadShader("builtin:water")
+If ShaderParameterExists(s, "foamAmount") Then ShaderSetFloat s, "foamAmount", 1
+
+=== ShaderParameterCount
+s = LoadShader("builtin:toon")
+DebugLog ShaderParameterCount(s)
+
+=== ShaderParameterName
+s = LoadShader("builtin:toon")
+For i = 0 To ShaderParameterCount(s) - 1
+    DebugLog ShaderParameterName(s, i)
+Next
+
+=== ShaderParameterType
+s = LoadShader("builtin:toon")
+DebugLog ShaderParameterType(s, "rimColor")    ; "vec3"
+
+=== ShaderFloat
+wood = LoadShader("builtin:diffuse")
+crate = CreateCube()
+EntityShader crate, wood
+ShaderFloat crate, "shininess", 8
+
+=== ShaderVector
+paint = LoadShader("builtin:diffuse")
+car = CreateCube()
+EntityShader car, paint
+ShaderVector car, "albedo", 1, 0.2, 0.2, 1
+
+=== ShaderTexture
+poster = LoadShader("builtin:unlit")
+frame = CreateCube()
+EntityShader frame, poster
+ShaderTexture frame, "albedoMap", LoadTexture("examples/media/ship.png")
+
+=== VertexData
+mesh = CreateMesh()
+surf = CreateSurface(mesh)
+v = AddVertex(surf, 0, 0, 0)
+VertexData surf, v, 0, Rnd(0, 6.28), 1      ; a random phase and a height
+
+=== VertexDataValue
+mesh = CreateMesh()
+surf = CreateSurface(mesh)
+v = AddVertex(surf, 0, 0, 0)
+VertexData surf, v, 0, 2.5
+DebugLog VertexDataValue(surf, v, 0, 0)     ; 2.5
+
+=== ShaderDebug
+s = LoadShader("builtin:water")
+DebugLog ShaderDebug(s)
+
+=== ShaderGetUniforms
+s = LoadShader("builtin:rim")
+DebugLog ShaderGetUniforms(s)   ; "albedo:vec4,rimColor:vec3,rimPower:float,..."
+
+=== ShaderGetAttributes
+s = LoadShader("builtin:toon")
+DebugLog ShaderGetAttributes(s)  ; "vertexPosition@0,vertexTexCoord@1,..."
+
+=== ShaderGetBindings
+s = LoadShader("builtin:unlit")
+DebugLog ShaderGetBindings(s)    ; "albedoMap:sampler2D@0,properties:block@0,..."
+
+=== ShaderGetResourceInfo
+s = LoadShader("builtin:toon")
+DebugLog ShaderGetResourceInfo(s)
+
+=== ShaderGetCompilationStatus
+s = LoadShader("shaders/glow.glsl")
+If ShaderGetCompilationStatus(s) = SHADER_FAILED Then DebugLog ShaderError(s)
+
+=== ShaderGetBackend
+DebugLog ShaderGetBackend()     ; "OpenGL 3.3 core / GLES 3.0 (Fyrox); GLSL 330, WGSL via naga"
+
+=== CreatePBRMaterial
+steel = CreatePBRMaterial()
+SetAlbedo steel, 160, 160, 165
+SetMetallic steel, 1
+SetRoughness steel, 0.45
+pipe = CreateCylinder(24)
+EntityMaterial pipe, steel
+
+=== SetAlbedo
+m = CreatePBRMaterial()
+SetAlbedo m, 200, 30, 30
+
+=== SetAlbedoMap
+m = CreatePBRMaterial()
+SetAlbedoMap m, LoadTexture("examples/media/checker.png")
+
+=== SetMetallic
+m = CreatePBRMaterial()
+SetMetallic m, 1
+
+=== SetMetallicMap
+m = CreatePBRMaterial()
+SetMetallic m, 1
+SetMetallicMap m, LoadTexture("armour_metal.png")
+
+=== SetRoughness
+m = CreatePBRMaterial()
+SetRoughness m, 0.2
+
+=== SetRoughnessMap
+m = CreatePBRMaterial()
+SetRoughness m, 1
+SetRoughnessMap m, LoadTexture("floor_rough.png")
+
+=== SetNormalMap
+m = CreatePBRMaterial()
+SetNormalMap m, LoadTexture("brick_normal.png"), 1.5
+
+=== SetAOMap
+m = CreatePBRMaterial()
+SetAOMap m, LoadTexture("brick_ao.png")
+
+=== SetEmissive
+screen = CreatePBRMaterial()
+SetAlbedo screen, 10, 10, 10
+SetEmissive screen, 80, 200, 255, 3
+
+=== SetEmissiveMap
+m = CreatePBRMaterial()
+SetEmissive m, 255, 255, 255, 2
+SetEmissiveMap m, LoadTexture("windows_lit.png")
+
+=== SetOpacity
+glassy = CreatePBRMaterial()
+SetAlbedo glassy, 180, 220, 255
+SetOpacity glassy, 0.3
+
+=== SetOpacityMap
+leaves = CreatePBRMaterial()
+SetAlbedoMap leaves, LoadTexture("leaf.png")
+SetOpacityMap leaves, LoadTexture("leaf_mask.png")
+
+=== SetHeightMap
+cobbles = CreatePBRMaterial()
+SetAlbedoMap cobbles, LoadTexture("cobbles.png")
+SetHeightMap cobbles, LoadTexture("cobbles_height.png"), 0.04
+
+=== SetParallaxScale
+m = CreatePBRMaterial()
+SetHeightMap m, LoadTexture("cobbles_height.png")
+SetParallaxScale m, 0.08
+
+=== SetEnvironmentMap
+chrome = CreatePBRMaterial()
+SetMetallic chrome, 1
+SetRoughness chrome, 0.05
+SetEnvironmentMap chrome, LoadTexture("sky.png", 128)
+
+=== SetReflectionIntensity
+m = CreatePBRMaterial()
+SetEnvironmentMap m, LoadTexture("sky.png", 128)
+SetReflectionIntensity m, 0.4
+
+=== SetFresnel
+m = CreatePBRMaterial()
+SetFresnel m, 0.5
+
+=== SetMaterialWorkflow
+m = CreatePBRMaterial()
+SetMaterialWorkflow m, WORKFLOW_SPECULAR, 40, 40, 40
+
+=== CreateToonMaterial
+hero = CreateToonMaterial(SHADING_CEL)
+SetAlbedo hero, 90, 200, 255
+
+=== SetShadingMode
+m = CreateToonMaterial()
+SetShadingMode m, SHADING_PS1
+
+=== SetToonSteps
+m = CreateToonMaterial()
+SetToonSteps m, 4
+
+=== SetToonRamp
+m = CreateToonMaterial()
+SetToonRamp m, LoadTexture("ramp_warm.png")
+
+=== SetLightingRamp
+m = CreateToonMaterial(SHADING_CEL)
+SetLightingRamp m, LoadTexture("ramp_anime.png")
+
+=== SetToonOutline
+m = CreateToonMaterial()
+SetToonOutline m, True, 0.05
+
+=== SetOutlineColor
+m = CreateToonMaterial()
+SetToonOutline m, True
+SetOutlineColor m, 40, 20, 10
+
+=== SetOutlineWidth
+m = CreateToonMaterial()
+SetToonOutline m, True
+SetOutlineWidth m, 0.08
+
+=== SetRimLighting
+m = CreateToonMaterial()
+SetRimLighting m, True, 0.8
+
+=== SetRimColor
+m = CreateToonMaterial()
+SetRimLighting m, True
+SetRimColor m, 255, 200, 120
+
+=== SetRimPower
+m = CreateToonMaterial()
+SetRimLighting m, True
+SetRimPower m, 6
+
+=== SetVertexLighting
+m = CreateToonMaterial()
+SetVertexLighting m, True
+
+=== SetFlatShading
+m = CreateToonMaterial()
+SetFlatShading m, True
+
+=== SetPixelShading
+m = CreateToonMaterial()
+SetAlbedoMap m, LoadTexture("examples/media/checker.png")
+SetPixelShading m, True
+
+=== CreateWaterMaterial
+sea = CreateWaterMaterial()
+pond = CreateMesh()     ; build a grid here: see chapter 3
+EntityMaterial pond, sea
+
+=== SetWaterWaves
+sea = CreateWaterMaterial()
+SetWaterWaves sea, 0.5, 10, 1, 0.2      ; a big, slow swell
+
+=== SetWaterSpeed
+sea = CreateWaterMaterial()
+SetWaterSpeed sea, 0.5
+
+=== SetWaterColor
+swamp = CreateWaterMaterial()
+SetWaterColor swamp, 90, 110, 40, 20, 30, 10
+
+=== SetWaterDepth
+sea = CreateWaterMaterial()
+SetWaterDepth sea, 10       ; clear water
+
+=== SetWaterFoam
+sea = CreateWaterMaterial()
+SetWaterFoam sea, 0.8
+
+=== SetWaterReflection
+sea = CreateWaterMaterial()
+SetWaterReflection sea, 0.8, LoadTexture("sky.png", 128)
+
+=== SetWaterRefraction
+sea = CreateWaterMaterial()
+SetWaterRefraction sea, 1
+
+=== CreateFoliageMaterial
+grass = CreateFoliageMaterial()
+SetAlbedo grass, 80, 180, 60
+bush = CreateCone(12)
+EntityMaterial bush, grass
+
+=== SetFoliageWind
+reeds = CreateFoliageMaterial()
+SetFoliageWind reeds, 0.6, 2.5, 0.5     ; strong, fast, floppy
+
+=== SetWindDirection
+SetWindDirection -1, 0.5
+
+=== SetWindStrength
+SetWindStrength 0.2 + Sin(MilliSecs() / 20.0) * 0.1
+
+=== CreateProceduralShader
+sky = CreateProceduralShader(0)
+clouds = CreateProceduralShader(1)
+tiles = CreateProceduralShader(2)
+
+=== SetGradient
+m = CreateProceduralShader(0)
+SetGradient m, GRADIENT_RADIAL
+
+=== SetGradientColor
+m = CreateProceduralShader(0)
+SetGradientColor m, 0, 255, 120, 40     ; orange
+SetGradientColor m, 1, 40, 30, 120      ; to deep blue
+
+=== SetGradientDirection
+m = CreateProceduralShader(0)
+SetGradientDirection m, 45
+
+=== SetNoiseType
+m = CreateProceduralShader(1)
+SetNoiseType m, NOISE_VORONOI
+
+=== SetNoiseScale
+m = CreateProceduralShader(1)
+SetNoiseScale m, 12
+
+=== SetNoiseOctaves
+m = CreateProceduralShader(1)
+SetNoiseOctaves m, 7
+
+=== SetNoisePersistence
+m = CreateProceduralShader(1)
+SetNoisePersistence m, 0.65
+
+=== SetNoiseLacunarity
+m = CreateProceduralShader(1)
+SetNoiseLacunarity m, 2.5
+
+=== SetNoiseSpeed
+m = CreateProceduralShader(1)
+SetNoiseSpeed m, 0.3
+
+=== SetNoiseStrength
+m = CreateProceduralShader(0)
+SetNoiseStrength m, 0.3
+
+=== SetDistortion
+m = CreateProceduralShader(2)
+SetDistortion m, 0.2
+
+=== SetProceduralSeed
+rockA = CreateProceduralShader(1)
+rockB = ShaderClone(rockA)
+SetProceduralSeed rockB, 17
+
+=== SetPattern
+m = CreateProceduralShader(2)
+SetPattern m, PATTERN_STRIPES
+
+=== SetPatternScale
+m = CreateProceduralShader(2)
+SetPatternScale m, 16
+
+=== SetPatternColor
+m = CreateProceduralShader(2)
+SetPatternColor m, 20, 20, 20, 180
+
+=== SetPatternRotation
+m = CreateProceduralShader(2)
+SetPattern m, PATTERN_STRIPES
+SetPatternRotation m, 45
+
+=== BakeProceduralTexture
+bumps = CreateProceduralShader(1)
+SetNoiseScale bumps, 8
+rock = CreatePBRMaterial()
+SetNormalMap rock, BakeProceduralTexture(bumps, 512, 512, True)
+
+=== LoadPostProcess
+bloom = LoadPostProcess("builtin:bloom")
+mine = LoadPostProcess("shaders/scanlines.glsl")
+
+=== CreatePostProcess
+src$ = "//! fragment" + Chr(10)
+src$ = src$ + "vec4 nb_post(vec2 uv) { return vec4(1.0) - texture(nb_screenTexture, uv); }"
+negative = CreatePostProcess(src$)
+
+=== AddPostProcess
+camera = CreateCamera()
+AddPostProcess LoadPostProcess("builtin:vignette"), camera
+
+=== RemovePostProcess
+camera = CreateCamera()
+crt = LoadPostProcess("builtin:crt")
+AddPostProcess crt, camera
+RemovePostProcess crt, camera
+
+=== SetPostProcess
+camera = CreateCamera()
+SetPostProcess camera, LoadPostProcess("builtin:pixelate")
+SetPostProcess camera, 0
+
+=== FreePostProcess
+fx = LoadPostProcess("builtin:grain")
+FreePostProcess fx
+
+=== SetPostProcessParameter
+fog = LoadPostProcess("builtin:fog")
+SetPostProcessParameter fog, "density", "0.05"
+SetPostProcessParameter fog, "color", "0.8, 0.7, 0.6"
+
+=== SetPostProcessEnabled
+bloom = LoadPostProcess("builtin:bloom")
+SetPostProcessEnabled bloom, False
+
+=== SetPostProcessOrder
+grain = LoadPostProcess("builtin:grain")
+SetPostProcessOrder grain, 100      ; always last
+
+=== PostProcessCamera
+player1 = CreateCamera()
+hurt = LoadPostProcess("builtin:vignette")
+PostProcessCamera hurt, player1
+
+=== PostProcessPriority
+fx = LoadPostProcess("builtin:exposure")
+PostProcessPriority fx, -1
+
+=== PostProcessInput
+fx = LoadPostProcess("builtin:blur")
+PostProcessInput fx, POST_ORIGINAL
+
+=== PostProcessOutput
+monitor = CreateTexture(512, 512)
+fx = LoadPostProcess("builtin:crt")
+PostProcessOutput fx, monitor
+
+=== PostProcessResolution
+fx = LoadPostProcess("builtin:gaussian")
+PostProcessResolution fx, 0.5
+
+=== PostProcessShader
+vig = LoadPostProcess("builtin:vignette")
+ShaderSetColor PostProcessShader(vig), "color", 60, 0, 0
+
+=== SetRainEffect
+camera = CreateCamera()
+SetRainEffect camera, 0.6
+
+=== SetSnowEffect
+camera = CreateCamera()
+SetSnowEffect camera, 0.5, 0.2
+
+=== SetAtmosphericFog
+camera = CreateCamera()
+SetAtmosphericFog camera, 0.03, 200, 190, 170
+
+=== SetUnderwaterEffect
+camera = CreateCamera()
+SetUnderwaterEffect camera, True, 2.5
+
+=== SetShadowMode
+SetShadowMode SHADOW_SOFT
+
+=== EnableShadows
+EnableShadows
+
+=== DisableShadows
+DisableShadows
+
+=== SetShadowQuality
+SetShadowQuality 3
+
+=== SetShadowResolution
+SetShadowResolution 3072
+
+=== SetShadowDistance
+SetShadowDistance 40
+
+=== SetShadowCascadeCount
+SetShadowCascadeCount 2
+
+=== SetShadowBias
+SetShadowBias 0.0005
+
+=== SetShadowSoftness
+SetShadowSoftness 1
+
+=== LightShadows
+fill = CreateLight(LIGHT_POINT)
+LightShadows fill, False
+
+=== ShaderGeometrySource
+; always an error: the renderer has no geometry stage
+s = CreateShader()
+Try
+    ShaderGeometrySource s, "void main() {}"
+Catch e$
+    DebugLog e              ; explains what to use instead
+End Try
+
+=== ShaderComputeSource
+; always an error: the renderer has no compute stage
+s = CreateShader()
+Try
+    ShaderComputeSource s, "void main() {}"
+Catch e$
+    DebugLog e              ; explains what to use instead
+End Try

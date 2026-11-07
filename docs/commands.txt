@@ -1,6 +1,6 @@
 ; NeptuneBASIC command descriptions: the source of docs/COMMANDS.md and of
 ; the editor hover help. "# Category" starts a group; each command is one
-; "Name: description" line; "(ext)" marks commands Blitz3D did not have.
+; "Name: description" line; "(ext)" marks commands added to the classic command set.
 ; After adding a command, describe it here and run python tools/gen_reference.py.
 
 # Program and system
@@ -93,7 +93,7 @@ WriteShort: Writes value to stream as a 2-byte integer.
 WriteInt: Writes value to stream as a 4-byte integer.
 WriteFloat: Writes value to stream as a 4-byte float.
 WriteString: Writes value to stream as a 4-byte length followed by its characters.
-ReadAvail: Returns how many bytes can be read from stream without waiting.
+ReadAvail: Returns how many bytes can be read from stream without waiting: for a file, the bytes left before its end.
 FilePos: Returns the current read/write position in the file stream, in bytes from the start.
 SeekFile: Moves the read/write position of the file stream to pos bytes from the start and returns the new position.
 CopyStream: Copies all remaining data from src_stream to dest_stream, buffer_size bytes at a time.
@@ -144,7 +144,7 @@ UDPMsgPort: Returns the port of the sender of the last message received on the U
 UDPTimeouts: Sets how long RecvUDPMsg waits for a message, in milliseconds (recv_millis).
 
 # Multiplayer games
-StartNetGame: Joins a game found on the local network, or hosts a new one if there is none. Returns 1 if it joined, 2 if it is hosting, or 0 on failure. Uses TCP instead of Blitz3D's DirectPlay dialog.
+StartNetGame: Joins a game found on the local network, or hosts a new one if there is none. Returns 1 if it joined, 2 if it is hosting, or 0 on failure. Uses TCP, with no dialog.
 HostNetGame: Hosts a multiplayer game called game_name that others can join, and returns 2 on success or 0 on failure.
 JoinNetGame: Joins the game game_name at server_ip (an empty address searches the local network) and returns 1 on success or 0 on failure.
 StopNetGame: Leaves or stops the current multiplayer game.
@@ -152,7 +152,7 @@ CreateNetPlayer: Creates a local player called name in the current game and retu
 DeleteNetPlayer: Removes the local player from the game.
 NetPlayerName: Returns the name of player.
 NetPlayerLocal: Returns true if player was created on this computer.
-SendNetMsg: Sends a message of type (1-99) with the text data from from_player to to_player (0 sends to all players). Returns true on success; messages are always sent reliably.
+SendNetMsg: Sends a message of type (1-99) with the text data from from_player to to_player (0 sends to all players). Returns true on success. reliable is accepted for compatibility: messages are always sent reliably.
 RecvNetMsg: Fetches the next received message and returns true, or false if there is none; read it with NetMsgType, NetMsgFrom, NetMsgTo and NetMsgData.
 NetMsgType: Returns the type of the last received message: 1-99 for player messages, 100 for a player joining, 101 for a player leaving and 200 when the session is lost.
 NetMsgFrom: Returns the player id that sent the last received message (for type 100, the new player).
@@ -453,8 +453,8 @@ SoundVolume: Sets sound's volume, from 0 (silent) to 1 (full).
 SoundPan: Sets sound's pan, from -1 (left) to 1 (right).
 SoundPitch: Sets the playback rate of sound, in Hz (samples per second).
 PlaySound: Plays sound and returns the channel it plays on.
-PlayCDTrack: Plays a CD audio track in Blitz3D; CD audio is not supported, so it does nothing and returns 0.
-PlayMusic: Plays a music file (streamed), looping when mode is 1, and returns its channel, or 0 if it cannot be loaded.
+PlayCDTrack: Kept so older programs still run: CD audio is not supported, so it does nothing and returns 0.
+PlayMusic: Plays a music file (streamed from disk) once, or looping when mode is 1, and returns its channel, or 0 if it cannot be loaded.
 StopChannel: Stops the sound playing on channel.
 PauseChannel: Pauses the sound playing on channel.
 ResumeChannel: Resumes a channel paused with PauseChannel.
@@ -468,10 +468,10 @@ ChannelBus: (ext) Moves a playing channel into bus.
 ChannelPan: Sets the pan of channel, from -1 (left) to 1 (right).
 ChannelPitch: Sets the playback rate of channel, in Hz.
 ChannelPlaying: Returns 1 if channel is playing, otherwise 0.
-CreateListener: Creates the 3D sound listener as an entity (usually parented to the camera) and returns it; rolloff_factor and distance_scale control how sound fades with distance.
+CreateListener: Creates the 3D sound listener (the player's ears) as a child of the entity parent, usually the camera, and returns it; rolloff_factor and distance_scale control how sound fades with distance, doppler_scale how much moving sounds change pitch.
 EmitSound: Plays a 3D sound from the position of entity and returns its channel.
 LoadSoundAsync: (ext) Starts loading a sound file in the background and returns its handle at once (silent until it arrives); spatial 1 makes it a 3D sound like Load3DSound. Use SoundLoaded or PendingLoads to know when it is ready.
-SoundLoaded: (ext) Returns 1 when sound has loaded (always for other sounds), 0 while it is loading in the background, -1 if loading failed.
+SoundLoaded: (ext) Returns 1 when sound has loaded (always 1 for sounds loaded with LoadSound or Load3DSound), 0 while it is loading in the background, -1 if loading failed.
 SoundName: (ext) Returns the file sound was loaded from.
 
 # Entities
@@ -684,7 +684,7 @@ AddAnimSeq: Adds an empty keyframe animation sequence of length frames to entity
 SetAnimKey: Stores entity's current position, rotation and/or scale (chosen by pos_key, rot_key, scale_key) as a key at frame of its last added sequence.
 LoaderMatrix: Sets the matrix applied to models loaded from files with file_extension; the three rows xx,xy,xz / yx,yy,yz / zx,zy,zz are the new X, Y and Z axes.
 LoadAnimSeq: Loads the animations from another model file and adds them to the animated model entity (retargeted to its skeleton); returns the number of the first new sequence, or -1 on failure.
-LoadMesh: Loads a glTF (.gltf/.glb), FBX or saved scene file as a single entity and returns its handle, or 0 on failure; parent is optional. Old Blitz formats (.b3d, .x, .3ds) are not supported.
+LoadMesh: Loads a glTF (.gltf/.glb), FBX or saved scene file as a single entity and returns its handle, or 0 on failure; parent is optional. Older formats (.b3d, .x, .3ds) are not supported.
 LoadMeshAsync: (ext) Starts loading a model file in the background and returns its entity at once; the model appears in it when loaded. parent is optional.
 EntityLoaded: (ext) Returns 1 if the model of entity has finished loading (always for other entities), 0 while it is still loading, -1 if loading failed.
 PendingLoads: (ext) Returns the number of background model and texture loads still in progress.
@@ -905,7 +905,7 @@ ProbeMode: (ext) Sets when probe takes its picture: mode 0 once (UpdateProbe tak
 UpdateProbe: (ext) Makes probe take its picture again on the next frame, after the scene around it changed.
 ProbeOffset: (ext) Moves the point the probe takes its picture from by x, y, z (world directions) away from the probe's position, without moving its box.
 ProbeTexture: (ext) Returns the picture of probe as a cube map texture for custom shaders (ShaderTexture, ShaderSetCubeMap). An entity given it with ShaderTexture is left out of the probes' pictures.
-EnvironmentLighting: (ext) Chooses where ambient light and reflections come from: mode 0 the AmbientLight colour (the default, as in Blitz3D: no reflections), 1 the sky box, or the reflection probe around the camera, so shiny surfaces reflect it; brightness scales it. CreateReflectionProbe switches to 1.
+EnvironmentLighting: (ext) Chooses where ambient light and reflections come from: mode 0 the AmbientLight colour (the default: no reflections), 1 the sky box, or the reflection probe around the camera, so shiny surfaces reflect it; brightness scales it. CreateReflectionProbe switches to 1.
 CreateEmitter: (ext) Creates a particle emitter using texture for the particles and returns its handle; parent is optional.
 EmitterRate: (ext) Sets how many particles emitter makes per_second.
 EmitterMax: (ext) Limits emitter to count particles alive at once; 0 means no limit.
@@ -922,7 +922,7 @@ EmitterLocal: (ext) With enable 1, particles of emitter move with it; with 0 (de
 EmitterEnable: (ext) Starts (enable 1) or stops (0) emitter making new particles.
 EmitterClear: (ext) Removes all particles of emitter at once.
 EntityLOD: (ext) Makes the level entity (a level of detail of entity) show only while the camera is between near and far units from entity; far 0 means no upper limit.
-CameraExposure: (ext) Sets the exposure of camera: mode 0 uses a fixed exposure, 1 adjusts it automatically between min_luminance and max_luminance.
+CameraExposure: (ext) Sets the exposure of camera: mode 0 uses the fixed exposure (default 1), 1 adjusts it automatically between min_luminance and max_luminance, as eyes adjust between dark and bright places.
 CameraColorGrading: (ext) Applies a colour grading table to camera, from a 256x16 image file; an empty file name removes it.
 CameraToTexture: (ext) Makes camera render into texture instead of the screen; texture 0 renders to the screen again.
 

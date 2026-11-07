@@ -144,6 +144,8 @@ for older integrated GPUs; `ultra` turns everything up.
 | `neptune plugins`: list loaded plugins and plugin folders | done |
 | `neptune lsp`: language server (errors as you type, completion, hover, signature help, outline, go to definition) | done |
 | VS Code extension: highlighting, language server, run (F5), build | done (`editors/vscode`) |
+| Documentation: [the manual](MANUAL.md) (25 chapters teaching the language and game making from the beginning), the [shader manual](SHADERS.md), a [language summary](LANGUAGE.md), and the [command reference](COMMANDS.md) with an example for every command (`docs/examples/*.txt`, put in by `tools/gen_reference.py`) | done |
+| `tools/check_doc_examples.py`: checks every BASIC example in the docs with `neptune check`, runs the ones with an output box and compares what they print; `--gpu` compiles every documented shader | done |
 
 ## Platforms
 

@@ -150,6 +150,8 @@ fn main() -> ExitCode {
         args.remove(i);
     }
     if let Some(entries) = package::embedded().filter(|e| !e.is_empty()) {
+        // a packaged game: everything after its name is for the program
+        neptune_vm::stdlib::set_program_args(args.clone());
         return run_embedded(entries);
     }
     if args.first().is_some_and(|a| a == "plugins") {
@@ -232,6 +234,9 @@ fn main() -> ExitCode {
             Err(c) => c,
         },
         ("run", Some(f)) => {
+            // the words after the source file are the program's own arguments
+            let at = args.iter().position(|a| a == f).map_or(args.len(), |i| i + 1);
+            neptune_vm::stdlib::set_program_args(args[at..].to_vec());
             let prog = match load(f) {
                 Ok(p) => p,
                 Err(c) => return c,

@@ -1,0 +1,887 @@
+; Examples for the physics, AI and rendering effect commands. Format: see tools/check_doc_examples.py.
+
+=== EntityPhysics
+; A dynamic box that falls, and a static floor it lands on
+floor = CreateCube()
+ScaleEntity floor, 10, 0.5, 10
+EntityPhysics floor, 2, 1            ; body_type 2 = static, shape 1 = box
+crate = CreateCube()
+PositionEntity crate, 0, 5, 0
+EntityPhysics crate, 1, 1, 2.5       ; dynamic, box shape, 2.5 kg
+
+=== PhysicsGravity
+; Moon gravity: weaker than the default pull downwards
+PhysicsGravity 0, -1.6, 0
+
+=== EntityMass
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+EntityMass ball, 10                  ; now weighs 10 kilograms
+
+=== EntityFriction
+floor = CreateCube()
+EntityPhysics floor, 2, 1
+EntityFriction floor, 0.02           ; almost no friction: like ice
+
+=== EntityBounce
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+EntityBounce ball, 0.8               ; 0 = no bounce, 1 = bounces back fully
+
+=== EntityDamping
+; Make a ball slow down quickly as it rolls and spins
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+EntityDamping ball, 0.5, 0.8         ; linear damping, angular damping
+
+=== EntityGravityScale
+balloon = CreateSphere()
+EntityPhysics balloon, 1, 2
+EntityGravityScale balloon, 0.1      ; falls slowly: 0 = none, 1 = normal
+
+=== LockRotation
+; A character body that can turn around Y but must not tip over
+player = CreateCylinder()
+EntityPhysics player, 1, 3
+LockRotation player, 1, 0, 1         ; 1 = locked about X and Z, 0 = free about Y
+
+=== ApplyForce
+; A rocket engine: push upwards a little every frame
+rocket = CreateCone()
+EntityPhysics rocket, 1, 4, 2
+For frame = 1 To 60
+    ApplyForce rocket, 0, 40, 0
+    UpdateWorld
+Next
+
+=== ApplyImpulse
+; Kick the ball forward once
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+ApplyImpulse ball, 0, 0, 5
+
+=== ApplyImpulseAt
+; Hit the crate near its top edge, so it tips over as well as moving
+crate = CreateCube()
+EntityPhysics crate, 1, 1
+ApplyImpulseAt crate, 3, 0, 0, 0, 1, 0   ; push x,y,z at the world point 0,1,0
+
+=== ApplyTorque
+; Keep turning a wheel about its Z axis
+wheel = CreateCylinder()
+EntityPhysics wheel, 1, 4
+For frame = 1 To 60
+    ApplyTorque wheel, 0, 0, 5
+    UpdateWorld
+Next
+
+=== ApplyTorqueImpulse
+; Give a coin a quick flip
+coin = CreateCylinder()
+EntityPhysics coin, 1, 4
+ApplyTorqueImpulse coin, 2, 0, 0
+
+=== SetVelocity
+; Shoot a bullet straight ahead at 30 units per second
+bullet = CreateSphere()
+EntityPhysics bullet, 1, 2
+SetVelocity bullet, 0, 0, 30
+
+=== SetAngularVelocity
+; Start a wheel spinning
+wheel = CreateCylinder()
+EntityPhysics wheel, 1, 4
+SetAngularVelocity wheel, 0, 0, 10
+
+=== VelocityX
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+SetVelocity ball, 4, 0, 0
+Print "Sideways speed: " + VelocityX(ball)
+
+=== VelocityY
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+UpdateWorld
+If VelocityY(ball) < 0 Then Print "The ball is falling"
+
+=== VelocityZ
+car = CreateCube()
+EntityPhysics car, 1, 1
+SetVelocity car, 0, 0, 12
+Print "Forward speed: " + VelocityZ(car)
+
+=== AngularVelocityX
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+SetAngularVelocity ball, 3, 0, 0
+Print "Spin about X: " + AngularVelocityX(ball)
+
+=== AngularVelocityY
+top = CreateCone()
+EntityPhysics top, 1, 4
+SetAngularVelocity top, 0, 8, 0
+Print "Spin about Y: " + AngularVelocityY(top)
+
+=== AngularVelocityZ
+wheel = CreateCylinder()
+EntityPhysics wheel, 1, 4
+SetAngularVelocity wheel, 0, 0, 5
+Print "Spin about Z: " + AngularVelocityZ(wheel)
+
+=== EntityTouching
+floor = CreateCube()
+ScaleEntity floor, 10, 0.5, 10
+EntityPhysics floor, 2, 1
+ball = CreateSphere()
+PositionEntity ball, 0, 2, 0
+EntityPhysics ball, 1, 2
+UpdateWorld
+If EntityTouching(ball, floor) Then Print "On the ground" Else Print "In the air"
+
+=== CountContacts
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+UpdateWorld
+Print "The ball touches " + CountContacts(ball) + " bodies"
+
+=== ContactEntity
+; List everything the ball is touching (numbering starts at 1)
+ball = CreateSphere()
+EntityPhysics ball, 1, 2
+UpdateWorld
+For index = 1 To CountContacts(ball)
+    other = ContactEntity(ball, index)
+    Print "Touching entity " + other
+Next
+
+=== PhysicsRayCast
+; Look straight down from above the world and see what is below
+hit = PhysicsRayCast(0, 10, 0, 0, -1, 0)   ; start x,y,z then direction dx,dy,dz
+If hit <> 0 Then Print "Ground is at height " + PickedY()
+
+=== CreateBallJoint
+; Hang a weight from a fixed anchor, like a pendulum
+anchor = CreateSphere()
+PositionEntity anchor, 0, 5, 0
+EntityPhysics anchor, 2, 2
+weight = CreateSphere()
+PositionEntity weight, 2, 5, 0
+EntityPhysics weight, 1, 2
+joint = CreateBallJoint(anchor, weight, 0, 5, 0)   ; joint point x,y,z
+
+=== CreateHingeJoint
+; A door that swings about a vertical axis
+frame = CreateCube()
+EntityPhysics frame, 2, 1
+door = CreateCube()
+ScaleEntity door, 1, 2, 0.1
+PositionEntity door, 1, 0, 0
+EntityPhysics door, 1, 1
+hinge = CreateHingeJoint(frame, door, 0, 0, 0, 0, 1, 0)   ; point 0,0,0 and axis 0,1,0
+
+=== CreateFixedJoint
+; Glue a gun onto a vehicle so they move as one
+vehicle = CreateCube()
+EntityPhysics vehicle, 1, 1
+gun = CreateCylinder()
+PositionEntity gun, 0, 1, 0
+EntityPhysics gun, 1, 4
+glue = CreateFixedJoint(vehicle, gun)
+
+=== FreeJoint
+a = CreateCube()
+b = CreateCube()
+EntityPhysics a, 1, 1
+EntityPhysics b, 1, 1
+joint = CreateFixedJoint(a, b)
+FreeJoint joint                      ; the two bodies are separate again
+
+=== CreateSliderJoint
+; A piston that slides up and down along the Y axis
+base = CreateCube()
+EntityPhysics base, 2, 1
+piston = CreateCylinder()
+EntityPhysics piston, 1, 4
+slider = CreateSliderJoint(base, piston, 0, 0, 0, 0, 1, 0)
+
+=== JointMotor
+; Spin a hinge like a motor at 90 degrees per second
+frame = CreateCube()
+EntityPhysics frame, 2, 1
+wheel = CreateCylinder()
+EntityPhysics wheel, 1, 4
+hinge = CreateHingeJoint(frame, wheel, 0, 0, 0, 1, 0, 0)
+JointMotor hinge, 90, 500            ; speed, strongest push
+
+=== JointTarget
+; Make a hinge swing to 45 degrees and stay there like a spring
+frame = CreateCube()
+EntityPhysics frame, 2, 1
+arm = CreateCube()
+EntityPhysics arm, 1, 1
+hinge = CreateHingeJoint(frame, arm, 0, 0, 0, 0, 0, 1)
+JointTarget hinge, 45, 1000, 5000    ; target angle, stiffness, strongest push
+
+=== JointMotorOff
+frame = CreateCube()
+EntityPhysics frame, 2, 1
+wheel = CreateCylinder()
+EntityPhysics wheel, 1, 4
+hinge = CreateHingeJoint(frame, wheel, 0, 0, 0, 1, 0, 0)
+JointMotor hinge, 90
+JointMotorOff hinge                  ; the wheel turns freely again
+
+=== JointLimits
+; A door that opens only between 0 and 100 degrees
+frame = CreateCube()
+EntityPhysics frame, 2, 1
+door = CreateCube()
+EntityPhysics door, 1, 1
+hinge = CreateHingeJoint(frame, door, 0, 0, 0, 0, 1, 0)
+JointLimits hinge, 0, 100            ; min, max (enable defaults to 1)
+JointLimits hinge, 0, 0, 0           ; enable 0 removes the limits again
+
+=== JointAngle
+frame = CreateCube()
+EntityPhysics frame, 2, 1
+door = CreateCube()
+EntityPhysics door, 1, 1
+hinge = CreateHingeJoint(frame, door, 0, 0, 0, 0, 1, 0)
+UpdateWorld
+Print "The door has turned " + JointAngle(hinge) + " degrees"
+
+=== JointPosition
+base = CreateCube()
+EntityPhysics base, 2, 1
+piston = CreateCylinder()
+EntityPhysics piston, 1, 4
+slider = CreateSliderJoint(base, piston, 0, 0, 0, 0, 1, 0)
+UpdateWorld
+Print "The piston has slid " + JointPosition(slider) + " units"
+
+=== CreateRagdoll
+; Add a ragdoll to an animated character; it follows the animation until switched on
+man = LoadAnimMesh("examples/media/CesiumMan.glb")
+CreateRagdoll man, 1.0               ; thickness scales the limbs
+
+=== RagdollEnable
+man = LoadAnimMesh("examples/media/CesiumMan.glb")
+CreateRagdoll man
+RagdollEnable man, 1                 ; 1 = go limp
+RagdollEnable man, 0                 ; 0 = back to the animation
+
+=== RagdollActive
+man = LoadAnimMesh("examples/media/CesiumMan.glb")
+CreateRagdoll man
+RagdollEnable man
+If RagdollActive(man) Then Print "The character is limp"
+
+=== RagdollImpulse
+; Blow the character backwards when it is hit
+man = LoadAnimMesh("examples/media/CesiumMan.glb")
+CreateRagdoll man
+RagdollEnable man
+RagdollImpulse man, 0, 2, -8
+
+=== FreeRagdoll
+man = LoadAnimMesh("examples/media/CesiumMan.glb")
+CreateRagdoll man
+FreeRagdoll man                      ; the model is a plain animated mesh again
+
+=== CreateHingeJoint2D
+; A swinging pendulum: a fixed pivot and a hanging weight
+Physics2DGravity 0, 500
+pivot = CreateBody2D(1, 400, 100)    ; type 1 = static
+Body2DCircle pivot, 5
+weight = CreateBody2D(0, 500, 100)   ; type 0 = dynamic
+Body2DCircle weight, 20
+joint = CreateHingeJoint2D(pivot, weight, 400, 100)   ; pin at x,y pixels
+
+=== CreateFixedJoint2D
+Physics2DGravity 0, 500
+cart = CreateBody2D(0, 200, 300)
+Body2DBox cart, 80, 30
+cannon = CreateBody2D(0, 200, 280)
+Body2DBox cannon, 20, 30
+glue = CreateFixedJoint2D(cart, cannon, 200, 290)
+
+=== CreateSliderJoint2D
+; A platform that can only slide sideways (along angle 0)
+Physics2DGravity 0, 500
+rail = CreateBody2D(1, 300, 300)
+Body2DBox rail, 20, 20
+platform = CreateBody2D(0, 300, 300)
+Body2DBox platform, 100, 16
+slider = CreateSliderJoint2D(rail, platform, 300, 300, 0)
+
+=== FreeJoint2D
+Physics2DGravity 0, 500
+a = CreateBody2D(0, 100, 100)
+Body2DBox a, 20, 20
+b = CreateBody2D(0, 130, 100)
+Body2DBox b, 20, 20
+joint = CreateFixedJoint2D(a, b, 115, 100)
+FreeJoint2D joint
+
+=== JointMotor2D
+; A wheel driven at 180 degrees per second
+Physics2DGravity 0, 500
+frame = CreateBody2D(1, 300, 300)
+Body2DBox frame, 10, 10
+wheel = CreateBody2D(0, 300, 300)
+Body2DCircle wheel, 30
+hinge = CreateHingeJoint2D(frame, wheel, 300, 300)
+JointMotor2D hinge, 180, 5000        ; speed, strongest push
+
+=== JointTarget2D
+; Spring a lever to 30 degrees
+Physics2DGravity 0, 500
+frame = CreateBody2D(1, 300, 300)
+Body2DBox frame, 10, 10
+lever = CreateBody2D(0, 340, 300)
+Body2DBox lever, 80, 8
+hinge = CreateHingeJoint2D(frame, lever, 300, 300)
+JointTarget2D hinge, 30, 1000, 50000   ; target angle, stiffness, strongest push
+
+=== JointMotorOff2D
+Physics2DGravity 0, 500
+frame = CreateBody2D(1, 300, 300)
+Body2DBox frame, 10, 10
+wheel = CreateBody2D(0, 300, 300)
+Body2DCircle wheel, 30
+hinge = CreateHingeJoint2D(frame, wheel, 300, 300)
+JointMotor2D hinge, 180
+JointMotorOff2D hinge
+
+=== JointLimits2D
+; A flipper that can only swing between -30 and 30 degrees
+Physics2DGravity 0, 500
+frame = CreateBody2D(1, 300, 300)
+Body2DBox frame, 10, 10
+flipper = CreateBody2D(0, 340, 300)
+Body2DBox flipper, 80, 8
+hinge = CreateHingeJoint2D(frame, flipper, 300, 300)
+JointLimits2D hinge, -30, 30
+
+=== JointAngle2D
+Physics2DGravity 0, 500
+frame = CreateBody2D(1, 300, 300)
+Body2DBox frame, 10, 10
+lever = CreateBody2D(0, 340, 300)
+Body2DBox lever, 80, 8
+hinge = CreateHingeJoint2D(frame, lever, 300, 300)
+Print "The lever has turned " + JointAngle2D(hinge) + " degrees clockwise"
+
+=== JointPosition2D
+Physics2DGravity 0, 500
+rail = CreateBody2D(1, 300, 300)
+Body2DBox rail, 20, 20
+platform = CreateBody2D(0, 300, 300)
+Body2DBox platform, 100, 16
+slider = CreateSliderJoint2D(rail, platform, 300, 300, 0)
+Print "The platform has slid " + JointPosition2D(slider) + " pixels"
+
+=== CreateNavMesh
+; Make walkable ground from a level mesh, ignoring slopes steeper than 40 degrees
+level = LoadMesh("level.b3d")
+navmesh = CreateNavMesh(level, 40)
+Print "Triangles: " + NavMeshTriangles(navmesh)
+
+=== GenerateNavMesh
+; Scan a 40 x 40 area every 1 unit, from a height of 50 looking down
+floor = CreatePlane()
+EntityPickMode floor, 2              ; the scan only sees pickable entities
+navmesh = GenerateNavMesh(-20, -20, 40, 40, 1, 45, 0.5, 50)
+
+=== NavMeshEntity
+; Show the walkable area as a see-through green layer
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+view = NavMeshEntity(navmesh)
+EntityColor view, 0, 255, 0
+EntityAlpha view, 0.4
+
+=== NavMeshTriangles
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-10, -10, 20, 20)
+Print "The navigation mesh has " + NavMeshTriangles(navmesh) + " triangles"
+
+=== NavMeshX
+; Snap a point to the closest walkable ground
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-10, -10, 20, 20)
+x = NavMeshX(navmesh, 3, 5, 3)
+y = NavMeshY(navmesh, 3, 5, 3)
+z = NavMeshZ(navmesh, 3, 5, 3)
+Print "Closest walkable point: " + x + ", " + y + ", " + z
+
+=== NavMeshY
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-10, -10, 20, 20)
+groundHeight = NavMeshY(navmesh, 2, 10, 2)   ; the ground height below the point 2,10,2
+Print "Ground height: " + groundHeight
+
+=== NavMeshZ
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-10, -10, 20, 20)
+nearestZ = NavMeshZ(navmesh, 0, 0, 50)       ; a point far outside the mesh
+Print "Nearest walkable Z: " + nearestZ
+
+=== FreeNavMesh
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-10, -10, 20, 20)
+FreeNavMesh navmesh                  ; also frees agents that use it
+
+=== FindPath
+; Find a route over the ground and print how many corners it has
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+path = FindPath(navmesh, -10, 0, -10, 10, 0, 10)
+If path = 0 Then Print "No way there" Else Print "The path has " + PathPoints(path) + " points"
+
+=== PathPoints
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+path = FindPath(navmesh, -10, 0, -10, 10, 0, 10)
+For index = 0 To PathPoints(path) - 1
+    Print "Point " + index
+Next
+
+=== PathX
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+path = FindPath(navmesh, -10, 0, -10, 10, 0, 10)
+Print "Start X: " + PathX(path, 0)       ; points are numbered from 0
+
+=== PathY
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+path = FindPath(navmesh, -10, 0, -10, 10, 0, 10)
+Print "Start height: " + PathY(path, 0)
+
+=== PathZ
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+path = FindPath(navmesh, -10, 0, -10, 10, 0, 10)
+lastPoint = PathPoints(path) - 1
+Print "The path ends at Z " + PathZ(path, lastPoint)
+
+=== PathLength
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+path = FindPath(navmesh, -10, 0, -10, 10, 0, 10)
+Print "The walk is " + PathLength(path) + " units long"
+
+=== FreePath
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+path = FindPath(navmesh, -10, 0, -10, 10, 0, 10)
+FreePath path                        ; done with it
+
+=== CreatePathGrid
+; A 20 x 15 map for a strategy game
+grid = CreatePathGrid(20, 15)
+
+=== SetPathCost
+grid = CreatePathGrid(20, 15)
+SetPathCost grid, 5, 5, 0            ; 0 = blocked (a wall)
+SetPathCost grid, 6, 5, 3            ; 3 = slow ground (mud)
+
+=== PathCost
+grid = CreatePathGrid(20, 15)
+SetPathCost grid, 5, 5, 0
+If PathCost(grid, 5, 5) = 0 Then Print "Cell 5,5 is blocked"
+
+=== FindGridPath
+; Walk from the top-left to the bottom-right cell, around a wall
+grid = CreatePathGrid(20, 15)
+For row = 0 To 10
+    SetPathCost grid, 10, row, 0
+Next
+path = FindGridPath(grid, 0, 0, 19, 14, 1)   ; 1 = diagonal steps allowed
+If path <> 0 Then Print "Steps: " + PathPoints(path) + ", first column: " + PathX(path, 0)
+
+=== TileMapPathGrid
+; Turn a tile map into a path grid: cells with tiles are walls
+tiles = LoadAnimImage("examples/media/checker.png", 32, 32, 0, 2)
+map = CreateTileMap(tiles, 20, 15)
+SetTile map, 5, 5, 1
+grid = TileMapPathGrid(map)
+Print "Cost of the wall cell: " + PathCost(grid, 5, 5)
+
+=== FreePathGrid
+grid = CreatePathGrid(20, 15)
+FreePathGrid grid
+
+=== CreateAgent
+; A guard that walks over the navigation mesh by itself
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh, 4, 0.5)   ; speed 4 units a second, radius 0.5
+
+=== AgentMoveTo
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+AgentMoveTo agent, 10, 0, 10
+While AgentArrived(agent) = 0
+    UpdateWorld
+Wend
+
+=== AgentFollow
+; A pet that follows the player and stops 2 units away
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+player = CreateCube()
+pet = CreateSphere()
+agent = CreateAgent(pet, navmesh)
+AgentFollow agent, player, 2
+AgentFollow agent, 0                 ; entity 0 stops following
+
+=== AgentStop
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+AgentMoveTo agent, 10, 0, 10
+AgentStop agent                      ; stand still where it is
+
+=== AgentArrived
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+AgentMoveTo agent, 10, 0, 10
+UpdateWorld
+If AgentArrived(agent) Then Print "Arrived" Else Print "Still walking"
+
+=== AgentDistance
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+AgentMoveTo agent, 10, 0, 10
+UpdateWorld
+Print "Still " + AgentDistance(agent) + " units to walk"
+
+=== AgentSpeed
+; Make the guard run
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+AgentSpeed agent, 8                  ; units a second
+
+=== AgentTurnSpeed
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+tank = CreateCube()
+agent = CreateAgent(tank, navmesh)
+AgentTurnSpeed agent, 90             ; turns slowly, 90 degrees a second
+
+=== AgentRadius
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+giant = CreateCube()
+agent = CreateAgent(giant, navmesh)
+AgentRadius agent, 2                 ; keeps 2 units away from other agents
+
+=== AgentEntity
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+body = AgentEntity(agent)
+If body = guard Then Print "The agent moves the guard"
+
+=== AgentPath
+; Copy the route an agent is walking, then free the copy
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+AgentMoveTo agent, 10, 0, 10
+route = AgentPath(agent)
+If route <> 0
+    Print "Route has " + PathPoints(route) + " points"
+    FreePath route
+EndIf
+
+=== FreeAgent
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+FreeAgent agent                      ; the guard stays where it is
+
+=== CreateBehavior
+; Build a guard's brain: attack if the player is close, otherwise patrol
+brain = CreateBehavior("guard")
+root = BehaviorSelector(brain)
+attack = BehaviorSequence(brain, root)
+BehaviorIf brain, "dist < 5", attack
+BehaviorDo brain, "attack", attack
+BehaviorDo brain, "patrol", root
+
+=== LoadBehavior
+; The file has one node per line, children indented under their parent
+brain = LoadBehavior("guard.txt")
+guard = CreateCube()
+SetBehavior guard, brain
+
+=== BehaviorFromText
+text = "selector" + Chr(10)
+text = text + "  sequence" + Chr(10)
+text = text + "    if dist < 5" + Chr(10)
+text = text + "    do attack" + Chr(10)
+text = text + "  do patrol"
+brain = BehaviorFromText(text)
+
+=== BehaviorSelector
+; A selector tries its children in order; the first one that applies wins
+brain = CreateBehavior()
+root = BehaviorSelector(brain)
+BehaviorDo brain, "idle", root
+
+=== BehaviorSequence
+brain = CreateBehavior()
+root = BehaviorSequence(brain)        ; runs its children one after the other
+BehaviorDo brain, "walk to door", root
+BehaviorDo brain, "open door", root
+
+=== BehaviorInvert
+; "Not hungry" is the opposite of "hungry"
+brain = CreateBehavior()
+root = BehaviorSequence(brain)
+notHungry = BehaviorInvert(brain, root)
+BehaviorIf brain, "hungry", notHungry
+BehaviorDo brain, "play", root
+
+=== BehaviorIf
+brain = CreateBehavior()
+root = BehaviorSequence(brain)
+BehaviorIf brain, "health < 20", root   ; compares a parameter with a number
+BehaviorDo brain, "flee", root
+
+=== BehaviorDo
+brain = CreateBehavior()
+root = BehaviorSelector(brain)
+BehaviorDo brain, "wander", root     ; BehaviorAction returns this name
+
+=== FreeBehavior
+brain = CreateBehavior()
+BehaviorDo brain, "idle"
+FreeBehavior brain
+
+=== SetBehavior
+brain = CreateBehavior()
+BehaviorDo brain, "idle"
+guard = CreateCube()
+SetBehavior guard, brain             ; each character keeps its own parameters
+SetBehavior guard, 0                 ; 0 removes the behaviour
+
+=== SetBehaviorParam
+; Tell the brain how far away the player is, every frame
+brain = CreateBehavior()
+BehaviorDo brain, "idle"
+guard = CreateCube()
+player = CreateCube()
+SetBehavior guard, brain
+SetBehaviorParam guard, "dist", EntityDistance(guard, player)
+
+=== BehaviorParam
+brain = CreateBehavior()
+BehaviorDo brain, "idle"
+guard = CreateCube()
+SetBehavior guard, brain
+SetBehaviorParam guard, "health", 80
+Print "Health: " + BehaviorParam(guard, "health")
+
+=== BehaviorAction
+; Ask the brain what to do, then do it
+text = "selector" + Chr(10) + "  sequence" + Chr(10) + "    if dist < 5" + Chr(10) + "    do attack" + Chr(10) + "  do patrol"
+brain = BehaviorFromText(text)
+guard = CreateCube()
+SetBehavior guard, brain
+SetBehaviorParam guard, "dist", 3
+action = BehaviorAction(guard)
+If action = "attack" Then Print "Attacking!"
+If action = "patrol" Then Print "Patrolling"
+
+=== BehaviorResult
+brain = CreateBehavior()
+BehaviorDo brain, "open door"
+guard = CreateCube()
+SetBehavior guard, brain
+action = BehaviorAction(guard)
+If action = "open door" Then BehaviorResult guard, 1   ; 1 = it worked, 0 = it failed
+
+=== CreateDecal
+; Project a ring-shaped mark onto the wall behind it
+mark = LoadTexture("examples/media/ring.png")
+decal = CreateDecal(mark)
+PositionEntity decal, 0, 1, 5
+ScaleEntity decal, 1, 1, 1           ; the box the picture is projected into
+
+=== CreateReflectionProbe
+; A probe filling a room, so shiny things inside it reflect the room
+probe = CreateReflectionProbe(256)   ; 256 pixels square per face
+PositionEntity probe, 0, 2, 0
+ScaleEntity probe, 10, 4, 10
+
+=== ProbeRange
+probe = CreateReflectionProbe()
+ProbeRange probe, 0.5, 100           ; nearest and farthest distance it sees
+
+=== ProbeMode
+probe = CreateReflectionProbe()
+ProbeMode probe, 1                   ; 0 = once, 1 = every frame (for moving things)
+
+=== UpdateProbe
+; Take a new picture after the room has changed
+probe = CreateReflectionProbe()
+ProbeMode probe, 0
+lamp = CreateSphere()
+PositionEntity lamp, 0, 3, 0
+UpdateProbe probe
+
+=== ProbeOffset
+probe = CreateReflectionProbe()
+ProbeOffset probe, 0, 1.5, 0         ; take the picture from 1.5 units higher
+
+=== ProbeTexture
+; Use the probe's picture in a custom shader
+probe = CreateReflectionProbe()
+cube = CreateCube()
+env = ProbeTexture(probe)
+ShaderTexture cube, "envMap", env
+
+=== EnvironmentLighting
+; Light the scene from the surroundings, a little dimmer than normal
+EnvironmentLighting 1, 0.8           ; mode 1 = sky or reflection probe, brightness 0.8
+
+=== CreateEmitter
+spark = LoadTexture("examples/media/coin.png")
+emitter = CreateEmitter(spark)
+PositionEntity emitter, 0, 1, 0
+
+=== EmitterRate
+emitter = CreateEmitter()
+EmitterRate emitter, 50              ; 50 particles every second
+
+=== EmitterMax
+emitter = CreateEmitter()
+EmitterMax emitter, 200              ; never more than 200 alive at once
+
+=== EmitterLife
+emitter = CreateEmitter()
+EmitterLife emitter, 1, 3            ; each particle lives 1 to 3 seconds
+
+=== EmitterVelocity
+; Fountain: shoot particles up, with a little random sideways spread
+emitter = CreateEmitter()
+EmitterVelocity emitter, 0, 6, 0, 1
+
+=== EmitterSize
+emitter = CreateEmitter()
+EmitterSize emitter, 0.2, 0.5        ; start size 0.2, grow 0.5 per second
+
+=== EmitterSpin
+emitter = CreateEmitter()
+EmitterSpin emitter, -90, 90         ; each particle spins at a random speed in this range
+
+=== EmitterColor
+emitter = CreateEmitter()
+EmitterColor emitter, 255, 200, 50, 255   ; yellow, fully visible
+
+=== EmitterFadeColor
+; Fire: start yellow and fade to transparent red
+emitter = CreateEmitter()
+EmitterColor emitter, 255, 200, 50
+EmitterFadeColor emitter, 255, 0, 0, 0
+
+=== EmitterGravity
+emitter = CreateEmitter()
+EmitterGravity emitter, 0, -9.8, 0   ; particles fall like rain
+EmitterGravity emitter, 0, 2, 0      ; or float upwards like smoke
+
+=== EmitterShape
+emitter = CreateEmitter()
+EmitterShape emitter, 0, 1           ; shape 0: a sphere of radius 1
+EmitterShape emitter, 1, 4, 0.1, 4   ; shape 1: a flat box 4 wide and 4 deep
+
+=== EmitterSoftness
+emitter = CreateEmitter()
+EmitterSoftness emitter, 0.5         ; particles fade out where they touch the ground
+EmitterSoftness emitter, 0           ; 0 turns it off
+
+=== EmitterLocal
+; A torch that is carried around: the flames move with it
+emitter = CreateEmitter()
+EmitterLocal emitter, 1
+
+=== EmitterEnable
+emitter = CreateEmitter()
+EmitterEnable emitter, 0             ; stop making new particles
+EmitterEnable emitter, 1             ; start again
+
+=== EmitterClear
+emitter = CreateEmitter()
+EmitterClear emitter                 ; every particle disappears at once
+
+=== EntityLOD
+; A statue with a detailed model up close and a simple one far away
+statue = CreatePivot()
+detailed = CreateSphere(32)
+simple = CreateCube()
+EntityParent detailed, statue, 0
+EntityParent simple, statue, 0
+EntityLOD statue, detailed, 0, 30    ; shown from 0 to 30 units from the camera
+EntityLOD statue, simple, 30, 0      ; shown beyond 30 units (far 0 = no upper limit)
+
+=== CameraExposure
+camera = CreateCamera()
+CameraExposure camera, 1, 1, 0.1, 5  ; mode 1 = automatic, between 0.1 and 5
+CameraExposure camera, 0, 1.5        ; mode 0 = fixed exposure of 1.5
+
+=== CameraColorGrading
+camera = CreateCamera()
+CameraColorGrading camera, "sunset_grade.png"   ; a 256x16 colour table image
+CameraColorGrading camera, ""                   ; remove it
+
+=== CameraToTexture
+; Show a security camera's view on a screen in the world
+securityCamera = CreateCamera()
+tex = CreateTexture(256, 256)
+CameraToTexture securityCamera, tex
+monitor = CreateCube()
+EntityTexture monitor, tex
+CameraToTexture securityCamera, 0    ; texture 0 renders to the screen again

@@ -1,0 +1,580 @@
+; Examples for the GUI widget commands. Format: see tools/check_doc_examples.py.
+
+=== GuiWindow
+; A draggable window; widgets created with it as parent go inside
+Graphics3D 800, 600, 0, 2
+settings = GuiWindow("Settings", 20, 20, 300, 200)   ; title, x, y, width, height
+GuiLabel "Welcome!", settings
+While GuiValue(settings) = 1 And Not KeyHit(1)       ; 1 while open, 0 once closed
+    Flip
+Wend
+
+=== GuiPanel
+; A row panel holds two buttons side by side
+Graphics3D 800, 600, 0, 2
+win = GuiWindow("Panel", 20, 20, 300, 100)
+row = GuiPanel(1, win)              ; layout 1 = in a row (0 column, 2 wrapping, 3 free)
+okButton = GuiButton("OK", row)
+cancelButton = GuiButton("Cancel", row)
+
+=== GuiGrid
+; A 2 by 2 grid with a label and a text box on the first row
+Graphics3D 800, 600, 0, 2
+win = GuiWindow("Grid", 20, 20, 300, 120)
+grid = GuiGrid(2, 2, win)           ; 2 columns, 2 rows
+nameLabel = GuiLabel("Name:", grid)
+nameBox = GuiTextBox("Bob", grid)
+GuiCell nameLabel, 0, 0
+GuiCell nameBox, 1, 0
+
+=== GuiCell
+; Put a label in the second column of the first row of a grid
+Graphics3D 800, 600, 0, 2
+grid = GuiGrid(3, 2)
+title = GuiLabel("Score", grid)
+GuiCell title, 1, 0                 ; column 1, row 0 (counting from 0)
+
+=== GuiScroll
+; A scrolling area with more buttons than fit
+Graphics3D 800, 600, 0, 2
+win = GuiWindow("Levels", 20, 20, 200, 150)
+area = GuiScroll(win)
+For level = 1 To 20
+    GuiButton "Level " + level, area
+Next
+
+=== GuiButton
+; Make a button and react when it is pressed
+Graphics3D 800, 600, 0, 2
+startButton = GuiButton("Start game")
+While Not KeyHit(1)
+    If GuiClicked(startButton) > 0 Then Print "Starting!"
+    Flip
+Wend
+
+=== GuiLabel
+; A label whose text changes with the score
+Graphics3D 800, 600, 0, 2
+scoreLabel = GuiLabel("Score: 0")
+score = 0
+While Not KeyHit(1)
+    If KeyHit(57) Then score = score + 10 : SetGuiText scoreLabel, "Score: " + score   ; space bar
+    Flip
+Wend
+
+=== GuiTextBox
+; A box for typing a name, and a multi-line box for notes
+Graphics3D 800, 600, 0, 2
+nameBox = GuiTextBox("Player")
+notes = GuiTextBox("", 0, 1)        ; text, parent (0 = screen), multiline = 1
+While Not KeyHit(1)
+    If GuiChanged(nameBox) > 0 Then Print "Name is now " + GuiText(nameBox)
+    Flip
+Wend
+
+=== GuiCheckBox
+; A check box that starts ticked
+Graphics3D 800, 600, 0, 2
+music = GuiCheckBox("Music", 1)     ; text, checked = 1
+While Not KeyHit(1)
+    If GuiChanged(music) > 0 Then Print "Music on? " + GuiValue(music)   ; 1 = ticked
+    Flip
+Wend
+
+=== GuiSlider
+; A volume slider from 0 to 100 starting at 50
+Graphics3D 800, 600, 0, 2
+volume = GuiSlider(0, 100, 50)      ; min, max, start value
+While Not KeyHit(1)
+    If GuiChanged(volume) > 0 Then Print "Volume: " + GuiValue(volume)
+    Flip
+Wend
+
+=== GuiProgress
+; A loading bar that fills up over time
+Graphics3D 800, 600, 0, 2
+loading = GuiProgress(0)            ; 0 = empty, 1 = full
+amount = 0.0
+While amount < 1 And Not KeyHit(1)
+    amount = amount + 0.005
+    SetGuiValue loading, amount
+    Flip
+Wend
+
+=== GuiImage
+; Show a picture inside the GUI
+Graphics3D 800, 600, 0, 2
+coin = LoadImage("examples/media/coin.png")
+picture = GuiImage(coin)
+GuiTooltip picture, "A shiny coin"
+
+=== SetGuiText
+; Change the text on a button
+Graphics3D 800, 600, 0, 2
+button = GuiButton("Play")
+SetGuiText button, "Resume"
+
+=== GuiText
+; Read what the player typed when they press Enter
+Graphics3D 800, 600, 0, 2
+nameBox = GuiTextBox("")
+While Not KeyHit(1)
+    If KeyHit(28) Then Print "Hello, " + GuiText(nameBox)   ; 28 = Enter key
+    Flip
+Wend
+
+=== SetGuiValue
+; Set a slider, a progress bar and a check box from the program
+Graphics3D 800, 600, 0, 2
+volume = GuiSlider(0, 100, 50)
+health = GuiProgress()
+fullscreen = GuiCheckBox("Fullscreen")
+SetGuiValue volume, 80
+SetGuiValue health, 0.5             ; progress bars use 0 to 1
+SetGuiValue fullscreen, 1           ; 1 = ticked
+
+=== GuiValue
+; Read a slider's position
+Graphics3D 800, 600, 0, 2
+speed = GuiSlider(1, 10, 5)
+Print "Speed is " + GuiValue(speed)
+
+=== GuiClicked
+; Count button presses since the last check
+Graphics3D 800, 600, 0, 2
+jump = GuiButton("Jump")
+presses = 0
+While Not KeyHit(1)
+    presses = presses + GuiClicked(jump)
+    Flip
+Wend
+Print "Pressed " + presses + " times"
+
+=== GuiChanged
+; React only when the player edits a check box
+Graphics3D 800, 600, 0, 2
+sound = GuiCheckBox("Sound", 1)
+While Not KeyHit(1)
+    If GuiChanged(sound) > 0 Then Print "Sound setting changed"
+    Flip
+Wend
+
+=== SetGuiPosition
+; Place a button at a fixed spot (x, y in pixels) inside a free panel
+Graphics3D 800, 600, 0, 2
+canvas = GuiPanel(3)                ; layout 3 = free placement
+button = GuiButton("Fire", canvas)
+SetGuiPosition button, 100, 50
+
+=== SetGuiSize
+; Make a button 200 wide and 40 tall
+Graphics3D 800, 600, 0, 2
+button = GuiButton("Wide")
+SetGuiSize button, 200, 40          ; width, height; 0 = as big as needed
+
+=== GuiMargin
+; Leave 10 pixels around a button
+Graphics3D 800, 600, 0, 2
+button = GuiButton("Spaced")
+GuiMargin button, 10, 10, 10, 10    ; left, top, right, bottom
+
+=== GuiAlign
+; Centre a button horizontally, and put it at the top
+Graphics3D 800, 600, 0, 2
+button = GuiButton("Centred")
+GuiAlign button, 2, 1               ; horizontal 2 = centre, vertical 1 = top
+
+=== GuiVisible
+; Hide a button and show it again
+Graphics3D 800, 600, 0, 2
+secret = GuiButton("Secret")
+GuiVisible secret, 0                ; 0 = hidden
+GuiVisible secret, 1                ; 1 = shown
+
+=== GuiEnable
+; Grey out a button until the player has enough gold
+Graphics3D 800, 600, 0, 2
+buy = GuiButton("Buy sword")
+gold = 5
+GuiEnable buy, 0                    ; 0 = disabled
+If gold >= 10 Then GuiEnable buy, 1
+
+=== GuiFocus
+; Let the player type straight away
+Graphics3D 800, 600, 0, 2
+nameBox = GuiTextBox("")
+GuiFocus nameBox
+
+=== GuiTooltip
+; Explain a button when the mouse rests on it
+Graphics3D 800, 600, 0, 2
+save = GuiButton("Save")
+GuiTooltip save, "Saves your game to disk"
+
+=== GuiColor
+; A red button, and a half-transparent green one
+Graphics3D 800, 600, 0, 2
+danger = GuiButton("Delete")
+GuiColor danger, 200, 40, 40        ; red, green, blue (alpha defaults to 255)
+ghost = GuiButton("Ghost")
+GuiColor ghost, 40, 200, 40, 128    ; alpha 128 = half see-through
+
+=== GuiTextColor
+; Yellow text on a label
+Graphics3D 800, 600, 0, 2
+warning = GuiLabel("Low health!")
+GuiTextColor warning, 255, 220, 0
+
+=== GuiFontSize
+; Make a title bigger
+Graphics3D 800, 600, 0, 2
+title = GuiLabel("My Game")
+GuiFontSize title, 32               ; size in pixels
+
+=== FreeGui
+; Remove a window and everything in it
+Graphics3D 800, 600, 0, 2
+win = GuiWindow("Temporary", 20, 20, 200, 100)
+GuiLabel "Bye soon", win
+FreeGui win
+
+=== GuiMouseX
+; Show where the mouse is inside a custom image widget
+Graphics3D 800, 600, 0, 2
+canvas = GuiImage(CreateImage(200, 200))
+While Not KeyHit(1)
+    If GuiClicked(canvas) > 0 Then Print "Clicked at " + GuiMouseX(canvas) + ", " + GuiMouseY(canvas)
+    Flip
+Wend
+
+=== GuiMouseY
+; Read the mouse height inside a widget (0 = its top edge)
+Graphics3D 800, 600, 0, 2
+canvas = GuiImage(CreateImage(200, 200))
+While Not KeyHit(1)
+    If GuiClicked(canvas) > 0 Then Print "Distance from top: " + GuiMouseY(canvas)
+    Flip
+Wend
+
+=== GuiUnderMouse
+; Only fire when the click was not meant for the GUI
+Graphics3D 800, 600, 0, 2
+menuButton = GuiButton("Menu")
+While Not KeyHit(1)
+    If MouseHit(1) And GuiUnderMouse() = 0 Then Print "Shot fired"
+    Flip
+Wend
+
+=== GuiTheme
+; Switch every widget to the light theme
+Graphics3D 800, 600, 0, 2
+GuiTheme 1                          ; 0 = dark, 1 = light
+GuiButton "Light button"
+
+=== GuiThemeColor
+; Make the main accent colour orange everywhere
+Graphics3D 800, 600, 0, 2
+GuiThemeColor "Primary", 255, 140, 0   ; name, red, green, blue
+GuiButton "Orange theme"
+
+=== GuiThemeFontSize
+; Bigger text for every widget
+Graphics3D 800, 600, 0, 2
+GuiThemeFontSize 20
+GuiButton "Big text"
+
+=== GuiDropDown
+; A quality chooser; the first item starts selected
+Graphics3D 800, 600, 0, 2
+quality = GuiDropDown("Low|Medium|High")
+While Not KeyHit(1)
+    If GuiChanged(quality) > 0 Then Print "Quality: " + GuiText(quality) + " (index " + GuiValue(quality) + ")"
+    Flip
+Wend
+
+=== GuiList
+; A list of weapons; nothing is selected at first
+Graphics3D 800, 600, 0, 2
+weapons = GuiList("Sword|Bow|Staff")
+While Not KeyHit(1)
+    If GuiChanged(weapons) > 0 Then Print "You picked " + GuiText(weapons)
+    Flip
+Wend
+
+=== GuiAddItem
+; Add an item to a list at runtime
+Graphics3D 800, 600, 0, 2
+inventory = GuiList("Sword|Shield")
+GuiAddItem inventory, "Potion"      ; added at the end
+
+=== GuiRemoveItem
+; Remove the first item (index 0)
+Graphics3D 800, 600, 0, 2
+inventory = GuiList("Sword|Shield|Potion")
+GuiRemoveItem inventory, 0
+
+=== GuiClearItems
+; Empty a list
+Graphics3D 800, 600, 0, 2
+inventory = GuiList("Sword|Shield|Potion")
+GuiClearItems inventory
+Print GuiCountItems(inventory)      ; 0
+
+=== GuiCountItems
+; How many items does a list have?
+Graphics3D 800, 600, 0, 2
+inventory = GuiList("Sword|Shield|Potion")
+Print "Items: " + GuiCountItems(inventory)   ; 3
+
+=== GuiItemText
+; Read the text of the last item
+Graphics3D 800, 600, 0, 2
+levels = GuiDropDown("Forest|Desert|Snow")
+lastIndex = GuiCountItems(levels) - 1
+Print GuiItemText(levels, lastIndex)     ; Snow
+
+=== GuiSelected
+; Which list item is chosen? -1 means none
+Graphics3D 800, 600, 0, 2
+weapons = GuiList("Sword|Bow|Staff")
+If GuiSelected(weapons) = -1 Then Print "Nothing selected yet"
+
+=== SetGuiSelected
+; Pick the second item from the program
+Graphics3D 800, 600, 0, 2
+weapons = GuiList("Sword|Bow|Staff")
+SetGuiSelected weapons, 1           ; index 1 = Bow
+Print GuiText(weapons)
+
+=== GuiTree
+; A tree view in a window
+Graphics3D 800, 600, 0, 2
+win = GuiWindow("Scene", 20, 20, 250, 250)
+tree = GuiTree(win)
+root = GuiTreeItem(tree, "World")
+
+=== GuiTreeItem
+; Build a small tree: World with Player and Enemies inside
+Graphics3D 800, 600, 0, 2
+tree = GuiTree()
+world = GuiTreeItem(tree, "World")          ; parent is the tree: a top-level item
+player = GuiTreeItem(world, "Player")       ; parent is an item: a child of it
+enemies = GuiTreeItem(world, "Enemies")
+While Not KeyHit(1)
+    If GuiClicked(player) > 0 Then Print "Player selected"
+    Flip
+Wend
+
+=== GuiExpand
+; Open a tree item to show its children
+Graphics3D 800, 600, 0, 2
+tree = GuiTree()
+world = GuiTreeItem(tree, "World")
+child = GuiTreeItem(world, "Player")
+GuiExpand world, 1                  ; 1 = open, 0 = closed
+
+=== GuiTabs
+; A tab control; read which tab is active
+Graphics3D 800, 600, 0, 2
+tabs = GuiTabs()
+video = GuiTab(tabs, "Video")
+audio = GuiTab(tabs, "Audio")
+Print "Active tab: " + GuiSelected(tabs)   ; 0 = the first
+
+=== GuiTab
+; Add widgets to tab pages
+Graphics3D 800, 600, 0, 2
+tabs = GuiTabs()
+video = GuiTab(tabs, "Video")
+audio = GuiTab(tabs, "Audio")
+GuiCheckBox "Fullscreen", 0, video
+GuiSlider 0, 100, 80, audio
+
+=== GuiMenu
+; A menu bar across the top
+Graphics3D 800, 600, 0, 2
+bar = GuiMenu()
+fileMenu = GuiMenuItem(bar, "File")
+
+=== GuiMenuItem
+; File menu with a Quit entry
+Graphics3D 800, 600, 0, 2
+bar = GuiMenu()
+fileMenu = GuiMenuItem(bar, "File")
+quitItem = GuiMenuItem(fileMenu, "Quit")
+While Not KeyHit(1)
+    If GuiClicked(quitItem) > 0 Then End
+    Flip
+Wend
+
+=== GuiBorder
+; A box with a 2 pixel border around two labels
+Graphics3D 800, 600, 0, 2
+box = GuiBorder(2)                  ; thickness, then parent
+GuiLabel "Inside", box
+GuiLabel "the border", box
+
+=== GuiPopup
+; A popup that opens when a button is pressed
+Graphics3D 800, 600, 0, 2
+options = GuiPopup(150, 80)         ; width, height
+GuiLabel "Pick something", options
+openButton = GuiButton("Options")
+While Not KeyHit(1)
+    If GuiClicked(openButton) > 0 Then GuiShowPopup options, 1
+    Flip
+Wend
+
+=== GuiShowPopup
+; Open a popup at the mouse, then close it again
+Graphics3D 800, 600, 0, 2
+tip = GuiPopup(0, 0)                ; 0 = as big as its contents
+GuiLabel "Hello", tip
+GuiShowPopup tip, 1                 ; 1 = open
+GuiShowPopup tip, 0                 ; 0 = close
+
+=== GuiMessageBox
+; Ask a yes/no question
+Graphics3D 800, 600, 0, 2
+box = GuiMessageBox("Quit", "Really quit the game?", 1)   ; 1 = Yes/No
+While Not KeyHit(1)
+    If GuiChanged(box) > 0 Then
+        If GuiValue(box) = 1 Then Print "Yes" Else Print "No"   ; 1 = Yes, 2 = No
+        Exit
+    EndIf
+    Flip
+Wend
+
+=== GuiFileBrowser
+; A folder tree starting in the current folder
+Graphics3D 800, 600, 0, 2
+browser = GuiFileBrowser("")
+While Not KeyHit(1)
+    If GuiChanged(browser) > 0 Then Print "Picked " + GuiText(browser)
+    Flip
+Wend
+
+=== GuiFileDialog
+; An Open dialog; GuiValue is 1 for Open and 0 for Cancel
+Graphics3D 800, 600, 0, 2
+dialog = GuiFileDialog("Open level", "levels")
+While Not KeyHit(1)
+    If GuiChanged(dialog) > 0 Then
+        If GuiValue(dialog) = 1 Then Print "Open " + GuiText(dialog) Else Print "Cancelled"
+        Exit
+    EndIf
+    Flip
+Wend
+
+=== GuiDock
+; A docking area on the screen
+Graphics3D 800, 600, 0, 2
+dock = GuiDock()
+SetGuiSize dock, 600, 400
+
+=== GuiDockWindow
+; Dock one window on the left and one as a tab
+Graphics3D 800, 600, 0, 2
+dock = GuiDock()
+SetGuiSize dock, 600, 400
+tools = GuiWindow("Tools", 0, 0, 150, 150)
+help = GuiWindow("Help", 0, 0, 150, 150)
+GuiDockWindow dock, tools, 1        ; 1 = left
+GuiDockWindow dock, help, 5         ; 5 = as a tab in the middle
+
+=== GuiModal
+; Open a window that blocks the rest of the GUI
+Graphics3D 800, 600, 0, 2
+about = GuiWindow("About", 0, 0, 250, 100)
+GuiLabel "My Game v1.0", about
+GuiModal about
+
+=== GuiCenter
+; Centre a window on the screen
+Graphics3D 800, 600, 0, 2
+win = GuiWindow("Centred", 0, 0, 300, 150)
+GuiCenter win
+
+=== GuiNumber
+; A number box from 0 to 20 that changes by 0.5
+Graphics3D 800, 600, 0, 2
+gravity = GuiNumber(9.8, 0, 20, 0.5)    ; value, min, max, step
+While Not KeyHit(1)
+    If GuiChanged(gravity) > 0 Then Print "Gravity: " + GuiValue(gravity)
+    Flip
+Wend
+
+=== GuiVector3
+; An editor for a position
+Graphics3D 800, 600, 0, 2
+position = GuiVector3(0, 1, 5)
+While Not KeyHit(1)
+    If GuiChanged(position) > 0 Then Print "z is " + GuiVectorValue(position, 2)
+    Flip
+Wend
+
+=== GuiColorPicker
+; A picker that starts orange
+Graphics3D 800, 600, 0, 2
+picker = GuiColorPicker(255, 140, 0)
+While Not KeyHit(1)
+    If GuiChanged(picker) > 0 Then Print "Red: " + GuiVectorValue(picker, 0)
+    Flip
+Wend
+
+=== GuiColorField
+; A colour swatch that opens a picker when clicked
+Graphics3D 800, 600, 0, 2
+swatch = GuiColorField(0, 128, 255)
+While Not KeyHit(1)
+    If GuiChanged(swatch) > 0 Then Print "Blue: " + GuiVectorValue(swatch, 2)
+    Flip
+Wend
+
+=== GuiVectorValue
+; Read one part of a vector editor
+Graphics3D 800, 600, 0, 2
+position = GuiVector3(1, 2, 3)
+Print GuiVectorValue(position, 0)   ; 0 = x
+Print GuiVectorValue(position, 1)   ; 1 = y
+Print GuiVectorValue(position, 2)   ; 2 = z
+
+=== SetGuiVector
+; Set an editor's values, and a colour picker's colour
+Graphics3D 800, 600, 0, 2
+position = GuiVector3(0, 0, 0)
+SetGuiVector position, 5, 1, -3
+picker = GuiColorPicker()
+SetGuiVector picker, 255, 0, 0, 128     ; red, green, blue, alpha
+
+=== GuiCurve
+; A curve editor
+Graphics3D 800, 600, 0, 2
+curve = GuiCurve()
+While Not KeyHit(1)
+    If GuiChanged(curve) > 0 Then Print "Halfway value: " + GuiCurveValue(curve, 0.5)
+    Flip
+Wend
+
+=== GuiCurveKey
+; A curve that rises, then falls back
+Graphics3D 800, 600, 0, 2
+curve = GuiCurve()
+GuiClearCurve curve
+GuiCurveKey curve, 0, 0             ; position x, value y
+GuiCurveKey curve, 0.5, 1
+GuiCurveKey curve, 1, 0
+
+=== GuiClearCurve
+; Remove all keys, then add a flat line
+Graphics3D 800, 600, 0, 2
+curve = GuiCurve()
+GuiClearCurve curve                 ; empty: the value is 0 everywhere
+GuiCurveKey curve, 0, 0.5
+GuiCurveKey curve, 1, 0.5
+
+=== GuiCurveValue
+; Sample a curve, for example to ease a movement
+Graphics3D 800, 600, 0, 2
+curve = GuiCurve()                  ; starts as a line from (0,0) to (1,1)
+Print GuiCurveValue(curve, 0.25)    ; 0.25

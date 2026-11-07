@@ -1,8 +1,10 @@
 """Writes docs/COMMANDS.md, the command reference, from:
 
-* the command tables (signatures, via list_commands.py), and
+* the command tables (signatures, via list_commands.py),
 * docs/commands.txt, the descriptions: `# Category` lines followed by
-  `Name: description` lines.
+  `Name: description` lines, and
+* docs/examples/*.txt, an example for each command (`=== Name` followed
+  by the code; checked by tools/check_doc_examples.py).
 
 Modern names (`ALIASES`) are listed with the command they stand for.
 
@@ -18,6 +20,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from list_commands import ROOT, commands  # noqa: E402
+from check_doc_examples import read_examples  # noqa: E402
+import glob  # noqa: E402
 
 DESCRIPTIONS = os.path.join(ROOT, "docs", "commands.txt")
 OUT = os.path.join(ROOT, "docs", "COMMANDS.md")
@@ -78,8 +82,15 @@ def main():
         print(f"{n}: described but not a command", file=sys.stderr)
     if missing or unknown:
         sys.exit(1)
+    examples = {}
+    for path in sorted(glob.glob(os.path.join(ROOT, "docs", "examples", "*.txt"))):
+        for name, code in read_examples(path).items():
+            if name not in table:
+                print(f"{name}: example in {os.path.basename(path)} but not a command", file=sys.stderr)
+                sys.exit(1)
+            examples[name] = code
     if check_only:
-        print(f"all {len(table)} commands are described")
+        print(f"all {len(table)} commands are described, {len(examples)} have examples")
         return
 
     out = []
@@ -92,13 +103,13 @@ def main():
     out.append(
         "**Reading the entries:** a command that returns a value is shown "
         "as a function call, `Name(a, b)`, with the type it returns. Other "
-        "commands are statements, `Name a, b`. Parameter types use Blitz "
-        "tags: `%` integer, `#` float, `$` string. Optional parameters are "
-        "in brackets with their default value. **(ext)** marks extensions "
-        "that Blitz3D did not have; everything else works like Blitz3D. "
-        "Language keywords and built-in functions (`If`, `Type`, `Abs`, "
-        "`Int`, `Str`, `Handle`, ...) are described in "
-        "[LANGUAGE.md](LANGUAGE.md).\n"
+        "commands are statements, `Name a, b`. A parameter's type is shown "
+        "by the mark after its name: `%` a whole number, `#` a number with "
+        "a fractional part, `$` text. Optional parameters are in brackets "
+        "with their default value. **(ext)** marks commands NeptuneBASIC "
+        "adds to the classic command set. Every entry has an example. "
+        "To learn the language itself (`If`, `Type`, `Function`, ...), "
+        "read [the manual](MANUAL.md).\n"
     )
     total = sum(len(items) for _, items in cats)
     out.append(f"{total} commands and {len(aliases)} modern names.\n")
@@ -115,6 +126,8 @@ def main():
             out.append(f"### {name}\n")
             out.append(f"`{call}`" + (f" → {ret}" if ret else "") + "\n")
             out.append(("**(ext)** " if ext else "") + body + "\n")
+            if name in examples:
+                out.append("```basic\n" + examples[name] + "\n```\n")
     out.append("## Modern names\n")
     out.append(
         "These names do the same as the classic command they stand for "

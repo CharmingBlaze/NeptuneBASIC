@@ -170,7 +170,7 @@ SetFresnel chrome, 1                            ; stronger at grazing angles
 | `SetFresnel m, amount` | 0: reflections the same from every angle; 1: much stronger at glancing angles, as in reality |
 
 Without an environment map, what PBR materials reflect depends on
-`EnvironmentLighting`. In mode 0 (the default, as in Blitz3D) they get
+`EnvironmentLighting`. In mode 0 (the default) they get
 only the `AmbientLight` colour and reflect nothing. In mode 1 they are lit
 by, and reflect, the sky box, or the **reflection probe** the camera is
 in:

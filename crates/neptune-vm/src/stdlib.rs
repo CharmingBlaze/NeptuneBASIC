@@ -230,6 +230,20 @@ fn poke(c: &mut Core, a: &[Value], bytes: &[u8]) -> Result<Value, String> {
     b[r].copy_from_slice(bytes);
     VOID
 }
+/// The program's own command-line arguments, for `CommandLine`: set by
+/// the CLI (the words after the source file, or after a packaged game's
+/// name).
+static PROGRAM_ARGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// Sets what `CommandLine` returns. Only the first call has an effect.
+pub fn set_program_args(args: Vec<String>) {
+    let _ = PROGRAM_ARGS.set(args);
+}
+
+fn program_args() -> Vec<String> {
+    PROGRAM_ARGS.get().cloned().unwrap_or_else(|| std::env::args().skip(1).collect())
+}
+
 /// `CallDLL`: calls `int proc(void* in, int in_size, void* out, int out_size)`
 /// exported by a shared library (`.dll`, `.so` or `.dylib`), passing two
 /// banks (Blitz3D's userlib-free interface). Plugins are the better way to
@@ -321,7 +335,7 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
         eprintln!("{}", a[0]);
         VOID
     }),
-    ("$CommandLine", |_, _, _| ok_s(std::env::args().skip(2).collect::<Vec<_>>().join(" "))),
+    ("$CommandLine", |_, _, _| ok_s(program_args().join(" "))),
     ("$GetEnv$name", |a, _, _| ok_s(std::env::var(&*a[0].str()).unwrap_or_default())),
     ("$CurrentDate", |_, _, _| ok_s(civil_now().0)),
     ("$CurrentTime", |_, _, _| ok_s(civil_now().1)),

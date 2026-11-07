@@ -1,0 +1,1099 @@
+; Examples for the mesh, model and collision commands. Format: see tools/check_doc_examples.py.
+
+=== CreateMesh
+; An empty mesh; add a surface and vertices to give it a shape
+Graphics3D 800, 600
+mesh = CreateMesh()
+surf = CreateSurface(mesh)
+Print "Surfaces: " + CountSurfaces(mesh)
+
+=== CreateSurface
+; Surfaces hold the triangles; here the surface is painted red
+Graphics3D 800, 600
+red = CreateBrush(255, 0, 0)
+mesh = CreateMesh()
+surf = CreateSurface(mesh, red)
+Print "Created surface " + surf
+
+=== CountSurfaces
+Graphics3D 800, 600
+mesh = CreateMesh()
+a = CreateSurface(mesh)
+b = CreateSurface(mesh)
+Print "Surfaces: " + CountSurfaces(mesh)   ; 2
+
+=== GetSurface
+; Surfaces are numbered from 1
+Graphics3D 800, 600
+mesh = CreateCube()
+For i = 1 To CountSurfaces(mesh)
+    surf = GetSurface(mesh, i)
+    Print "Surface " + i + " has " + CountVertices(surf) + " vertices"
+Next
+
+=== AddVertex
+; Three corners of a triangle; the returned numbers start at 0
+Graphics3D 800, 600
+mesh = CreateMesh()
+surf = CreateSurface(mesh)
+v0 = AddVertex(surf, -1, 0, 0, 0, 1)   ; x, y, z, then texture u, v
+v1 = AddVertex(surf, 0, 2, 0, 0.5, 0)
+v2 = AddVertex(surf, 1, 0, 0, 1, 1)
+AddTriangle surf, v0, v1, v2
+
+=== AddTriangle
+; Join three vertices into a triangle and print its number
+Graphics3D 800, 600
+mesh = CreateMesh()
+surf = CreateSurface(mesh)
+a = AddVertex(surf, 0, 0, 0)
+b = AddVertex(surf, 0, 1, 0)
+c = AddVertex(surf, 1, 0, 0)
+tri = AddTriangle(surf, a, b, c)
+Print "Triangle number " + tri
+
+=== ClearSurface
+; Remove all triangles but keep the vertices (second value 1 = clear triangles)
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+ClearSurface surf, 0, 1
+Print CountVertices(surf) + " vertices, " + CountTriangles(surf) + " triangles"
+
+=== CountVertices
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "Vertices: " + CountVertices(surf)
+
+=== CountTriangles
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "Triangles: " + CountTriangles(surf)
+
+=== TriangleVertex
+; Print the three vertex numbers of the first triangle (triangles start at 0)
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+For corner = 0 To 2
+    Print "Corner " + corner + " uses vertex " + TriangleVertex(surf, 0, corner)
+Next
+
+=== VertexCoords
+; Move the first vertex up to make a spike
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+VertexCoords surf, 0, 0, 3, 0   ; vertex 0 goes to x=0, y=3, z=0
+
+=== VertexNormal
+; Make vertex 0 point straight up for lighting
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+VertexNormal surf, 0, 0, 1, 0
+
+=== VertexColor
+; Colour a vertex orange; use EntityFX 2 so the colours show
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+VertexColor surf, 0, 255, 128, 0   ; red, green, blue (alpha defaults to 1)
+EntityFX mesh, 2
+
+=== VertexTexCoords
+; Stretch the texture over the first vertex's corner
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+VertexTexCoords surf, 0, 0.5, 0.5   ; u, v in the first coordinate set
+
+=== VertexX
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "Vertex 0 x = " + VertexX(surf, 0)
+
+=== VertexY
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "Vertex 0 y = " + VertexY(surf, 0)
+
+=== VertexZ
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "Vertex 0 z = " + VertexZ(surf, 0)
+
+=== VertexNX
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "Normal x = " + VertexNX(surf, 0)
+
+=== VertexNY
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "Normal y = " + VertexNY(surf, 0)
+
+=== VertexNZ
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "Normal z = " + VertexNZ(surf, 0)
+
+=== VertexRed
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+VertexColor surf, 0, 200, 100, 50
+Print "Red = " + VertexRed(surf, 0)   ; 0 to 255
+
+=== VertexGreen
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+VertexColor surf, 0, 200, 100, 50
+Print "Green = " + VertexGreen(surf, 0)
+
+=== VertexBlue
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+VertexColor surf, 0, 200, 100, 50
+Print "Blue = " + VertexBlue(surf, 0)
+
+=== VertexAlpha
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+VertexColor surf, 0, 255, 255, 255, 0.5
+Print "Alpha = " + VertexAlpha(surf, 0)   ; 0 to 1
+
+=== VertexU
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "U = " + VertexU(surf, 0)   ; first coordinate set
+
+=== VertexV
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "V = " + VertexV(surf, 0)
+
+=== VertexW
+Graphics3D 800, 600
+mesh = CreateCube()
+surf = GetSurface(mesh, 1)
+Print "W = " + VertexW(surf, 0)
+
+=== UpdateNormals
+; Build a triangle by hand, then let the engine work out smooth lighting
+Graphics3D 800, 600
+mesh = CreateMesh()
+surf = CreateSurface(mesh)
+a = AddVertex(surf, -1, 0, 0)
+b = AddVertex(surf, 0, 2, 0)
+c = AddVertex(surf, 1, 0, 0)
+AddTriangle surf, a, b, c
+UpdateNormals mesh
+
+=== FlipMesh
+; Turn a mesh inside out, for example a room you stand inside
+Graphics3D 800, 600
+room = CreateCube()
+ScaleMesh room, 10, 5, 10
+FlipMesh room
+
+=== ScaleMesh
+; Change the shape itself (not just the entity's scale): a long flat plank
+Graphics3D 800, 600
+plank = CreateCube()
+ScaleMesh plank, 4, 0.2, 1
+
+=== PositionMesh
+; Shift the vertices so the entity turns around its bottom edge
+Graphics3D 800, 600
+door = CreateCube()
+ScaleMesh door, 1, 2, 0.1
+PositionMesh door, 1, 2, 0
+
+=== RotateMesh
+; Lay a cylinder on its side (pitch, yaw, roll in degrees)
+Graphics3D 800, 600
+log = CreateCylinder()
+RotateMesh log, 0, 0, 90
+
+=== FitMesh
+; Squeeze the mesh into a box at x, y, z of size width, height, depth; 1 keeps proportions
+Graphics3D 800, 600
+statue = CreateSphere()
+FitMesh statue, -1, 0, -1, 2, 4, 2, 1
+
+=== AddMesh
+; Combine two meshes into one: the first is copied into the second
+Graphics3D 800, 600
+base = CreateCube()
+ScaleMesh base, 2, 0.2, 2
+tower = CreateCylinder()
+PositionMesh tower, 0, 1, 0
+AddMesh tower, base
+FreeEntity tower
+
+=== CopyMesh
+; A separate copy whose geometry can be changed without touching the original
+Graphics3D 800, 600
+original = CreateCube()
+copy = CopyMesh(original)
+ScaleMesh copy, 2, 2, 2
+
+=== MeshCullBox
+; Kept so old programs still run; it has no effect
+Graphics3D 800, 600
+mesh = CreateCube()
+MeshCullBox mesh, -10, -10, -10, 20, 20, 20
+
+=== FindSurface
+; Find the surface painted with a given brush
+Graphics3D 800, 600
+red = CreateBrush(255, 0, 0)
+mesh = CreateMesh()
+surf = CreateSurface(mesh, red)
+found = FindSurface(mesh, red)
+If found = surf Then Print "Found the red surface" Else Print "No red surface"
+
+=== MeshesIntersect
+; Check whether two models touch
+Graphics3D 800, 600
+ship = CreateCube()
+rock = CreateSphere()
+PositionMesh rock, 0.5, 0, 0
+If MeshesIntersect(ship, rock) Then Print "Crash!" Else Print "Clear"
+
+=== MeshWidth
+Graphics3D 800, 600
+crate = CreateCube()
+ScaleMesh crate, 3, 1, 2
+Print "Width: " + MeshWidth(crate)
+
+=== MeshHeight
+Graphics3D 800, 600
+crate = CreateCube()
+ScaleMesh crate, 3, 1, 2
+Print "Height: " + MeshHeight(crate)
+
+=== MeshDepth
+Graphics3D 800, 600
+crate = CreateCube()
+ScaleMesh crate, 3, 1, 2
+Print "Depth: " + MeshDepth(crate)
+
+=== CountMeshTriangles
+Graphics3D 800, 600
+ball = CreateSphere(16)
+Print "The sphere has " + CountMeshTriangles(ball) + " triangles"
+
+=== CaptureWorld
+; Record positions so RenderWorld can smooth movement between two fixed updates
+Graphics3D 800, 600
+camera = CreateCamera()
+cube = CreateCube()
+CaptureWorld
+UpdateWorld
+RenderWorld 0.5   ; halfway between the captured and the new positions
+Flip
+
+=== AddAnimSeq
+; Make a simple 30-frame animation: the cube moves 5 units to the right
+Graphics3D 800, 600
+cube = CreateCube()
+seq = AddAnimSeq(cube, 30)
+PositionEntity cube, 0, 0, 0
+SetAnimKey cube, 0
+PositionEntity cube, 5, 0, 0
+SetAnimKey cube, 30
+Animate cube, 1, 1, seq
+
+=== SetAnimKey
+; Store the cube's current position as keys at frames 0 and 20
+Graphics3D 800, 600
+cube = CreateCube()
+seq = AddAnimSeq(cube, 20)
+SetAnimKey cube, 0
+TurnEntity cube, 0, 180, 0
+SetAnimKey cube, 20, 0, 1, 0   ; only the rotation key this time
+Animate cube, 3, 1, seq
+
+=== LoaderMatrix
+; Models from .glb files are turned to face the other way when loaded
+Graphics3D 800, 600
+LoaderMatrix "glb", -1, 0, 0,  0, 1, 0,  0, 0, -1
+model = LoadMesh("examples/media/Fox.glb")
+
+=== LoadAnimSeq
+; Add the animations from a second file to a character
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/CesiumMan.glb")
+new_seq = LoadAnimSeq(hero, "examples/media/Fox.glb")
+If new_seq = -1 Then Print "Could not load animations" Else Print "New sequences start at " + new_seq
+
+=== LoadMesh
+; Load a model as one entity; 0 means it could not be loaded
+Graphics3D 800, 600
+fox = LoadMesh("examples/media/Fox.glb")
+If fox = 0 Then RuntimeError "Fox.glb not found"
+PositionEntity fox, 0, 0, 5
+
+=== LoadMeshAsync
+; Start loading and carry on; the model appears when it is ready
+Graphics3D 800, 600
+fox = LoadMeshAsync("examples/media/Fox.glb")
+PositionEntity fox, 0, 0, 5   ; usable straight away
+
+=== EntityLoaded
+; Wait until a background load has finished (-1 means it failed)
+Graphics3D 800, 600
+model = LoadMeshAsync("examples/media/Fox.glb")
+While EntityLoaded(model) = 0
+    Delay 10
+Wend
+If EntityLoaded(model) = -1 Then Print "Load failed" Else Print "Ready"
+
+=== PendingLoads
+; Show a loading message while background loads are running
+Graphics3D 800, 600
+fox = LoadMeshAsync("examples/media/Fox.glb")
+man = LoadMeshAsync("examples/media/CesiumMan.glb")
+While PendingLoads() > 0
+    Print "Still loading: " + PendingLoads()
+    Delay 100
+Wend
+
+=== LoadAnimMesh
+; Load an animated character and play its first animation in a loop
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Animate fox, 1
+
+=== Animate
+; mode 1 = loop; speed 1.5 = faster than normal; sequence 2; blend over 10 frames
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Animate fox, 1, 1.5, 2, 10
+
+=== SetAnimTime
+; Jump to frame 12 of sequence 0 without playing
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+SetAnimTime fox, 12, 0
+
+=== Animating
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Animate fox, 3   ; play once
+If Animating(fox) Then Print "Still playing" Else Print "Finished"
+
+=== AnimTime
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Animate fox, 1
+UpdateWorld
+Print "Frame: " + AnimTime(fox)
+
+=== AnimSeq
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Animate fox, 1, 1, 1
+Print "Playing sequence " + AnimSeq(fox)
+
+=== AnimLength
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Print "Current animation is " + AnimLength(fox) + " frames long"
+
+=== ExtractAnimSeq
+; Cut frames 1 to 20 out of the main sequence into a new one
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+walk = ExtractAnimSeq(fox, 1, 20, 0)
+Animate fox, 1, 1, walk
+
+=== CountAnimSeqs
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Print "The fox has " + CountAnimSeqs(fox) + " animations"
+
+=== AnimLayer
+; Play sequence 2 on layer 1 over the whole body at half strength
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Animate fox, 1, 1, 1
+AnimLayer fox, 1, 2, 1, 1, 0.5, ""   ; layer, sequence, mode, speed, weight, bone
+
+=== AnimLayerWeight
+; Fade a layer in a little each frame
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+AnimLayer fox, 1, 2, 1, 1, 0
+weight = 0.0
+While weight < 1
+    weight = weight + 0.05
+    AnimLayerWeight fox, 1, weight
+    UpdateWorld
+Wend
+
+=== AnimLayerStop
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+AnimLayer fox, 1, 2
+AnimLayerStop fox, 1
+
+=== CreateBlendSpace
+; A blend space mixes animations by speed
+Graphics3D 800, 600
+space = CreateBlendSpace()
+BlendSpacePoint space, 0, 0   ; sequence 0 at speed 0
+BlendSpacePoint space, 1, 3   ; sequence 1 at speed 3
+
+=== BlendSpacePoint
+; idle (sequence 0) at 0, walk (1) at 1, run (2) at 3
+Graphics3D 800, 600
+space = CreateBlendSpace()
+BlendSpacePoint space, 0, 0
+BlendSpacePoint space, 1, 1
+BlendSpacePoint space, 2, 3
+
+=== AnimBlend
+; Call every frame with the character's current speed
+Graphics3D 800, 600
+fox = LoadAnimMesh("examples/media/Fox.glb")
+space = CreateBlendSpace()
+BlendSpacePoint space, 0, 0
+BlendSpacePoint space, 1, 3
+speed = 1.5
+AnimBlend fox, space, speed
+
+=== AddAnimState
+; States of an animation state machine: idle loops, jump plays once
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/Fox.glb")
+idle = AddAnimState(hero, "idle", 0, 1)   ; loop sequence 0
+jump = AddAnimState(hero, "jump", 1, 3)   ; play sequence 1 once
+
+=== AddBlendState
+; A state that mixes animations using the "speed" parameter
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/Fox.glb")
+space = CreateBlendSpace()
+BlendSpacePoint space, 0, 0
+BlendSpacePoint space, 1, 3
+move = AddBlendState(hero, "move", space, "speed")
+SetAnimParam hero, "speed", 2
+
+=== AddAnimTransition
+; Go from idle to run when speed rises above 0.5, taking 8 frames to blend
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/Fox.glb")
+idle = AddAnimState(hero, "idle", 0)
+run = AddAnimState(hero, "run", 1)
+AddAnimTransition hero, "idle", "run", "speed > 0.5", 8
+AddAnimTransition hero, "run", "idle", "speed <= 0.5", 8
+
+=== SetAnimParam
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/Fox.glb")
+idle = AddAnimState(hero, "idle", 0)
+StartAnimStates hero, "idle"
+SetAnimParam hero, "speed", 1.0   ; transitions read this value
+
+=== AnimParam
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/Fox.glb")
+SetAnimParam hero, "speed", 2.5
+Print "Speed parameter: " + AnimParam(hero, "speed")
+
+=== StartAnimStates
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/Fox.glb")
+idle = AddAnimState(hero, "idle", 0)
+StartAnimStates hero, "idle"   ; UpdateWorld now runs the state machine
+
+=== AnimStateName
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/Fox.glb")
+idle = AddAnimState(hero, "idle", 0)
+StartAnimStates hero, "idle"
+Print "State: " + AnimStateName(hero)
+
+=== AnimRootMotion
+; Let the animation's own forward movement move the entity (bone "" = automatic)
+Graphics3D 800, 600
+hero = LoadAnimMesh("examples/media/CesiumMan.glb")
+AnimRootMotion hero, "", 1, 0   ; on; keep_y 0 ignores up and down movement
+Animate hero, 1
+
+=== CreateTrack
+; Animate a cube's position over time
+Graphics3D 800, 600
+cube = CreateCube()
+track = CreateTrack(cube, "position")
+TrackKey track, 0, 0, 0, 0
+TrackKey track, 60, 0, 5, 0   ; at frame 60 (one second) it is 5 units up
+
+=== TrackKey
+; Fade a cube out: alpha goes from 1 to 0 over two seconds
+Graphics3D 800, 600
+cube = CreateCube()
+track = CreateTrack(cube, "alpha")
+TrackKey track, 0, 1
+TrackKey track, 120, 0
+
+=== PlayTrack
+Graphics3D 800, 600
+cube = CreateCube()
+track = CreateTrack(cube, "position")
+TrackKey track, 0, 0, 0, 0
+TrackKey track, 60, 0, 5, 0
+PlayTrack track, 2, 1   ; mode 2 = back and forth, normal speed
+
+=== SetTrackTime
+; Jump a track to frame 30
+Graphics3D 800, 600
+cube = CreateCube()
+track = CreateTrack(cube, "position")
+TrackKey track, 0, 0, 0, 0
+TrackKey track, 60, 0, 5, 0
+SetTrackTime track, 30   ; the cube is now at y = 2.5
+
+=== TrackTime
+Graphics3D 800, 600
+cube = CreateCube()
+track = CreateTrack(cube, "position")
+TrackKey track, 0, 0, 0, 0
+TrackKey track, 60, 0, 5, 0
+PlayTrack track, 1
+UpdateWorld
+Print "Track is at frame " + TrackTime(track)
+
+=== TrackPlaying
+Graphics3D 800, 600
+cube = CreateCube()
+track = CreateTrack(cube, "position")
+TrackKey track, 0, 0, 0, 0
+TrackKey track, 60, 0, 5, 0
+PlayTrack track, 3   ; play once
+If TrackPlaying(track) Then Print "Moving" Else Print "Finished"
+
+=== FreeTrack
+Graphics3D 800, 600
+cube = CreateCube()
+track = CreateTrack(cube, "position")
+TrackKey track, 0, 0, 0, 0
+TrackKey track, 60, 0, 5, 0
+FreeTrack track   ; the cube stays where it is
+
+=== CreateSprite
+; A flat picture that always faces the camera
+Graphics3D 800, 600
+camera = CreateCamera()
+coin = CreateSprite()
+tex = LoadTexture("examples/media/coin.png")
+EntityTexture coin, tex
+PositionEntity coin, 0, 0, 5
+
+=== LoadSprite
+; Create a sprite and load its picture in one step
+Graphics3D 800, 600
+camera = CreateCamera()
+coin = LoadSprite("examples/media/coin.png")
+PositionEntity coin, 0, 0, 5
+
+=== SpriteViewMode
+; 3 = turns only around its Y axis, good for trees
+Graphics3D 800, 600
+camera = CreateCamera()
+tree = LoadSprite("examples/media/tree.png")
+SpriteViewMode tree, 3
+PositionEntity tree, 0, 1, 8
+
+=== RotateSprite
+; Spin a sprite 45 degrees around the view direction
+Graphics3D 800, 600
+camera = CreateCamera()
+ring = LoadSprite("examples/media/ring.png")
+PositionEntity ring, 0, 0, 5
+RotateSprite ring, 45
+
+=== ScaleSprite
+; A scale of 1 is 2 units wide, so this sprite is 4 wide and 2 tall
+Graphics3D 800, 600
+camera = CreateCamera()
+ship = LoadSprite("examples/media/ship.png")
+PositionEntity ship, 0, 0, 8
+ScaleSprite ship, 2, 1
+
+=== HandleSprite
+; Put the handle at the bottom middle so the sprite stands on the ground
+Graphics3D 800, 600
+camera = CreateCamera()
+tree = LoadSprite("examples/media/tree.png")
+HandleSprite tree, 0, -1
+PositionEntity tree, 0, 0, 8
+
+=== CreateTerrain
+; A 128 by 128 terrain (the size must be a power of 2), stretched out
+Graphics3D 800, 600
+land = CreateTerrain(128)
+ScaleEntity land, 4, 20, 4
+PositionEntity land, -256, 0, -256
+
+=== LoadTerrain
+; Brightness of the heightmap picture becomes height
+Graphics3D 800, 600
+land = LoadTerrain("heightmap.png")
+ScaleEntity land, 2, 30, 2
+
+=== TerrainSize
+Graphics3D 800, 600
+land = CreateTerrain(256)
+Print "Grid size: " + TerrainSize(land)   ; 256
+
+=== TerrainHeight
+Graphics3D 800, 600
+land = CreateTerrain(128)
+ModifyTerrain land, 10, 10, 0.5
+Print "Height at 10,10: " + TerrainHeight(land, 10, 10)   ; 0 to 1
+
+=== ModifyTerrain
+; Raise a small hill (heights are 0 to 1)
+Graphics3D 800, 600
+land = CreateTerrain(128)
+For x = 60 To 68
+    For z = 60 To 68
+        ModifyTerrain land, x, z, 0.8
+    Next
+Next
+
+=== TerrainY
+; Stand a player on the ground at x=10, z=20
+Graphics3D 800, 600
+land = CreateTerrain(128)
+ScaleEntity land, 4, 20, 4
+player = CreateCube()
+ground = TerrainY(land, 10, 0, 20)
+PositionEntity player, 10, ground + 1, 20
+
+=== TerrainX
+; The world X of the terrain point under a position
+Graphics3D 800, 600
+land = CreateTerrain(128)
+ScaleEntity land, 4, 20, 4
+Print "Terrain X: " + TerrainX(land, 10, 0, 20)
+
+=== TerrainZ
+Graphics3D 800, 600
+land = CreateTerrain(128)
+ScaleEntity land, 4, 20, 4
+Print "Terrain Z: " + TerrainZ(land, 10, 0, 20)
+
+=== TerrainDetail
+; Draw about 3000 triangles, fewer further from the camera
+Graphics3D 800, 600
+land = CreateTerrain(256)
+TerrainDetail land, 3000
+
+=== TerrainShading
+; Kept so old programs still run; it has no effect
+Graphics3D 800, 600
+land = CreateTerrain(128)
+TerrainShading land, 1
+
+=== TerrainLayer
+; Base grass with a rock layer painted on top
+Graphics3D 800, 600
+land = CreateTerrain(128)
+grass = LoadTexture("grass.png")
+rock = LoadTexture("rock.png")
+TerrainLayer land, grass, 0
+TerrainLayer land, rock, 1
+ScaleTexture rock, 0.1, 0.1
+
+=== PaintTerrain
+; Paint a round patch of layer 1 at world position 50, 50
+Graphics3D 800, 600
+land = CreateTerrain(128)
+rock = LoadTexture("rock.png")
+TerrainLayer land, rock, 1
+PaintTerrain land, 1, 50, 50, 10, 1   ; layer, x, z, radius, strength
+
+=== ErodeTerrain
+; Carve gullies into a hilly terrain; the same seed gives the same result
+Graphics3D 800, 600
+land = CreateTerrain(256)
+ScaleEntity land, 2, 40, 2
+ErodeTerrain land, 100000, 42
+
+=== ThermalErodeTerrain
+; Crumble every slope steeper than 35 degrees, 20 times over
+Graphics3D 800, 600
+land = CreateTerrain(256)
+ScaleEntity land, 2, 40, 2
+ThermalErodeTerrain land, 20, 35
+
+=== ModifyTerrainLayer
+; Cover a grid point fully with layer 1
+Graphics3D 800, 600
+land = CreateTerrain(128)
+rock = LoadTexture("rock.png")
+TerrainLayer land, rock, 1
+ModifyTerrainLayer land, 20, 20, 1, 1.0
+
+=== TerrainLayerWeight
+; React to the ground type under a position
+Graphics3D 800, 600
+land = CreateTerrain(128)
+rock = LoadTexture("rock.png")
+TerrainLayer land, rock, 1
+If TerrainLayerWeight(land, 1, 10, 10) > 0.5 Then Print "Stepping on rock"
+
+=== LoadTerrainLayers
+; Red, green and blue of the splat map paint layers 1, 2 and 3
+Graphics3D 800, 600
+land = CreateTerrain(128)
+LoadTerrainLayers land, "splatmap.png"
+
+=== CollisionSurface
+; After UpdateWorld, ask whether the player hit a mesh surface
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+level = CreateCube()
+EntityType level, 2
+UpdateWorld
+If CountCollisions(player) > 0 Then
+    If CollisionSurface(player, 1) Then Print "Hit a surface"
+EndIf
+
+=== CollisionTriangle
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+level = CreateCube()
+EntityType level, 2
+UpdateWorld
+If CountCollisions(player) > 0 Then Print "Triangle: " + CollisionTriangle(player, 1)
+
+=== EntityType
+; Give collision types: 1 = player, 2 = walls
+Const TYPE_PLAYER = 1
+Const TYPE_WALL = 2
+Graphics3D 800, 600
+player = CreateSphere()
+wall = CreateCube()
+EntityType player, TYPE_PLAYER
+EntityType wall, TYPE_WALL
+
+=== GetEntityType
+Graphics3D 800, 600
+player = CreateSphere()
+EntityType player, 1
+Print "Collision type: " + GetEntityType(player)   ; 1
+
+=== EntityRadius
+; An ellipsoid: 1 wide but 2 tall
+Graphics3D 800, 600
+player = CreateCube()
+EntityRadius player, 1, 2
+
+=== EntityBox
+; A collision box starting at -1,-1,-1 and 2 units in every direction
+Graphics3D 800, 600
+crate = CreateCube()
+EntityType crate, 2
+EntityBox crate, -1, -1, -1, 2, 2, 2
+
+=== Collisions
+; Players (1) hit walls (2) using ellipsoid-polygon (2) and slide (2)
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+
+=== ClearCollisions
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+ClearCollisions   ; no entities collide any more
+
+=== ResetEntity
+; Teleport the player without it colliding along the way
+Graphics3D 800, 600
+player = CreateSphere()
+PositionEntity player, 50, 0, 50
+ResetEntity player
+
+=== EntityCollided
+; Did the player touch a coin (type 3) during the last UpdateWorld?
+Graphics3D 800, 600
+Collisions 1, 3, 1, 1
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+coin = CreateSphere()
+EntityType coin, 3
+EntityRadius coin, 1
+UpdateWorld
+hit = EntityCollided(player, 3)
+If hit <> 0 Then FreeEntity hit
+
+=== CountCollisions
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+Print "Collisions: " + CountCollisions(player)
+
+=== CollisionX
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+If CountCollisions(player) > 0 Then Print "Hit at x = " + CollisionX(player, 1)
+
+=== CollisionY
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+If CountCollisions(player) > 0 Then Print "Hit at y = " + CollisionY(player, 1)
+
+=== CollisionZ
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+If CountCollisions(player) > 0 Then Print "Hit at z = " + CollisionZ(player, 1)
+
+=== CollisionNX
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+If CountCollisions(player) > 0 Then Print "Surface normal x = " + CollisionNX(player, 1)
+
+=== CollisionNY
+; A normal with y near 1 means the player is standing on a floor
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+If CountCollisions(player) > 0 Then
+    If CollisionNY(player, 1) > 0.7 Then Print "On the ground"
+EndIf
+
+=== CollisionNZ
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+If CountCollisions(player) > 0 Then Print "Surface normal z = " + CollisionNZ(player, 1)
+
+=== CollisionTime
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+If CountCollisions(player) > 0 Then Print "Hit " + CollisionTime(player, 1) + " of the way along the move"
+
+=== CollisionEntity
+; Find out what the player ran into
+Graphics3D 800, 600
+Collisions 1, 2, 2, 2
+player = CreateSphere()
+EntityType player, 1
+EntityRadius player, 1
+UpdateWorld
+For i = 1 To CountCollisions(player)
+    Print "Hit entity " + CollisionEntity(player, i)
+Next
+
+=== EntityPickMode
+; Make the crate pickable by its polygons (2) and let it block sight lines
+Graphics3D 800, 600
+crate = CreateCube()
+EntityPickMode crate, 2, 1
+
+=== LinePick
+; Cast a ray from the origin straight along +Z for 100 units
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+hit = LinePick(0, 0, 0, 0, 0, 100)
+If hit <> 0 Then Print "Hit at z = " + PickedZ()
+
+=== EntityPick
+; Shoot straight ahead from the player, up to 50 units
+Graphics3D 800, 600
+player = CreateCube()
+target = CreateSphere()
+PositionEntity target, 0, 0, 10
+EntityPickMode target, 1
+hit = EntityPick(player, 50)
+If hit = target Then Print "Target in the sights"
+
+=== CameraPick
+; Which object is under the mouse?
+Graphics3D 800, 600
+camera = CreateCamera()
+cube = CreateCube()
+PositionEntity cube, 0, 0, 5
+EntityPickMode cube, 2
+picked = CameraPick(camera, MouseX(), MouseY())
+If picked <> 0 Then Print "Mouse is over entity " + picked
+
+=== PickedX
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+If LinePick(0, 0, 0, 0, 0, 100) Then Print "Hit at x = " + PickedX()
+
+=== PickedY
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+If LinePick(0, 0, 0, 0, 0, 100) Then Print "Hit at y = " + PickedY()
+
+=== PickedZ
+; Place a marker where the ray hit
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+marker = CreateSphere()
+If LinePick(0, 0, 0, 0, 0, 100) Then PositionEntity marker, PickedX(), PickedY(), PickedZ()
+
+=== PickedNX
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+If LinePick(0, 0, 0, 0, 0, 100) Then Print "Normal x = " + PickedNX()
+
+=== PickedNY
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+If LinePick(0, 0, 0, 0, 0, 100) Then Print "Normal y = " + PickedNY()
+
+=== PickedNZ
+; A wall facing us has a normal pointing back along -Z
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+If LinePick(0, 0, 0, 0, 0, 100) Then Print "Normal z = " + PickedNZ()
+
+=== PickedTime
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+If LinePick(0, 0, 0, 0, 0, 100) Then Print "Hit " + PickedTime() + " of the way along the line"   ; 0 to 1
+
+=== PickedEntity
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+LinePick 0, 0, 0, 0, 0, 100
+If PickedEntity() = wall Then Print "Hit the wall"
+
+=== PickedTriangle
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+If LinePick(0, 0, 0, 0, 0, 100) Then Print "Triangle " + PickedTriangle()
+
+=== PickedSurface
+Graphics3D 800, 600
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2
+If LinePick(0, 0, 0, 0, 0, 100) Then
+    surf = PickedSurface()
+    Print "Surface " + surf + " has " + CountTriangles(surf) + " triangles"
+EndIf
+
+=== CameraProject
+; Find where a 3D point lands on the screen, e.g. for a health bar above an enemy
+Graphics3D 800, 600
+camera = CreateCamera()
+enemy = CreateCube()
+PositionEntity enemy, 2, 1, 10
+CameraProject camera, EntityX(enemy), EntityY(enemy) + 2, EntityZ(enemy)
+Print "Screen position: " + ProjectedX() + ", " + ProjectedY()
+
+=== ProjectedX
+Graphics3D 800, 600
+camera = CreateCamera()
+CameraProject camera, 0, 0, 10
+Print "Screen x = " + ProjectedX()
+
+=== ProjectedY
+Graphics3D 800, 600
+camera = CreateCamera()
+CameraProject camera, 0, 0, 10
+Print "Screen y = " + ProjectedY()
+
+=== ProjectedZ
+; 0 means the point is behind the camera
+Graphics3D 800, 600
+camera = CreateCamera()
+CameraProject camera, 0, 0, -10
+If ProjectedZ() = 0 Then Print "Behind the camera" Else Print "In front"
+
+=== EntityInView
+; Only draw an enemy's health bar when it is on screen
+Graphics3D 800, 600
+camera = CreateCamera()
+enemy = CreateCube()
+PositionEntity enemy, 0, 0, 10
+If EntityInView(enemy, camera) Then Print "Enemy visible"
+
+=== EntityVisible
+; Can the guard see the player, or is a wall in the way?
+Graphics3D 800, 600
+guard = CreateCube()
+player = CreateSphere()
+PositionEntity player, 0, 0, 20
+wall = CreateCube()
+PositionEntity wall, 0, 0, 10
+EntityPickMode wall, 2, 1   ; obscurer = 1
+If EntityVisible(guard, player) Then Print "Spotted!" Else Print "Hidden"

@@ -4,7 +4,7 @@
 
 Every command of the shader system, by area, with its syntax, what each
 argument means, what it returns, and an example. All of them are
-extensions (ext): Blitz3D had no shaders.
+extensions (ext).
 
 **How to read the syntax.** `result = Command(a, b [, c])` returns a
 value; `Command a, b [, c]` does not. Arguments in `[ ]` can be left out,

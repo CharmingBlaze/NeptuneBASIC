@@ -514,7 +514,7 @@ Fyrox's GLSL helper functions (`S_SRGBToLinear`, `S_LinearToSRGB`,
 
 ## Coordinates in shaders
 
-Programs work in Blitz space (+X to the right). Fyrox draws with X
+Programs work in a left-handed space (+X to the right). Fyrox draws with X
 mirrored. Inside shaders, **world positions, normals and directions are
 in Fyrox space**: their X is the negative of what your program sees.
 This applies to `nb_worldPos`, `nb_normal`, `fyrox_cameraData.position`,

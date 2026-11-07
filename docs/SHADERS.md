@@ -9,7 +9,9 @@ You don't need to know anything about graphics programming to start. The
 first chapters only use BASIC commands; GLSL, the language shaders are
 written in, comes later and is explained from the beginning.
 
-Everything in this manual is an extension (ext): Blitz3D had no shaders.
+This manual is part of [the NeptuneBASIC manual](MANUAL.md); if you are
+new to the language itself, start there. Everything here is an
+extension, marked (ext) in the command reference.
 
 ## Contents
 

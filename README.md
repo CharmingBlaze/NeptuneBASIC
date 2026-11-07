@@ -1,7 +1,12 @@
 # NeptuneBASIC
 
-A modern BASIC for making 3D games — the immediacy of Blitz3D, a modern
-language, and the [Fyrox](https://fyrox.rs) engine underneath. Written in Rust.
+A BASIC for making 2D and 3D games: write a few lines, run them, and a
+window opens with your game in it. A simple language that is easy to
+learn, over a thousand commands for graphics, sound, input, physics and
+more, and the [Fyrox](https://fyrox.rs) engine underneath. Written in Rust.
+
+New to it? Start with [the manual](docs/MANUAL.md), which teaches the
+language from the beginning.
 
 ```basic
 Graphics3D 1280, 720
@@ -26,8 +31,9 @@ End
 
 ## Why NeptuneBASIC
 
-* **Classic syntax still works** – `Type`/`Field`, `Function`, `Dim`, `Gosub`,
-  `Data`, `$`/`#`/`%` tags, `While/Wend`, Blitz3D command names.
+* **Easy to start** – a short program opens a window, a game loop is a
+  `While` loop, and every command has a plain-language description and an
+  example.
 * **Modern language** – type inference ("smart variables"), `Variant`
   dynamic values, enums, methods on types, `Try/Catch/Throw`, string
   interpolation, `IIf`, `For Each ... In`, `+=`, `AndAlso`/`OrElse`,
@@ -36,7 +42,7 @@ End
   compiled with a real multi-stage compiler designed for a future native backend.
 * **Fyrox underneath** – entities are Fyrox scene nodes, so PBR rendering,
   shadows and the rest of Fyrox are available to BASIC commands.
-* **All of Blitz3D** – every Blitz3D command: 2D and 3D graphics, custom
+* **Everything a game needs** – 2D and 3D graphics, custom
   meshes, animation, terrain, sprites, mirrors, cube maps, collisions,
   picking, sound, movies, keyboard/mouse/joysticks, files, banks, timers,
   TCP/UDP networking and multiplayer games (TCP with LAN discovery).
@@ -55,8 +61,9 @@ End
 * **Runs on old and new PCs** – any OpenGL 3.3 GPU (roughly 2010 onwards).
   `--quality low` turns off the expensive effects for older laptops;
   `ultra` turns them all on.
-* **Modern names too** – `SetEntityPosition`, `LoadModel`,
-  `UpdatePhysics`, ... work alongside the classic Blitz3D names.
+* **Runs classic BASIC games** – programs written for Blitz3D run with
+  their original command names; modern names such as
+  `SetEntityPosition` and `LoadModel` work alongside them.
 
 ## Using it
 
@@ -99,8 +106,9 @@ neptune run examples/games/orbrun.nb
 
 ## Documentation
 
-* [Command reference](docs/COMMANDS.md): every command explained
-* [Language reference](docs/LANGUAGE.md)
+* [The manual](docs/MANUAL.md): learn the language and how to make games, from the beginning
+* [Command reference](docs/COMMANDS.md): every command, with an example
+* [Language summary](docs/LANGUAGE.md): the whole language on one page
 * [Shaders, materials and post-processing](docs/SHADERS.md)
 * [Sound: playing, 3D sound, mixing and effects](docs/SOUND.md)
 * [Changelog](CHANGELOG.md): what changed, commit by commit

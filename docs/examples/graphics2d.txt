@@ -1,0 +1,880 @@
+; Examples for the 2D graphics commands. Format: see tools/check_doc_examples.py.
+
+=== Graphics3D
+; Open a 800 by 600 window that can draw 3D and 2D
+Graphics3D 800, 600, 32, 2   ; mode 2 = window, 1 = fullscreen, 3 = scaled window
+camera = CreateCamera()
+RenderWorld
+Flip
+
+=== Graphics
+; Open a 640 by 480 window for 2D drawing only
+Graphics 640, 480, 32, 2   ; mode 2 = window
+Text 10, 10, "Hello"
+Flip
+
+=== EndGraphics
+; Close down graphics when the program is finished
+Graphics 640, 480
+Text 10, 10, "Bye"
+Flip
+EndGraphics
+
+=== AppTitle
+; Set the title shown on the window
+Graphics 640, 480
+AppTitle "My First Game"
+
+=== SetFullscreen
+; Switch between a window and fullscreen while the program runs
+Graphics 640, 480
+SetFullscreen 1   ; 1 = borderless fullscreen
+SetFullscreen 0   ; 0 = back to a window
+
+=== IsFullscreen
+; Find out if the program is running fullscreen
+Graphics 640, 480
+If IsFullscreen() Then Print "Fullscreen" Else Print "In a window"
+
+=== GfxMode3D
+; Check that the first graphics mode can be used for 3D
+If GfxMode3D(1) Then Print "Mode 1 supports 3D"
+
+=== GfxDriver3D
+; Check that graphics driver 1 can be used for 3D
+If GfxDriver3D(1) Then Print "Driver 1 supports 3D"
+
+=== WBuffer
+; Accepted for compatibility: depth precision is handled for you
+Graphics3D 800, 600
+WBuffer 1
+
+=== ActiveTextures
+; Count the textures that are in use by entities
+Graphics3D 800, 600
+cube = CreateCube()
+tex = LoadTexture("checker.png")
+EntityTexture cube, tex
+Print "Textures in use: " + ActiveTextures()
+
+=== GraphicsDepth
+; Print the colour depth of the display in bits
+Graphics 640, 480
+Print "Colour depth: " + GraphicsDepth()
+
+=== CountGfxModes
+; Print every listed screen size
+For mode = 1 To CountGfxModes()
+    Print GfxModeWidth(mode) + " x " + GfxModeHeight(mode)
+Next
+
+=== CountGfxModes3D
+; Count the screen sizes that can be used for 3D
+Print "3D modes: " + CountGfxModes3D()
+
+=== GfxModeWidth
+; Print the width of the first graphics mode
+Print "Width: " + GfxModeWidth(1)
+
+=== GfxModeHeight
+; Print the height of the first graphics mode
+Print "Height: " + GfxModeHeight(1)
+
+=== GfxModeDepth
+; Print the colour depth of the first graphics mode
+Print "Depth: " + GfxModeDepth(1)
+
+=== GfxModeExists
+; Check if a screen size is in the list of modes
+If GfxModeExists(1024, 768) Then Print "1024x768 is listed" Else Print "1024x768 is not listed"
+
+=== GfxMode3DExists
+; Check if a screen size is in the list of 3D modes
+If GfxMode3DExists(1280, 720) Then Print "1280x720 works for 3D"
+
+=== CountGfxDrivers
+; Print how many graphics drivers there are
+Print "Drivers: " + CountGfxDrivers()
+
+=== GfxDriverName
+; Print the name of the first graphics driver
+Print GfxDriverName(1)
+
+=== SetGfxDriver
+; Choose graphics driver 1 (the only one)
+SetGfxDriver 1
+
+=== Windowed3D
+; Check that 3D can run in a window
+If Windowed3D() Then Print "3D can run in a window"
+
+=== GfxDriverCaps3D
+; Print the 3D capability level of the graphics driver
+Print "Capability level: " + GfxDriverCaps3D()
+
+=== HWTexUnits
+; Print how many texture layers one entity can use at once
+Print "Texture layers: " + HWTexUnits()
+
+=== HWMultiTex
+; Accepted for compatibility: does nothing
+HWMultiTex 1
+
+=== Dither
+; Accepted for compatibility: does nothing
+Dither 1
+
+=== TotalVidMem
+; Print the total video memory in megabytes
+megabytes = TotalVidMem() / 1048576
+Print "Video memory: " + megabytes + " MB"
+
+=== AvailVidMem
+; Print the free video memory in megabytes
+megabytes = AvailVidMem() / 1048576
+Print "Free video memory: " + megabytes + " MB"
+
+=== VWait
+; Accepted for compatibility: Flip already waits for the display
+Graphics 640, 480
+VWait 1
+
+=== ScanLine
+; The scan line is always 0
+Print "Scan line: " + ScanLine()
+
+=== TrisRendered
+; Show how many triangles the last RenderWorld drew
+Graphics3D 800, 600
+camera = CreateCamera()
+cube = CreateCube()
+MoveEntity cube, 0, 0, 5
+RenderWorld
+Text 10, 10, "Triangles: " + TrisRendered()
+Flip
+
+=== GraphicsWidth
+; Draw a line across the whole width of the window
+Graphics 640, 480
+Line 0, 240, GraphicsWidth() - 1, 240
+Flip
+
+=== GraphicsHeight
+; Put some text halfway down the window
+Graphics 640, 480
+middle = GraphicsHeight() / 2
+Text 10, middle, "Halfway down", 0, 1   ; last 1 = centred vertically on that point
+Flip
+
+=== UpdateWorld
+; The main loop of a 3D game
+Graphics3D 800, 600
+camera = CreateCamera()
+cube = CreateCube()
+MoveEntity cube, 0, 0, 5
+While Not KeyHit(1)   ; 1 = Escape
+    TurnEntity cube, 0, 1, 0
+    UpdateWorld   ; moves animations, collisions and physics on by one frame
+    RenderWorld
+    Flip
+Wend
+
+=== RenderWorld
+; Draw the 3D world, then 2D text on top
+Graphics3D 800, 600
+camera = CreateCamera()
+cube = CreateCube()
+MoveEntity cube, 0, 0, 5
+RenderWorld   ; tween 1 (the default) draws the current positions
+Text 10, 10, "Score: 0"
+Flip
+
+=== Flip
+; Show the finished frame on screen
+Graphics 640, 480
+While Not KeyHit(1)
+    Cls
+    Text 10, 10, "Press Escape to quit"
+    Flip   ; waits for the display, so the loop runs at screen speed
+Wend
+
+=== WireFrame
+; Toggle wireframe drawing with the space bar
+Graphics3D 800, 600
+camera = CreateCamera()
+cube = CreateCube()
+MoveEntity cube, 0, 0, 5
+showWires = 0
+While Not KeyHit(1)
+    If KeyHit(57) Then showWires = 1 - showWires   ; 57 = space
+    WireFrame showWires   ; 1 = wireframe, 0 = solid
+    TurnEntity cube, 0, 1, 0
+    RenderWorld
+    Flip
+Wend
+
+=== GraphicsQuality
+; Use a low quality preset for old graphics cards
+Graphics3D 800, 600
+GraphicsQuality QUALITY_LOW   ; 0 low, 1 medium, 2 high, 3 ultra
+
+=== GetGraphicsQuality
+; Read the current quality level
+Graphics3D 800, 600
+GraphicsQuality 2
+Print "Quality level: " + GetGraphicsQuality()   ; 2 = high
+
+=== PostEffect
+; Turn on bloom, and turn off shadows
+Graphics3D 800, 600
+PostEffect EFFECT_BLOOM, 1
+PostEffect EFFECT_SHADOWS, 0
+
+=== AntiAlias
+; Smooth out jagged edges
+Graphics3D 800, 600
+AntiAlias 1   ; 1 = on, 0 = off
+
+=== SetGamma
+; Make green brighter, then apply the change
+Graphics 640, 480
+SetGamma 128, 128, 128, 128, 160, 128   ; level 128 of each colour is shown as red 128, green 160, blue 128
+UpdateGamma
+
+=== UpdateGamma
+; Apply changes made with SetGamma
+Graphics 640, 480
+SetGamma 255, 255, 255, 255, 255, 255
+UpdateGamma
+
+=== GammaRed
+; Read how the red level 128 is shown
+Graphics 640, 480
+Print "Red 128 is shown as " + GammaRed(128)
+
+=== GammaGreen
+; Read how the green level 128 is shown
+Graphics 640, 480
+Print "Green 128 is shown as " + GammaGreen(128)
+
+=== GammaBlue
+; Read how the blue level 128 is shown
+Graphics 640, 480
+Print "Blue 128 is shown as " + GammaBlue(128)
+
+=== Locate
+; Move the text cursor, then print there
+Graphics 640, 480
+Locate 100, 50   ; x, y in pixels
+Print "Printed at 100, 50"
+Flip
+
+=== Viewport
+; Only draw inside a 200 by 100 box
+Graphics 640, 480
+Viewport 50, 50, 200, 100
+Color 255, 0, 0
+Rect 0, 0, 640, 480   ; only the part inside the box is drawn
+Viewport 0, 0, 640, 480   ; back to the whole window
+Flip
+
+=== Text
+; Draw left aligned text, and text centred on a point
+Graphics 640, 480
+Text 10, 10, "Top left"
+Text 320, 240, "Centre", 1, 1   ; centred across and down
+Flip
+
+=== Color
+; Draw a red rectangle
+Graphics 640, 480
+Color 255, 0, 0   ; red, green, blue from 0 to 255
+Rect 100, 100, 200, 50
+Flip
+
+=== ColorRed
+; Read the red part of the drawing colour
+Graphics 640, 480
+Color 200, 100, 50
+Print "Red: " + ColorRed()
+
+=== ColorGreen
+; Read the green part of the drawing colour
+Graphics 640, 480
+Color 200, 100, 50
+Print "Green: " + ColorGreen()
+
+=== ColorBlue
+; Read the blue part of the drawing colour
+Graphics 640, 480
+Color 200, 100, 50
+Print "Blue: " + ColorBlue()
+
+=== ClsColor
+; Clear the screen to dark blue every frame
+Graphics 640, 480
+ClsColor 0, 0, 80
+Cls
+Flip
+
+=== Cls
+; Clear the screen, then draw a fresh frame
+Graphics 640, 480
+Cls
+Text 10, 10, "A fresh screen"
+Flip
+
+=== Origin
+; Draw relative to the middle of the screen
+Graphics 640, 480
+Origin 320, 240
+Oval -20, -20, 40, 40   ; centred on the screen
+Flip
+
+=== Rect
+; A filled box and an outlined box
+Graphics 640, 480
+Rect 50, 50, 100, 60   ; filled
+Rect 200, 50, 100, 60, 0   ; 0 = outline only
+Flip
+
+=== Oval
+; A filled circle and an outlined ellipse
+Graphics 640, 480
+Oval 50, 50, 80, 80   ; filled
+Oval 200, 50, 120, 60, 0   ; 0 = outline only
+Flip
+
+=== Line
+; Draw a diagonal line across the window
+Graphics 640, 480
+Line 0, 0, 639, 479   ; from the top left to the bottom right
+Flip
+
+=== Plot
+; Draw a single white pixel in the middle
+Graphics 640, 480
+Color 255, 255, 255
+Plot 320, 240
+Flip
+
+=== LoadFont
+; Load a large bold font and use it
+Graphics 640, 480
+bigFont = LoadFont("Arial", 32, 1)   ; name, height, bold
+If bigFont <> 0 Then SetFont bigFont
+Text 10, 10, "Big title"
+Flip
+
+=== SetFont
+; Switch fonts, then go back to the built-in one
+Graphics 640, 480
+titleFont = LoadFont("Arial", 40)
+SetFont titleFont
+Text 10, 10, "Title"
+SetFont 0   ; 0 = the built-in font
+Text 10, 80, "Normal text"
+Flip
+
+=== FreeFont
+; Free a font when it is no longer needed
+Graphics 640, 480
+titleFont = LoadFont("Arial", 40)
+SetFont 0
+FreeFont titleFont
+
+=== FontWidth
+; Print the width of the widest character
+Graphics 640, 480
+Print "Widest character: " + FontWidth() + " pixels"
+
+=== FontHeight
+; Space lines of text by the font height
+Graphics 640, 480
+lineHeight = FontHeight()
+For row = 0 To 4
+    Text 10, 10 + row * lineHeight, "Line " + row
+Next
+Flip
+
+=== StringWidth
+; Centre text by measuring it
+Graphics 640, 480
+message = "Game Over"
+Text (GraphicsWidth() - StringWidth(message)) / 2, 200, message
+Flip
+
+=== StringHeight
+; Draw a box around some text
+Graphics 640, 480
+message = "Press Enter"
+Rect 8, 8, StringWidth(message) + 4, StringHeight(message) + 4, 0
+Text 10, 10, message
+Flip
+
+=== SaveImage
+; Make an image, draw on it, and save it to a file
+Graphics 640, 480
+picture = CreateImage(64, 64)
+SetBuffer ImageBuffer(picture)
+Color 255, 0, 0
+Rect 0, 0, 64, 64
+SetBuffer BackBuffer()
+If SaveImage(picture, "red.png") Then Print "Saved" Else Print "Could not save"
+
+=== LoadImage
+; Load a picture and draw it
+Graphics 640, 480
+coin = LoadImage("coin.png")
+If coin = 0 Then RuntimeError "coin.png not found"
+DrawImage coin, 100, 100
+Flip
+
+=== LoadAnimImage
+; Load a strip of 4 frames, each 32 by 32 pixels
+Graphics 640, 480
+explosion = LoadAnimImage("explosion.png", 32, 32, 0, 4)   ; width, height, first frame, number of frames
+If explosion <> 0 Then DrawImage explosion, 100, 100, 2   ; draw frame 2
+Flip
+
+=== FreeImage
+; Free an image when it is no longer needed
+Graphics 640, 480
+coin = LoadImage("coin.png")
+FreeImage coin
+
+=== DrawImageEx
+; Draw a ship turned 45 degrees, half size and half see-through
+Graphics 640, 480
+ship = LoadImage("ship.png")
+MidHandle ship
+DrawImageEx ship, 320, 240, 0, 45, 0.5, 0.5, 0.5   ; frame, rotation, scale x, scale y, alpha
+Flip
+
+=== DrawImage
+; Draw an image at the mouse position
+Graphics 640, 480
+ship = LoadImage("ship.png")
+MidHandle ship
+While Not KeyHit(1)
+    Cls
+    DrawImage ship, MouseX(), MouseY()
+    Flip
+Wend
+
+=== DrawBlock
+; Draw an image without transparency
+Graphics 640, 480
+tree = LoadImage("tree.png")
+DrawBlock tree, 100, 100   ; the transparent parts are drawn solid
+Flip
+
+=== DrawImageRect
+; Draw only the top left 16 by 16 pixels of an image
+Graphics 640, 480
+coin = LoadImage("coin.png")
+DrawImageRect coin, 100, 100, 0, 0, 16, 16   ; x, y, then the part: left, top, width, height
+Flip
+
+=== DrawBlockRect
+; Draw only part of an image, without transparency
+Graphics 640, 480
+tree = LoadImage("tree.png")
+DrawBlockRect tree, 100, 100, 0, 0, 32, 32
+Flip
+
+=== CreateImage
+; Make a blank 3 frame image and fill the first frame
+Graphics 640, 480
+sprite = CreateImage(32, 32, 3)
+SetBuffer ImageBuffer(sprite, 0)
+Color 0, 255, 0
+Oval 0, 0, 32, 32
+SetBuffer BackBuffer()
+DrawImage sprite, 100, 100, 0
+Flip
+
+=== CopyImage
+; Make a copy, then resize the copy without changing the original
+Graphics 640, 480
+ship = LoadImage("ship.png")
+smallShip = CopyImage(ship)
+ScaleImage smallShip, 0.5, 0.5
+DrawImage ship, 100, 100
+DrawImage smallShip, 300, 100
+Flip
+
+=== GrabImage
+; Take a picture of part of the screen
+Graphics 640, 480
+Color 255, 255, 0
+Oval 0, 0, 50, 50
+snapshot = CreateImage(50, 50)
+GrabImage snapshot, 0, 0   ; copy the 50 by 50 area at 0, 0
+Cls
+DrawImage snapshot, 200, 200
+Flip
+
+=== RotateImage
+; Turn an image a quarter turn
+Graphics 640, 480
+ship = LoadImage("ship.png")
+RotateImage ship, 90   ; degrees
+DrawImage ship, 100, 100
+Flip
+
+=== TFormImage
+; Skew an image sideways with a 2x2 matrix
+Graphics 640, 480
+tree = LoadImage("tree.png")
+TFormImage tree, 1, 0, 0.5, 1   ; a, b, c, d
+DrawImage tree, 100, 100
+Flip
+
+=== TFormFilter
+; Smooth images when they are rotated or scaled
+Graphics 640, 480
+TFormFilter 1   ; 1 = smooth, 0 = sharp
+ship = LoadImage("ship.png")
+RotateImage ship, 30
+DrawImage ship, 100, 100
+Flip
+
+=== TileImage
+; Fill the whole screen with a repeating pattern
+Graphics 640, 480
+pattern = LoadImage("checker.png")
+TileImage pattern
+Flip
+
+=== TileBlock
+; Fill the screen with a pattern that scrolls
+Graphics 640, 480
+pattern = LoadImage("checker.png")
+scroll = 0
+While Not KeyHit(1)
+    scroll = scroll + 1
+    TileBlock pattern, scroll, 0   ; offset x, y
+    Flip
+Wend
+
+=== ImageRectCollide
+; Check if the ship touches a rectangle (a door)
+Graphics 640, 480
+ship = LoadImage("ship.png")
+; image, x, y, frame, then the rectangle: left, top, width, height
+If ImageRectCollide(ship, 100, 100, 0, 90, 90, 40, 40) Then Print "Ship touches the door"
+
+=== ImageWidth
+; Centre an image using its width
+Graphics 640, 480
+ship = LoadImage("ship.png")
+DrawImage ship, (GraphicsWidth() - ImageWidth(ship)) / 2, 100
+Flip
+
+=== ImageHeight
+; Put an image on the bottom edge
+Graphics 640, 480
+ship = LoadImage("ship.png")
+DrawImage ship, 100, GraphicsHeight() - ImageHeight(ship)
+Flip
+
+=== ImageXHandle
+; Print where the handle is horizontally
+Graphics 640, 480
+ship = LoadImage("ship.png")
+MidHandle ship
+Print "Handle x: " + ImageXHandle(ship)
+
+=== ImageYHandle
+; Print where the handle is vertically
+Graphics 640, 480
+ship = LoadImage("ship.png")
+MidHandle ship
+Print "Handle y: " + ImageYHandle(ship)
+
+=== ImageFrames
+; Draw every frame of an animated image side by side
+Graphics 640, 480
+explosion = LoadAnimImage("explosion.png", 32, 32, 0, 4)
+For frame = 0 To ImageFrames(explosion) - 1
+    DrawImage explosion, 40 + frame * 40, 100, frame
+Next
+Flip
+
+=== HandleImage
+; Put the handle at the bottom middle so the image stands on a point
+Graphics 640, 480
+tree = LoadImage("tree.png")
+HandleImage tree, ImageWidth(tree) / 2, ImageHeight(tree)
+DrawImage tree, 320, 400   ; the bottom middle of the tree is at 320, 400
+Flip
+
+=== MidHandle
+; Put the handle at the centre of the image
+Graphics 640, 480
+coin = LoadImage("coin.png")
+MidHandle coin
+DrawImage coin, 320, 240   ; the centre of the coin is at 320, 240
+Flip
+
+=== AutoMidHandle
+; Make every image loaded after this centred
+Graphics 640, 480
+AutoMidHandle 1
+coin = LoadImage("coin.png")
+ring = LoadImage("ring.png")
+DrawImage coin, 200, 200
+DrawImage ring, 300, 200
+Flip
+
+=== MaskImage
+; Make pure magenta the transparent colour
+Graphics 640, 480
+sprite = LoadImage("ship.png")
+MaskImage sprite, 255, 0, 255   ; red, green, blue
+DrawImage sprite, 100, 100
+Flip
+
+=== ScaleImage
+; Make an image twice as wide and half as tall
+Graphics 640, 480
+ship = LoadImage("ship.png")
+ScaleImage ship, 2, 0.5   ; x scale, y scale
+DrawImage ship, 100, 100
+Flip
+
+=== ResizeImage
+; Make an image exactly 64 by 64 pixels
+Graphics 640, 480
+tree = LoadImage("tree.png")
+ResizeImage tree, 64, 64
+DrawImage tree, 100, 100
+Flip
+
+=== RectsOverlap
+; Check if the player box touches the enemy box
+playerX = 100 : playerY = 100
+enemyX = 120 : enemyY = 110
+If RectsOverlap(playerX, playerY, 32, 32, enemyX, enemyY, 32, 32) Then Print "Hit!"
+
+=== ImagesOverlap
+; Quick check if the boxes of two images overlap
+Graphics 640, 480
+ship = LoadImage("ship.png")
+coin = LoadImage("coin.png")
+If ImagesOverlap(ship, 100, 100, coin, 110, 110) Then Print "Ship is near the coin"
+
+=== ImagesCollide
+; Pixel accurate check, ignoring transparent parts
+Graphics 640, 480
+ship = LoadImage("ship.png")
+coin = LoadImage("coin.png")
+; image, x, y, frame for each of the two images
+If ImagesCollide(ship, 100, 100, 0, coin, 110, 110, 0) Then Print "Ship touched the coin"
+
+=== ImageRectOverlap
+; Check if the box of the ship overlaps a rectangle
+Graphics 640, 480
+ship = LoadImage("ship.png")
+If ImageRectOverlap(ship, 100, 100, 90, 90, 40, 40) Then Print "Ship is in the zone"
+
+=== LoadImageAsync
+; Start loading an image in the background, and wait for it
+Graphics 640, 480
+background = LoadImageAsync("checker.png")
+While ImageLoaded(background) = 0
+    Cls
+    Text 10, 10, "Loading..."
+    Flip
+Wend
+DrawImage background, 0, 0
+Flip
+
+=== ImageLoaded
+; 1 = ready, 0 = still loading, -1 = failed
+Graphics 640, 480
+picture = LoadImageAsync("tree.png")
+state = ImageLoaded(picture)
+If state = 1 Then Print "Ready"
+If state = 0 Then Print "Still loading"
+If state = -1 Then Print "Failed"
+
+=== ImageName
+; Print the file an image came from
+Graphics 640, 480
+coin = LoadImage("coin.png")
+Print ImageName(coin)
+
+=== GetColor
+; Read a pixel of an image into the drawing colour
+Graphics 640, 480
+picture = CreateImage(16, 16)
+SetBuffer ImageBuffer(picture)
+Color 10, 200, 30
+Plot 5, 5
+GetColor 5, 5   ; the drawing colour is now the colour of that pixel
+Print ColorRed() + ", " + ColorGreen() + ", " + ColorBlue()
+SetBuffer BackBuffer()
+
+=== CopyPixel
+; Copy one pixel from an image onto the screen
+Graphics 640, 480
+picture = CreateImage(16, 16)
+SetBuffer ImageBuffer(picture)
+Color 255, 0, 0
+Plot 3, 3
+SetBuffer BackBuffer()
+CopyPixel 3, 3, ImageBuffer(picture), 100, 100   ; source x, y, source buffer, then destination x, y
+Flip
+
+=== CopyPixelFast
+; Copy one pixel from one image to another
+Graphics 640, 480
+source = CreateImage(16, 16)
+target = CreateImage(16, 16)
+SetBuffer ImageBuffer(source)
+Color 0, 0, 255
+Plot 2, 2
+CopyPixelFast 2, 2, ImageBuffer(source), 8, 8, ImageBuffer(target)
+SetBuffer BackBuffer()
+
+=== BufferWidth
+; Print the width of the back buffer
+Graphics 640, 480
+Print "Width: " + BufferWidth(BackBuffer())
+
+=== BufferHeight
+; Print the height of an image buffer
+Graphics 640, 480
+picture = CreateImage(64, 32)
+Print "Height: " + BufferHeight(ImageBuffer(picture))
+
+=== SaveBuffer
+; Take a screenshot
+Graphics 640, 480
+Text 10, 10, "Screenshot test"
+If SaveBuffer(BackBuffer(), "screenshot.png") Then Print "Saved" Else Print "Failed"
+
+=== LoadBuffer
+; Load a picture onto the back buffer
+Graphics 640, 480
+If LoadBuffer(BackBuffer(), "checker.png") = 0 Then Print "Could not load"
+Flip
+
+=== BackBuffer
+; Draw on the hidden screen, then show it with Flip
+Graphics 640, 480
+SetBuffer BackBuffer()
+Text 10, 10, "Drawn on the back buffer"
+Flip
+
+=== FrontBuffer
+; Draw straight onto the visible screen
+Graphics 640, 480
+SetBuffer FrontBuffer()
+Text 10, 10, "Drawn on the front buffer"
+
+=== GraphicsBuffer
+; Remember the current buffer and restore it later
+Graphics 640, 480
+oldBuffer = GraphicsBuffer()
+picture = CreateImage(32, 32)
+SetBuffer ImageBuffer(picture)
+Rect 0, 0, 32, 32
+SetBuffer oldBuffer
+
+=== ImageBuffer
+; Draw on an image, then draw the image on the screen
+Graphics 640, 480
+badge = CreateImage(64, 64)
+SetBuffer ImageBuffer(badge)
+Color 255, 200, 0
+Oval 0, 0, 64, 64
+SetBuffer BackBuffer()
+DrawImage badge, 100, 100
+Flip
+
+=== TextureBuffer
+; Paint a red square onto a texture
+Graphics3D 800, 600
+tex = CreateTexture(64, 64)
+SetBuffer TextureBuffer(tex)
+Color 255, 0, 0
+Rect 0, 0, 64, 64
+SetBuffer BackBuffer()
+
+=== SetBuffer
+; Draw into an image, then go back to the screen
+Graphics 640, 480
+picture = CreateImage(32, 32)
+SetBuffer ImageBuffer(picture)
+Cls
+SetBuffer BackBuffer()   ; drawing goes to the screen again
+
+=== LockBuffer
+; Lock a buffer while writing many pixels
+Graphics 640, 480
+LockBuffer BackBuffer()
+For x = 0 To 99
+    WritePixelFast x, 50, $FFFF0000
+Next
+UnlockBuffer BackBuffer()
+Flip
+
+=== UnlockBuffer
+; Unlock the buffer when you have finished with fast pixels
+Graphics 640, 480
+LockBuffer
+WritePixelFast 10, 10, $FF00FF00
+UnlockBuffer
+Flip
+
+=== ReadPixel
+; Read the colour of a pixel and split it into red, green and blue
+Graphics 640, 480
+picture = CreateImage(8, 8)
+SetBuffer ImageBuffer(picture)
+WritePixel 1, 1, $FF3366CC
+argb = ReadPixel(1, 1)
+red = (argb Shr 16) And 255
+green = (argb Shr 8) And 255
+blue = argb And 255
+Print red + ", " + green + ", " + blue
+SetBuffer BackBuffer()
+
+=== ReadPixelFast
+; Read pixels of a locked buffer
+Graphics 640, 480
+picture = CreateImage(8, 8)
+buffer = ImageBuffer(picture)
+LockBuffer buffer
+WritePixelFast 2, 2, $FFFFFFFF, buffer
+argb = ReadPixelFast(2, 2, buffer)
+UnlockBuffer buffer
+Print "Pixel: " + Hex(argb)
+
+=== WritePixel
+; Set a pixel with an ARGB value (alpha, red, green, blue)
+Graphics 640, 480
+WritePixel 100, 100, $FFFF8000   ; solid orange
+Flip
+
+=== WritePixelFast
+; Fill a row of pixels quickly in a locked buffer
+Graphics 640, 480
+buffer = BackBuffer()
+LockBuffer buffer
+For x = 0 To 639
+    WritePixelFast x, 240, $FF00FFFF, buffer
+Next
+UnlockBuffer buffer
+Flip
+
+=== CopyRect
+; Copy a 50 by 50 area from one place on the screen to another
+Graphics 640, 480
+Color 255, 0, 0
+Rect 0, 0, 50, 50
+CopyRect 0, 0, 50, 50, 200, 100   ; source x, y, width, height, then destination x, y
+Flip

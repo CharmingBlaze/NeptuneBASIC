@@ -1,0 +1,648 @@
+; Examples for the 2D game commands. Format: see tools/check_doc_examples.py.
+
+=== CreateTileMap
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+; a map 20 tiles wide and 15 tall, drawn with the frames of tiles
+map = CreateTileMap(tiles, 20, 15)
+Print "Map size: " + TileMapWidth(map) + " x " + TileMapHeight(map)
+
+=== LoadTileMap
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+; load a map saved earlier; it returns 0 if the file cannot be read
+map = LoadTileMap("level1.map", tiles)
+If map = 0 Then Print "Could not load level1.map"
+
+=== SaveTileMap
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+SetTile map, 3, 4, 1
+; returns 1 when the file was written, 0 on failure
+If SaveTileMap(map, "level1.map") Then Print "Saved" Else Print "Save failed"
+
+=== FreeTileMap
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+; ... use the map ...
+FreeTileMap map                ; finished with it
+
+=== SetTile
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+; put frame 5 in the cell at column 3, row 4 (counting from 0)
+SetTile map, 3, 4, 5
+
+=== GetTile
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+SetTile map, 3, 4, 5
+frame = GetTile(map, 3, 4)     ; the frame number stored in that cell
+Print "Tile at 3,4 is frame " + frame
+
+=== TileMapWidth
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+columns = TileMapWidth(map)    ; width in cells
+Print "The map has " + columns + " columns"
+
+=== TileMapHeight
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+rows = TileMapHeight(map)      ; height in cells
+Print "The map has " + rows + " rows"
+
+=== TileMapImage
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+; switch the whole map to a different tile set (for example a winter theme)
+snowTiles = LoadAnimImage("tiles_snow.png", 32, 32, 0, 16)
+TileMapImage map, snowTiles
+
+=== TileMapTerrain
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+; terrain 1 uses 16 frames starting at frame 0 (mode 16 = four neighbours)
+TileMapTerrain map, 1, 0, 16
+
+=== AutoTile
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+TileMapTerrain map, 1, 0, 16
+; paint terrain 1 along a row of cells; the frames join up with their neighbours
+For column = 2 To 8
+    AutoTile map, column, 5, 1
+Next
+
+=== GetTileTerrain
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+TileMapTerrain map, 1, 0, 16
+AutoTile map, 4, 4, 1
+terrain = GetTileTerrain(map, 4, 4)   ; 1 here; an unpainted cell gives 0
+Print "Terrain at 4,4: " + terrain
+
+=== DrawTileMap
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+Cls
+DrawTileMap map, 0, 0          ; top-left corner of the map at 0,0
+Flip
+WaitKey
+
+=== TileMapCellX
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+; the map is drawn at 0,0, so the mouse position is also the position on the map
+column = TileMapCellX(map, MouseX())
+Print "The mouse is over column " + column
+
+=== TileMapCellY
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+row = TileMapCellY(map, MouseY())   ; the row under the mouse
+Print "The mouse is over row " + row
+
+=== TileAt
+Graphics 640, 480
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+; the frame of the tile under pixel 100,70 of the map
+frame = TileAt(map, 100, 70)
+If frame <> 0 Then Print "Something solid is here"
+
+=== Camera2D
+Graphics 640, 480
+player = LoadImage("ship.png")
+Cls
+; world point 500,300 in the middle of the screen, zoomed in 2x, not rotated
+Camera2D 500, 300, 2, 0
+DrawImage player, 500, 300
+Flip
+WaitKey
+
+=== Camera2DEnable
+Graphics 640, 480
+Camera2D 500, 300, 2
+Cls
+Text 500, 300, "World text"      ; drawn in world coordinates
+Camera2DEnable 0                 ; off: back to screen pixels for the HUD
+Text 10, 10, "Score: 100"
+Camera2DEnable 1                 ; on again for the next frame
+Flip
+WaitKey
+
+=== ScreenToWorld2DX
+Graphics 640, 480
+Camera2D 500, 300, 2
+; where in the world is the mouse pointing?
+worldX# = ScreenToWorld2DX(MouseX(), MouseY())
+Print "Mouse is at world X " + worldX#
+
+=== ScreenToWorld2DY
+Graphics 640, 480
+Camera2D 500, 300, 2
+worldY# = ScreenToWorld2DY(MouseX(), MouseY())
+Print "Mouse is at world Y " + worldY#
+
+=== WorldToScreen2DX
+Graphics 640, 480
+Camera2D 500, 300, 2
+; the screen X where the world point 520,300 appears
+screenX# = WorldToScreen2DX(520, 300)
+Print "Draw the label at screen X " + screenX#
+
+=== WorldToScreen2DY
+Graphics 640, 480
+Camera2D 500, 300, 2
+screenY# = WorldToScreen2DY(520, 300)
+Print "Draw the label at screen Y " + screenY#
+
+=== CreateAnim2D
+Graphics 640, 480
+frames = LoadAnimImage("hero.png", 32, 32, 0, 8)
+; frames 0 to 3 at 10 frames a second; mode 1 = loop (2 ping-pong, 3 play once)
+walk = CreateAnim2D(frames, 0, 3, 10, 1)
+
+=== Anim2DPlay
+Graphics 640, 480
+frames = LoadAnimImage("hero.png", 32, 32, 0, 8)
+anim = CreateAnim2D(frames, 0, 3, 10, 1)
+; switch to frames 4 to 7 at 12 frames a second, playing once (mode 3)
+Anim2DPlay anim, 4, 7, 12, 3
+
+=== Anim2DPause
+Graphics 640, 480
+frames = LoadAnimImage("hero.png", 32, 32, 0, 8)
+anim = CreateAnim2D(frames, 0, 3, 10)
+Anim2DPause anim, 1            ; 1 = pause
+Anim2DPause anim, 0            ; 0 = resume
+
+=== Anim2DFrame
+Graphics 640, 480
+frames = LoadAnimImage("hero.png", 32, 32, 0, 8)
+anim = CreateAnim2D(frames, 0, 3, 10)
+current = Anim2DFrame(anim)    ; the frame number showing right now
+Print "Showing frame " + current
+
+=== Anim2DPlaying
+Graphics 640, 480
+frames = LoadAnimImage("hero.png", 32, 32, 0, 8)
+anim = CreateAnim2D(frames, 4, 7, 12, 3)   ; plays once
+If Anim2DPlaying(anim) = 0 Then Print "Finished" Else Print "Still playing"
+
+=== DrawAnim2D
+Graphics 640, 480
+frames = LoadAnimImage("hero.png", 32, 32, 0, 8)
+anim = CreateAnim2D(frames, 0, 3, 10)
+While Not KeyHit(1)
+    Cls
+    DrawAnim2D anim, 320, 240      ; draws the current frame, like DrawImage
+    Flip
+Wend
+
+=== FreeAnim2D
+Graphics 640, 480
+frames = LoadAnimImage("hero.png", 32, 32, 0, 8)
+anim = CreateAnim2D(frames, 0, 3, 10)
+FreeAnim2D anim                ; frees the animation, not the image
+FreeImage frames
+
+=== Physics2DGravity
+Graphics 640, 480
+; gravity of 600 pixels per second squared, pulling down (Y down)
+Physics2DGravity 0, 600
+
+=== Physics2DScale
+Graphics 640, 480
+Physics2DScale 100             ; 100 pixels = 1 physics metre (set before making bodies)
+Physics2DGravity 0, 600
+
+=== CreateBody2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+; type 0 = dynamic, 1 = static, 2 = kinematic; starts at 320,100
+ball = CreateBody2D(0, 320, 100)
+Body2DCircle ball, 16
+
+=== FreeBody2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+crate = CreateBody2D(0, 320, 100)
+Body2DBox crate, 32, 32
+FreeBody2D crate               ; the body and its shapes are gone
+
+=== Body2DBox
+Graphics 640, 480
+Physics2DGravity 0, 600
+ground = CreateBody2D(1, 320, 460)    ; static
+Body2DBox ground, 640, 40             ; 640 wide, 40 tall
+crate = CreateBody2D(0, 320, 100)
+Body2DBox crate, 32, 32, 0, 0         ; last two: offset from the body centre
+
+=== Body2DCircle
+Graphics 640, 480
+Physics2DGravity 0, 600
+ball = CreateBody2D(0, 320, 100)
+Body2DCircle ball, 16          ; radius 16 pixels
+
+=== Body2DCapsule
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40     ; 20 wide, 40 tall pill shape
+Body2DFixedRotation hero, 1    ; stay upright
+
+=== Body2DPolygon
+Graphics 640, 480
+Physics2DGravity 0, 600
+ramp = CreateBody2D(1, 300, 400)
+; three corners (x,y pairs) relative to the body: a triangle
+Body2DPolygon ramp, "-60,20,60,20,60,-20"
+
+=== Body2DSegment
+Graphics 640, 480
+Physics2DGravity 0, 600
+wall = CreateBody2D(1, 0, 0)
+; a thin line from 0,450 to 640,450 acting as the ground
+Body2DSegment wall, 0, 450, 640, 450
+
+=== TileMapBody2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+tiles = LoadAnimImage("tiles.png", 32, 32, 0, 16)
+map = CreateTileMap(tiles, 20, 15)
+For column = 0 To 19
+    SetTile map, column, 14, 1       ; a floor of solid tiles
+Next
+; one static body with a box for every non-empty tile, map corner at 0,0
+level = TileMapBody2D(map, 0, 0)
+
+=== Body2DFriction
+Graphics 640, 480
+Physics2DGravity 0, 600
+crate = CreateBody2D(0, 320, 100)
+Body2DBox crate, 32, 32
+Body2DFriction crate, 0.1      ; low friction: slippery like ice
+
+=== Body2DBounce
+Graphics 640, 480
+Physics2DGravity 0, 600
+ball = CreateBody2D(0, 320, 100)
+Body2DCircle ball, 16
+Body2DBounce ball, 0.8         ; 0 = no bounce, 1 = full bounce
+
+=== Body2DDensity
+Graphics 640, 480
+Physics2DGravity 0, 600
+crate = CreateBody2D(0, 320, 100)
+Body2DBox crate, 32, 32
+Body2DDensity crate, 5         ; heavier than the default
+
+=== Body2DSensor
+Graphics 640, 480
+Physics2DGravity 0, 600
+coin = CreateBody2D(1, 400, 300)
+Body2DCircle coin, 12
+Body2DSensor coin, 1           ; detects overlaps but does not block
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+If Body2DTouching(hero, coin) Then Print "Picked up the coin"
+
+=== Body2DFixedRotation
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+Body2DFixedRotation hero, 1    ; 1 = never rotates, 0 = rotates again
+
+=== Body2DGravityScale
+Graphics 640, 480
+Physics2DGravity 0, 600
+balloon = CreateBody2D(0, 320, 400)
+Body2DCircle balloon, 20
+Body2DGravityScale balloon, -0.2   ; negative: floats upwards
+
+=== Body2DDamping
+Graphics 640, 480
+Physics2DGravity 0, 600
+ball = CreateBody2D(0, 320, 100)
+Body2DCircle ball, 16
+Body2DDamping ball, 0.5, 1.0   ; slows movement (0.5) and spin (1.0)
+
+=== PositionBody2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+PositionBody2D hero, 100, 300  ; teleport back to the start (pixels)
+
+=== RotateBody2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+crate = CreateBody2D(0, 320, 100)
+Body2DBox crate, 32, 32
+RotateBody2D crate, 45         ; tilted 45 degrees clockwise
+
+=== Body2DX
+Graphics 640, 480
+Physics2DGravity 0, 600
+ball = CreateBody2D(0, 320, 100)
+Body2DCircle ball, 16
+x# = Body2DX(ball)             ; position in pixels
+Print "Ball X: " + x#
+
+=== Body2DY
+Graphics 640, 480
+Physics2DGravity 0, 600
+ball = CreateBody2D(0, 320, 100)
+Body2DCircle ball, 16
+y# = Body2DY(ball)
+Print "Ball Y: " + y#
+
+=== Body2DAngle
+Graphics 640, 480
+Physics2DGravity 0, 600
+crate = CreateBody2D(0, 320, 100)
+Body2DBox crate, 32, 32
+angle# = Body2DAngle(crate)    ; degrees clockwise
+Print "Crate angle: " + angle#
+
+=== SetVelocity2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+; run right at 200 pixels per second, keeping the current fall speed
+SetVelocity2D hero, 200, Body2DVY(hero)
+
+=== Body2DVX
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+SetVelocity2D hero, 200, 0
+Print "Speed sideways: " + Body2DVX(hero)    ; pixels per second
+
+=== Body2DVY
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+; positive = falling, negative = rising (Y is down)
+If Body2DVY(hero) > 0 Then Print "Falling"
+
+=== SetSpin2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+wheel = CreateBody2D(0, 320, 240)
+Body2DCircle wheel, 30
+SetSpin2D wheel, 90            ; a quarter turn per second, clockwise
+
+=== Body2DSpin
+Graphics 640, 480
+Physics2DGravity 0, 600
+wheel = CreateBody2D(0, 320, 240)
+Body2DCircle wheel, 30
+SetSpin2D wheel, 90
+Print "Spinning at " + Body2DSpin(wheel) + " degrees per second"
+
+=== ApplyForce2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+rocket = CreateBody2D(0, 320, 400)
+Body2DBox rocket, 20, 40
+; call every frame while the engine is on: pushes up for this step
+ApplyForce2D rocket, 0, -2000
+
+=== ApplyImpulse2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+; an instant upward kick, like a jump (space bar)
+If KeyHit(57) Then ApplyImpulse2D hero, 0, -300
+
+=== ApplyTorque2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+wheel = CreateBody2D(0, 320, 240)
+Body2DCircle wheel, 30
+ApplyTorque2D wheel, 5000      ; turning force for this step
+
+=== Body2DTouching
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+ground = CreateBody2D(1, 320, 460)
+Body2DBox ground, 640, 40
+If Body2DTouching(hero, ground) Then Print "On the ground"
+If Body2DTouching(hero) Then Print "Touching something"   ; other = 0 means any body
+
+=== CountContacts2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+Print "Touching " + CountContacts2D(hero) + " bodies"
+
+=== ContactBody2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+hero = CreateBody2D(0, 100, 300)
+Body2DCapsule hero, 20, 40
+; go through every body the hero is touching (numbered from 1)
+For index = 1 To CountContacts2D(hero)
+    other = ContactBody2D(hero, index)
+    Print "Touching body " + other
+Next
+
+=== RayCast2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+wall = CreateBody2D(1, 400, 300)
+Body2DBox wall, 20, 200
+; fire a ray from 100,300 to 600,300 and see what it hits first
+hit = RayCast2D(100, 300, 600, 300)
+If hit <> 0 Then Print "Hit body " + hit Else Print "Nothing in the way"
+
+=== RayCast2DX
+Graphics 640, 480
+Physics2DGravity 0, 600
+wall = CreateBody2D(1, 400, 300)
+Body2DBox wall, 20, 200
+If RayCast2D(100, 300, 600, 300) <> 0 Then Print "Hit at X " + RayCast2DX()
+
+=== RayCast2DY
+Graphics 640, 480
+Physics2DGravity 0, 600
+wall = CreateBody2D(1, 400, 300)
+Body2DBox wall, 20, 200
+If RayCast2D(100, 300, 600, 300) <> 0 Then Print "Hit at Y " + RayCast2DY()
+
+=== RayCast2DNX
+Graphics 640, 480
+Physics2DGravity 0, 600
+wall = CreateBody2D(1, 400, 300)
+Body2DBox wall, 20, 200
+; the normal points away from the surface that was hit
+If RayCast2D(100, 300, 600, 300) <> 0 Then Print "Normal X " + RayCast2DNX()
+
+=== RayCast2DNY
+Graphics 640, 480
+Physics2DGravity 0, 600
+wall = CreateBody2D(1, 400, 300)
+Body2DBox wall, 20, 200
+If RayCast2D(100, 300, 600, 300) <> 0 Then Print "Normal Y " + RayCast2DNY()
+
+=== DrawBodies2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+ball = CreateBody2D(0, 320, 100)
+Body2DCircle ball, 16
+Color 0, 255, 0
+While Not KeyHit(1)
+    Cls
+    DrawBodies2D                ; outlines of every shape, for debugging
+    Flip
+Wend
+
+=== DrawBody2D
+Graphics 640, 480
+Physics2DGravity 0, 600
+ball = CreateBody2D(0, 320, 100)
+Body2DCircle ball, 16
+coin = LoadAnimImage("coin.png", 32, 32, 0, 1)
+While Not KeyHit(1)
+    Cls
+    DrawBody2D ball, coin, 0    ; frame 0 drawn at the body's position and angle
+    Flip
+Wend
+
+=== UIButton
+Graphics 640, 480
+While Not KeyHit(1)
+    Cls
+    ; call every frame; returns 1 in the frame the button is clicked
+    If UIButton(20, 20, 120, 30, "Start game") Then Print "Starting..."
+    Flip
+Wend
+
+=== UICheckBox
+Graphics 640, 480
+fullscreen = 0
+While Not KeyHit(1)
+    Cls
+    ; pass the current state in, get the new state back
+    fullscreen = UICheckBox(20, 20, "Fullscreen", fullscreen)
+    Flip
+Wend
+
+=== UISlider
+Graphics 640, 480
+volume# = 0.5
+While Not KeyHit(1)
+    Cls
+    volume# = UISlider(20, 20, 200, volume#, 0, 1)   ; 200 wide, range 0 to 1
+    Text 240, 20, "Volume: " + volume#
+    Flip
+Wend
+
+=== UITextBox
+Graphics 640, 480
+playerName = "Player"
+While Not KeyHit(1)
+    Cls
+    ; click the box to type; the edited text is returned
+    playerName = UITextBox(20, 20, 200, playerName)
+    Flip
+Wend
+
+=== UIPanel
+Graphics 640, 480
+Cls
+UIPanel 20, 20, 240, 120, "Settings"   ; the title is optional
+UILabel 36, 56, "Sound and graphics"
+Flip
+WaitKey
+
+=== UILabel
+Graphics 640, 480
+Cls
+UILabel 20, 20, "Press the button to begin"
+Flip
+WaitKey
+
+=== UIHover
+Graphics 640, 480
+While Not KeyHit(1)
+    Cls
+    clicked = UIButton(20, 20, 120, 30, "Menu")
+    ; only treat the click as a shot when the mouse is not over the UI
+    If MouseHit(1) And UIHover() = 0 Then Print "Fire!"
+    Flip
+Wend
+
+=== UITheme
+Graphics 640, 480
+UITheme 255, 128, 0              ; orange accent colour (red, green, blue)
+Cls
+clicked = UIButton(20, 20, 120, 30, "Orange")
+Flip
+WaitKey
+
+=== OpenMovie
+Graphics 640, 480
+movie = OpenMovie("intro.gif")    ; starts playing straight away
+If movie = 0 Then Print "Could not open the movie"
+
+=== CloseMovie
+Graphics 640, 480
+movie = OpenMovie("intro.gif")
+; ... play it ...
+CloseMovie movie
+
+=== DrawMovie
+Graphics 640, 480
+movie = OpenMovie("intro.gif")
+While Not KeyHit(1)
+    Cls
+    ; draw at 0,0 scaled to 640 x 480; returns 0 once it has finished
+    If DrawMovie(movie, 0, 0, 640, 480) = 0 Then Exit
+    Flip
+Wend
+CloseMovie movie
+
+=== MovieWidth
+Graphics 640, 480
+movie = OpenMovie("intro.gif")
+Print "The movie is " + MovieWidth(movie) + " pixels wide"
+
+=== MovieHeight
+Graphics 640, 480
+movie = OpenMovie("intro.gif")
+Print "The movie is " + MovieHeight(movie) + " pixels tall"
+
+=== MoviePlaying
+Graphics 640, 480
+movie = OpenMovie("intro.gif")
+While MoviePlaying(movie)
+    Cls
+    DrawMovie movie, 0, 0
+    Flip
+Wend
+CloseMovie movie
