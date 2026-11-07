@@ -240,8 +240,23 @@ pub struct World {
     /// (ext) `CreateBlendSpace` blend spaces and `CreateTrack` property tracks.
     pub blend_spaces: Vec<Option<crate::animblend::BlendSpace>>,
     pub tracks: Vec<Option<crate::proptrack::Track>>,
-    /// `LoadShader` shaders.
-    pub shaders: Vec<Option<fyrox::material::shader::ShaderResource>>,
+    /// (ext) Shader objects (`LoadShader`, `CreateShader`, materials).
+    pub shaders: Vec<Option<crate::shader::ShaderObj>>,
+    /// (ext) Compiled shaders shared by objects with the same text.
+    pub shader_cache: crate::shader::ShaderCache,
+    /// (ext) Seconds of running time given to shaders as `nb_time`.
+    pub shader_time: f32,
+    /// (ext) When shader files were last checked for hot reloading.
+    pub shader_poll: Option<std::time::Instant>,
+    /// (ext) Window DPI scale (physical pixels per logical pixel).
+    pub dpi: f32,
+    /// (ext) Post-processing effects and chains (`postfx.rs`).
+    pub postfx: crate::postfx::PostFx,
+    /// (ext) Global wind for foliage and wind shaders (`SetWindDirection`).
+    pub wind_dir: (f32, f32),
+    pub wind_strength: f32,
+    /// Materials whose wind follows the global wind ((shader, 0 dir / 1 strength)).
+    pub wind_owned: std::collections::BTreeSet<(i32, i32)>,
     /// Cameras with a `CameraColorGrading` table (`SetGamma` leaves them alone).
     pub graded_cameras: std::collections::HashSet<Handle<Node>>,
     /// `CreateTileMap` tile maps.
@@ -316,6 +331,14 @@ impl Default for World {
             tilemaps: Vec::new(),
             update_dt: crate::particles::UPDATE,
             shaders: Vec::new(),
+            shader_cache: Default::default(),
+            shader_time: 0.0,
+            shader_poll: None,
+            dpi: 1.0,
+            postfx: Default::default(),
+            wind_dir: (1.0, 0.0),
+            wind_strength: 0.2,
+            wind_owned: Default::default(),
             gui: Default::default(),
             watch: Default::default(),
             navmeshes: Vec::new(),
@@ -396,12 +419,15 @@ pub struct Host3D<'a> {
     /// (ext) Fyrox's UI for the retained GUI, and the window's DPI scale.
     pub ui: Option<&'a mut fyrox::gui::UserInterface>,
     pub ui_scale: f32,
+    /// (ext) The GPU, for compiling shaders up front (none before the
+    /// window opens).
+    pub gpu: Option<&'a dyn fyrox::graphics::server::GraphicsServer>,
 }
 
 impl<'a> Host3D<'a> {
     /// Host for the console phase (before `Graphics3D`).
     pub fn console(world: &'a mut World, input: &'a mut Input) -> Self {
-        Host3D { world, input, scenes: None, resources: None, ui: None, ui_scale: 1.0 }
+        Host3D { world, input, scenes: None, resources: None, ui: None, ui_scale: 1.0, gpu: None }
     }
     pub fn graphics(
         world: &'a mut World,
@@ -409,7 +435,13 @@ impl<'a> Host3D<'a> {
         scenes: &'a mut fyrox::scene::SceneContainer,
         resources: fyrox::asset::manager::ResourceManager,
     ) -> Self {
-        Host3D { world, input, scenes: Some(scenes), resources: Some(resources), ui: None, ui_scale: 1.0 }
+        Host3D { world, input, scenes: Some(scenes), resources: Some(resources), ui: None, ui_scale: 1.0, gpu: None }
+    }
+
+    /// Gives the host the GPU (for `CompileShader`).
+    pub fn with_gpu(mut self, gpu: Option<&'a dyn fyrox::graphics::server::GraphicsServer>) -> Self {
+        self.gpu = gpu;
+        self
     }
 
     /// Gives the host Fyrox's UI (for the `Gui*` commands).

@@ -41,6 +41,11 @@ pub mod decal;
 pub mod lod;
 pub mod particles;
 pub mod shader;
+pub mod shaderlib;
+pub mod shadersrc;
+pub mod wgsl;
+pub mod postfx;
+pub mod matcmds;
 pub mod camera2d;
 pub mod physics2d;
 pub mod anim2d;
@@ -301,15 +306,36 @@ impl Plugin for NeptunePlugin {
             return Ok(());
         }
         st.world.update_dt = context.dt;
+        st.world.dpi = st.scale;
+        // (ext) the post-processing render pass, once the renderer exists
+        if !st.world.postfx.registered {
+            if let GraphicsContext::Initialized(g) = &mut *context.graphics_context {
+                let pass = postfx::PostPass::new(st.world.postfx.frame.clone(), st.world.postfx.failed.clone(), std::any::TypeId::of::<NeptunePlugin>());
+                g.renderer.add_render_pass(std::rc::Rc::new(std::cell::RefCell::new(pass)));
+                st.world.postfx.registered = true;
+            }
+        }
         let result = {
             let scale = st.scale;
             let ui = context.user_interfaces.first_mut();
-            let mut host = Host3D::graphics(&mut st.world, &mut st.input, &mut *context.scenes, context.resource_manager.clone()).with_ui(ui, scale);
+            let gpu = match &*context.graphics_context {
+                GraphicsContext::Initialized(g) => Some(g.renderer.graphics_server()),
+                _ => None,
+            };
+            let mut host = Host3D::graphics(&mut st.world, &mut st.input, &mut *context.scenes, context.resource_manager.clone()).with_ui(ui, scale).with_gpu(gpu);
             // models and textures loading in the background
             if let Err(e) = loading::poll(&mut host) {
                 eprintln!("{e}");
             }
-            vm.run(&mut host)
+            // (ext) shader time, hot reloading and automatic parameters
+            if let Err(e) = host.update_shaders() {
+                eprintln!("{e}");
+            }
+            let r = vm.run(&mut host);
+            if let Err(e) = host.update_postfx() {
+                eprintln!("{e}");
+            }
+            r
         };
         // show the 2D frame published by Flip
         if let Some(items) = st.world.canvas.published.take() {

@@ -42,8 +42,9 @@ End
   TCP/UDP networking and multiplayer games (TCP with LAN discovery).
 * **And more** – animated glTF/FBX models, rigid-body physics (Rapier),
   gamepads, fullscreen, graphics quality presets, sky boxes, PBR materials,
-  decals, soft particles, level of detail, render-to-texture, custom
-  shaders, joint motors and ragdolls, a 2D camera, 2D physics with joints, 2D animation, UI widgets,
+  decals, soft particles, level of detail, render-to-texture, shaders in
+  GLSL or WGSL with hot reloading, ready-made PBR, toon, water and
+  procedural materials, post-processing chains, joint motors and ragdolls, a 2D camera, 2D physics with joints, 2D animation, UI widgets,
   background loading,
   saved scenes (Fyrox `.rgs`), 2D tile maps with autotiling, a language
   server.
@@ -100,6 +101,7 @@ neptune run examples/games/orbrun.nb
 
 * [Command reference](docs/COMMANDS.md): every command explained
 * [Language reference](docs/LANGUAGE.md)
+* [Shaders, materials and post-processing](docs/SHADERS.md)
 * [Changelog](CHANGELOG.md): what changed, commit by commit
 * [Architecture](docs/ARCHITECTURE.md)
 * [Implementation status](docs/STATUS.md)

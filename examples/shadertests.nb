@@ -1,0 +1,348 @@
+; Shader system acceptance tests: runs every check, prints PASS or FAIL for
+; each, and ends. Needs a GPU (it opens a window).
+; Run from the repository root: neptune run --uncapped examples/shadertests.nb
+; (--uncapped makes the frame-time check measure real work, not vsync)
+
+Graphics3D 400, 300
+SetWindowTitle "Shader tests"
+Global camera = CreateCamera()
+CameraClsColor camera, 0, 0, 0
+AmbientLight 20, 20, 20
+Global sun = CreateLight(LIGHT_DIRECTIONAL)
+RotateEntity sun, 30, 0, 0
+Global passed = 0
+Global failed = 0
+Global shotN = 0
+
+Function Check(n, name$, ok)
+    If ok
+        DebugLog "PASS " + n + " " + name
+        passed = passed + 1
+    Else
+        DebugLog "FAIL " + n + " " + name
+        failed = failed + 1
+    EndIf
+End Function
+
+Function Frames(n)
+    For f = 1 To n
+        RenderWorld
+        Flip
+    Next
+End Function
+
+; saves the screen and loads it back as an image
+Function Shot()
+    shotN = shotN + 1
+    f$ = "shadertest_" + shotN + ".png"
+    ; let changes reach the screen before saving it (the saved frame can
+    ; lag the program by a frame or two)
+    Frames 4
+    SaveBuffer BackBuffer(), f
+    Frames 3
+    img = LoadImage(f)
+    DeleteFile f
+    Return img
+End Function
+
+; brightness (r+g+b) at a point given in window coordinates
+Function Lum(img, x#, y#)
+    k# = ImageWidth(img) / Float(GraphicsWidth())
+    c = ReadPixel(Int(x * k), Int(y * k), ImageBuffer(img))
+    Return ((c Shr 16) And 255) + ((c Shr 8) And 255) + (c And 255)
+End Function
+
+Function Channel(img, x#, y#, shift)
+    k# = ImageWidth(img) / Float(GraphicsWidth())
+    Return (ReadPixel(Int(x * k), Int(y * k), ImageBuffer(img)) Shr shift) And 255
+End Function
+
+nl$ = Chr(10)
+cx = GraphicsWidth() / 2
+cy = GraphicsHeight() / 2
+PositionEntity camera, 0, 0, -4
+
+; 1. load and compile a custom vertex and fragment shader
+src$ = "uniform float wobble = 0.0;" + nl
+src = src + "uniform vec4 tint = vec4(1.0, 1.0, 1.0, 1.0);" + nl
+src = src + "//! vertex" + nl
+src = src + "#include <neptune/attributes.glsl>" + nl
+src = src + "out vec2 uv;" + nl
+src = src + "void main() {" + nl
+src = src + "    vec3 p = vertexPosition + vertexNormal * wobble;" + nl
+src = src + "    uv = vertexTexCoord;" + nl
+src = src + "    gl_Position = fyrox_instanceData.worldViewProjection * vec4(p, 1.0);" + nl
+src = src + "}" + nl
+src = src + "//! fragment" + nl
+src = src + "in vec2 uv;" + nl
+src = src + "void main() { FragColor = vec4(nb_linear(tint.rgb), 1.0); }" + nl
+custom = CreateShader(src)
+Check 1, "load and compile vertex+fragment shader", CompileShader(custom) = 1 And ShaderCompiled(custom)
+
+; 2. apply a shader to a cube
+cube = CreateCube()
+ShaderSetColor custom, "tint", 0, 255, 0
+ShaderApply custom, cube
+img = Shot()
+Check 2, "apply a shader to a cube", Channel(img, cx, cy, 8) > 200 And Channel(img, cx, cy, 16) < 40
+FreeImage img
+
+; 3. modify parameters at run time
+ShaderSetColor custom, "tint", 255, 0, 0
+ShaderSetFloat custom, "wobble", 0.25
+img = Shot()
+Check 3, "modify parameters at run time", Channel(img, cx, cy, 16) > 200 And Channel(img, cx, cy, 8) < 40 And ShaderGetParameter(custom, "wobble") = "0.25"
+FreeImage img
+ShaderApply 0, cube
+HideEntity cube
+
+; 4. bind several textures
+two = CreateShader("//! lighting unlit" + nl + "uniform sampler2D a;" + nl + "uniform sampler2D b;" + nl + "//! fragment" + nl + "void nb_surface(inout NbSurface s) { s.albedo = texture(a, nb_uv).rgb * 0.5 + texture(b, nb_uv).rgb * 0.5; }")
+ta = CreateTexture(4, 4)
+tb = CreateTexture(4, 4)
+ShaderSetTexture two, "a", ta
+ShaderSetTexture two, "b", tb
+Check 4, "bind several textures", Instr(ShaderGetBindings(two), "a:sampler2D") > 0 And Instr(ShaderGetBindings(two), "b:sampler2D") > 0 And ShaderGetParameter(two, "b") = Str(tb)
+
+; 5. normal map
+bumps = CreateProceduralShader(1)
+nmap = BakeProceduralTexture(bumps, 64, 64, True)
+pbr = CreatePBRMaterial()
+SetNormalMap pbr, nmap
+Check 5, "normal map", ShaderGetParameter(pbr, "normalMap") = Str(nmap) And (ReadPixel(10, 10, TextureBuffer(nmap)) And 255) > 128
+
+; 6. a working PBR material
+ball = CreateSphere(32)
+SetAlbedo pbr, 200, 200, 200
+SetRoughness pbr, 0.5
+EntityMaterial ball, pbr
+img = Shot()
+Check 6, "PBR material", ShaderGetCompilationStatus(pbr) = SHADER_COMPILED And Lum(img, cx, cy) > 60
+FreeImage img
+
+; 7. directional lighting (Lambert shader, light on vs off)
+lambert = LoadShader("builtin:diffuse")
+EntityMaterial ball, lambert
+RotateEntity sun, 0, 0, 0
+img = Shot()
+lit = Lum(img, cx, cy)
+FreeImage img
+HideEntity sun
+img = Shot()
+dark = Lum(img, cx, cy)
+FreeImage img
+Check 7, "directional lighting (" + lit + " vs " + dark + ")", lit > dark + 60
+
+; 8. point lighting
+bulb = CreateLight(LIGHT_POINT)
+PositionEntity bulb, 0, 0, -2.5
+LightRange bulb, 6
+img = Shot()
+plit = Lum(img, cx, cy)
+FreeImage img
+Check 8, "point lighting (" + plit + " vs " + dark + ")", plit > dark + 60
+FreeEntity bulb
+ShowEntity sun
+
+; 9. cast and receive shadows (deferred PBR material on the ground)
+HideEntity ball
+SetShadowMode SHADOW_HARD
+floor = CreateCube()
+ScaleEntity floor, 6, 0.1, 6
+PositionEntity floor, 0, -1, 0
+groundmat = CreatePBRMaterial()
+EntityMaterial floor, groundmat
+blocker = CreateCube()
+ScaleEntity blocker, 0.6, 0.1, 0.6
+PositionEntity blocker, 0, 1, 0
+EntityMaterial blocker, CreateToonMaterial()
+RotateEntity sun, 90, 0, 0
+PositionEntity camera, 0, 2, -5
+CameraLookAt camera, 0, -1, 0
+img = Shot()
+CameraProject camera, 0, -0.9, 0
+under = Lum(img, ProjectedX(), ProjectedY())
+CameraProject camera, 2.5, -0.9, 0
+away = Lum(img, ProjectedX(), ProjectedY())
+FreeImage img
+Check 9, "cast and receive shadows (" + under + " vs " + away + ")", away > under + 40
+
+; 10. a post-processing chain
+inv = LoadPostProcess("builtin:invert")
+gam = LoadPostProcess("builtin:brightness")
+SetPostProcessParameter gam, "brightness", "0.0"
+img = Shot()
+pre = Lum(img, ProjectedX(), ProjectedY())
+FreeImage img
+AddPostProcess inv, camera
+AddPostProcess gam, camera
+img = Shot()
+post = Lum(img, ProjectedX(), ProjectedY())
+FreeImage img
+RemovePostProcess inv, camera
+RemovePostProcess gam, camera
+Check 10, "post-processing chain (" + pre + " -> " + post + ")", Abs(post - (765 - pre)) < 60
+
+; 11. hot reload a modified shader (and keep it when the edit is broken)
+f$ = "shadertest_hot.glsl"
+out = WriteFile(f)
+WriteLine out, "uniform float a = 1.0;"
+WriteLine out, "//! fragment"
+WriteLine out, "void nb_surface(inout NbSurface s) { s.albedo = vec3(a); }"
+CloseFile out
+hot = LoadShader(f)
+ShaderHotReload hot
+EntityMaterial floor, hot
+Frames 2
+t0 = MilliSecs()
+While MilliSecs() - t0 < 1200
+    Frames 1
+Wend
+out = WriteFile(f)
+WriteLine out, "uniform float a = 1.0;"
+WriteLine out, "uniform float b = 0.5;"
+WriteLine out, "//! fragment"
+WriteLine out, "void nb_surface(inout NbSurface s) { s.albedo = vec3(a * b); }"
+CloseFile out
+t0 = MilliSecs()
+While MilliSecs() - t0 < 1500 And ShaderParameterExists(hot, "b") = 0
+    Frames 1
+Wend
+reloaded = ShaderParameterExists(hot, "b")
+out = WriteFile(f)
+WriteLine out, "//! fragment"
+WriteLine out, "void nb_surface(inout NbSurface s) { s.albedo = vec3(oops); }"
+CloseFile out
+t0 = MilliSecs()
+While MilliSecs() - t0 < 1500 And ShaderGetCompilationStatus(hot) <> SHADER_FAILED
+    Frames 1
+Wend
+kept = ShaderGetCompilationStatus(hot) = SHADER_FAILED And ShaderParameterExists(hot, "b")
+DeleteFile f
+Check 11, "hot reload (reloaded=" + reloaded + ", previous kept on error=" + kept + ")", reloaded And kept
+
+; 12. report an invalid shader with useful information
+bad = CreateShader("uniform float k;" + nl + "//! fragment" + nl + "void main() {" + nl + "    FragColor = vec4(k) + oops;" + nl + "}")
+ok = CompileShader(bad)
+e$ = ShaderError(bad)
+DebugLog "  error text: " + e
+Check 12, "invalid shader reported with its line", ok = 0 And Instr(e, ":4") > 0 And Instr(e, "oops") > 0
+
+; 13. a procedural gradient
+grad = CreateProceduralShader(0)
+SetGradientColor grad, 0, 255, 0, 0
+SetGradientColor grad, 1, 0, 0, 255
+SetGradientDirection grad, 0
+gt = BakeProceduralTexture(grad, 64, 8)
+left = ReadPixel(1, 4, TextureBuffer(gt))
+right = ReadPixel(62, 4, TextureBuffer(gt))
+Check 13, "procedural gradient", ((left Shr 16) And 255) > 200 And (right And 255) > 200
+
+; 14. a procedural noise material
+noise = CreateProceduralShader(1)
+SetNoiseType noise, NOISE_PERLIN
+nt = BakeProceduralTexture(noise, 64, 64)
+lo = 255 : hi = 0
+For i = 0 To 63
+    v = ReadPixel(i, (i * 7) Mod 64, TextureBuffer(nt)) And 255
+    If v < lo Then lo = v
+    If v > hi Then hi = v
+Next
+Check 14, "procedural noise material (" + lo + ".." + hi + ")", hi - lo > 60 And ShaderCompiled(noise)
+
+; 15. a toon shader: flat bands instead of a smooth gradient
+EntityMaterial floor, groundmat
+HideEntity floor
+HideEntity blocker
+ShowEntity ball
+PositionEntity camera, 0, 0, -3
+RotateEntity camera, 0, 0, 0
+RotateEntity sun, 0, 60, 0
+toon = CreateToonMaterial()
+SetToonSteps toon, 3
+SetRimLighting toon, False
+EntityMaterial ball, toon
+img = Shot()
+toonSame = 0
+For x = cx - 60 To cx + 60
+    If Abs(Lum(img, x, cy) - Lum(img, x + 1, cy)) < 3 Then toonSame = toonSame + 1
+Next
+FreeImage img
+EntityMaterial ball, lambert
+img = Shot()
+smoothSame = 0
+For x = cx - 60 To cx + 60
+    If Abs(Lum(img, x, cy) - Lum(img, x + 1, cy)) < 3 Then smoothSame = smoothSame + 1
+Next
+FreeImage img
+Check 15, "toon shader (" + toonSame + " flat steps vs " + smoothSame + ")", toonSame > smoothSame + 20
+
+; 16. transparent materials blend with what is behind
+CameraClsColor camera, 255, 0, 0
+glassy = LoadShader("builtin:unlit")
+ShaderSetColor glassy, "albedo", 255, 255, 255, 128
+ShaderSetKeyword glassy, "UNUSED", 1
+see = CreateShader("//! blend alpha" + nl + "//! lighting unlit" + nl + "//! fragment" + nl + "void nb_surface(inout NbSurface s) { s.albedo = vec3(1.0); s.alpha = 0.5; }")
+EntityMaterial ball, see
+img = Shot()
+r = Channel(img, cx, cy, 16)
+g = Channel(img, cx, cy, 8)
+FreeImage img
+Check 16, "transparency (r=" + r + " g=" + g + ")", r > 200 And g > 60 And g < 230
+CameraClsColor camera, 0, 0, 0
+
+; 17. release shader resources without leaks
+info$ = ShaderGetResourceInfo(pbr)
+start = ShaderParameterCount(pbr)
+For i = 1 To 200
+    m = CreatePBRMaterial()
+    EntityMaterial ball, m
+    FreeShader m
+Next
+EntityMaterial ball, lambert
+m = CreatePBRMaterial()
+reused = m < 60
+FreeShader m
+Check 17, "shader resources released (handles reused: " + reused + ")", reused And ShaderExists(m) = 0
+
+; 18. supported backends
+DebugLog "  backend: " + ShaderGetBackend(pbr)
+Check 18, "backend reported", Instr(ShaderGetBackend(0), "OpenGL") > 0 And Instr(ShaderGetBackend(0), "WGSL") > 0
+
+; 19. the suite runs on this platform (GLSL and WGSL both compile)
+wg$ = "struct I { worldMatrix: mat4x4<f32>, worldViewProjection: mat4x4<f32> };" + nl
+wg = wg + "@group(0) @binding(0) var<uniform> fyrox_instanceData: I;" + nl
+wg = wg + "@vertex fn vs(@location(0) p: vec3<f32>) -> @builtin(position) vec4<f32> { return fyrox_instanceData.worldViewProjection * vec4<f32>(p, 1.0); }" + nl
+wg = wg + "@fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(0.0, 0.0, 1.0, 1.0); }"
+w = CreateShader(wg, "wgsl")
+ok = CompileShader(w)
+EntityMaterial ball, w
+img = Shot()
+Check 19, "suite runs here (WGSL compiled and drew blue)", ok And Channel(img, cx, cy, 0) > 200
+FreeImage img
+
+; 20. no needless frame-time cost: 200 cubes sharing one material vs plain cubes
+HideEntity ball
+Dim crowd(200)
+For i = 0 To 199
+    crowd(i) = CreateCube()
+    PositionEntity crowd(i), (i Mod 20) - 10, (i / 20) - 5, 12
+    ScaleEntity crowd(i), 0.3, 0.3, 0.3
+Next
+Frames 10
+t0 = MilliSecs()
+Frames 120
+plain = MilliSecs() - t0
+shared = CreatePBRMaterial()
+For i = 0 To 199
+    EntityMaterial crowd(i), shared
+Next
+Frames 10
+t0 = MilliSecs()
+Frames 120
+shaded = MilliSecs() - t0
+DebugLog "  120 frames: standard material " + plain + " ms, shader material " + shaded + " ms; " + ShaderGetResourceInfo(shared)
+Check 20, "frame time with shaders (" + shaded + " vs " + plain + " ms)", shaded < plain * 1.5 + 120
+
+DebugLog "shader tests: " + passed + " passed, " + failed + " failed"
+End

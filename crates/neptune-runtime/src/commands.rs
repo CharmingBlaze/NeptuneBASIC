@@ -1055,6 +1055,51 @@ pub fn constants() -> Vec<(String, ConstVal)> {
         ("EFFECT_FXAA".into(), ConstVal::Int(3)),
         ("EFFECT_SHADOWS".into(), ConstVal::Int(4)),
         ("EFFECT_LIGHT_SCATTER".into(), ConstVal::Int(5)),
+        // (ext) shaders, materials, shadows and post-processing
+        ("SHADOW_OFF".into(), ConstVal::Int(0)),
+        ("SHADOW_HARD".into(), ConstVal::Int(1)),
+        ("SHADOW_SOFT".into(), ConstVal::Int(2)),
+        ("SHADING_TOON".into(), ConstVal::Int(0)),
+        ("SHADING_CEL".into(), ConstVal::Int(1)),
+        ("SHADING_FLAT".into(), ConstVal::Int(2)),
+        ("SHADING_UNLIT".into(), ConstVal::Int(3)),
+        ("SHADING_VERTEXLIT".into(), ConstVal::Int(4)),
+        ("SHADING_PIXEL".into(), ConstVal::Int(5)),
+        ("SHADING_LAMBERT".into(), ConstVal::Int(6)),
+        ("SHADING_PHONG".into(), ConstVal::Int(7)),
+        ("SHADING_PBR".into(), ConstVal::Int(8)),
+        ("SHADING_MATCAP".into(), ConstVal::Int(9)),
+        ("SHADING_PS1".into(), ConstVal::Int(10)),
+        ("SHADING_POSTERIZE".into(), ConstVal::Int(11)),
+        ("SHADING_HANDPAINTED".into(), ConstVal::Int(12)),
+        ("SHADING_RIM".into(), ConstVal::Int(13)),
+        ("GRADIENT_LINEAR".into(), ConstVal::Int(0)),
+        ("GRADIENT_RADIAL".into(), ConstVal::Int(1)),
+        ("GRADIENT_ANGULAR".into(), ConstVal::Int(2)),
+        ("GRADIENT_NONE".into(), ConstVal::Int(3)),
+        ("NOISE_VALUE".into(), ConstVal::Int(0)),
+        ("NOISE_PERLIN".into(), ConstVal::Int(1)),
+        ("NOISE_SIMPLEX".into(), ConstVal::Int(2)),
+        ("NOISE_VORONOI".into(), ConstVal::Int(3)),
+        ("NOISE_CELLULAR".into(), ConstVal::Int(4)),
+        ("PATTERN_NONE".into(), ConstVal::Int(0)),
+        ("PATTERN_CHECKER".into(), ConstVal::Int(1)),
+        ("PATTERN_GRID".into(), ConstVal::Int(2)),
+        ("PATTERN_STRIPES".into(), ConstVal::Int(3)),
+        ("PATTERN_DOTS".into(), ConstVal::Int(4)),
+        ("PATTERN_CELLS".into(), ConstVal::Int(5)),
+        ("PATTERN_NOISE".into(), ConstVal::Int(6)),
+        ("WORKFLOW_METALLIC".into(), ConstVal::Int(0)),
+        ("WORKFLOW_SPECULAR".into(), ConstVal::Int(1)),
+        ("OPACITY_OPAQUE".into(), ConstVal::Int(0)),
+        ("OPACITY_CUTOUT".into(), ConstVal::Int(1)),
+        ("OPACITY_BLEND".into(), ConstVal::Int(2)),
+        ("POST_PREVIOUS".into(), ConstVal::Int(0)),
+        ("POST_ORIGINAL".into(), ConstVal::Int(-1)),
+        ("SHADER_NOT_COMPILED".into(), ConstVal::Int(0)),
+        ("SHADER_COMPILED".into(), ConstVal::Int(1)),
+        ("SHADER_FAILED".into(), ConstVal::Int(2)),
+        ("SHADER_VALIDATED".into(), ConstVal::Int(3)),
         ("PHYS_DYNAMIC".into(), ConstVal::Int(1)),
         ("PHYS_STATIC".into(), ConstVal::Int(2)),
         ("PHYS_KINEMATIC".into(), ConstVal::Int(3)),
@@ -1163,7 +1208,16 @@ pub fn table() -> &'static [(String, Cmd)] {
         }
         // (ext) the retained GUI's commands, after everything else so the
         // other commands keep their numbers
-        for table in [crate::gui::COMMANDS, crate::gui_lists::COMMANDS, crate::gui_dialogs::COMMANDS, crate::gui_editors::COMMANDS] {
+        for table in [
+            crate::gui::COMMANDS,
+            crate::gui_lists::COMMANDS,
+            crate::gui_dialogs::COMMANDS,
+            crate::gui_editors::COMMANDS,
+            crate::shader::COMMANDS,
+            crate::matcmds::COMMANDS,
+            crate::postfx::COMMANDS,
+            crate::quality::COMMANDS,
+        ] {
             t.extend(table.iter().map(|(s, f)| (s.to_string(), *f)));
         }
         t
@@ -2072,6 +2126,9 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let id = h.add_entity(pivot_node(), Kind::Light { kind, light }, a[1].int())?;
         let pivot = h.ent(id)?.node;
         h.graph()?.link_nodes(light, pivot);
+        if h.world.quality.shadow_bias.is_some() || h.world.quality.cascades != 3 || h.world.quality.shadow_distance.is_some() {
+            h.apply_light_shadows()?;
+        }
         int(id)
     }),
     ("LoaderMatrix$file_extension#xx#xy#xz#yx#yy#yz#zx#zy#zz", |h, a, _| {
@@ -2526,11 +2583,8 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         })
     }),
     // (ext) custom shaders (see shader.rs)
-    ("%LoadShader$file", |h, a, _| match crate::shader::load(&a[0].str()) {
-        Ok(sh) => {
-            h.world.shaders.push(Some(sh));
-            int(h.world.shaders.len() as i32)
-        }
+    ("%LoadShader$file", |h, a, _| match h.load_shader(&a[0].str()) {
+        Ok(s) => int(s),
         Err(e) => {
             eprintln!("LoadShader: {e}");
             int(0)

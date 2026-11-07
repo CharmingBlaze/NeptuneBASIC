@@ -587,6 +587,25 @@ EntityEmissiveMap: (ext) Gives entity a texture controlling which parts of it gl
 EntityAOMap: (ext) Gives entity an ambient occlusion texture that darkens creases and corners; 0 removes it.
 EntityLightmap: (ext) Gives entity a lightmap texture, read with the mesh's second UV set; 0 removes it.
 EntityHeightMap: (ext) Gives entity a height map texture (white is high) for parallax mapping, with depth scale (default 0.08); 0 removes it.
+CreatePBRMaterial: (ext) Creates a physically based material (metallic/roughness, normal maps, parallax, emission, environment reflections, shadows) and returns it. Draw entities with it using EntityMaterial.
+SetAlbedo: (ext) Sets the base colour of material, red, green, blue, alpha 0-255.
+SetAlbedoMap: (ext) Sets the base colour texture of material.
+SetMetallic: (ext) Sets how metallic material is, 0 (plastic, stone) to 1 (metal).
+SetRoughness: (ext) Sets how rough material is, 0 (mirror-smooth) to 1 (matte).
+SetEmissive: (ext) Makes material glow with red, green, blue 0-255 times strength (glows more with bloom).
+SetNormalMap: (ext) Sets the normal map of material, with strength to soften or exaggerate the bumps.
+SetMetallicMap: (ext) Sets a texture whose red channel scales the metallic value of material across its surface.
+SetRoughnessMap: (ext) Sets a texture whose red channel scales the roughness of material across its surface.
+SetAOMap: (ext) Sets the ambient occlusion texture of material (dark where ambient light cannot reach).
+SetEmissiveMap: (ext) Sets the texture that colours the glow of material.
+SetOpacityMap: (ext) Sets a texture whose red channel is the opacity of material; mode OPACITY_CUTOUT (default) cuts holes and keeps shadows, OPACITY_BLEND blends, OPACITY_OPAQUE ignores it.
+SetOpacity: (ext) Sets the opacity of material, 0-1; mode OPACITY_BLEND (default) blends, OPACITY_CUTOUT cuts below 0.5.
+SetHeightMap: (ext) Sets the height map of material (white = high) for parallax mapping, with its depth scale; texture 0 turns it off.
+SetEnvironmentMap: (ext) Sets the cube map material reflects, with intensity.
+SetReflectionIntensity: (ext) Sets how strongly material reflects its environment map.
+SetFresnel: (ext) Sets how much stronger reflections of material get at glancing angles, 0 (not at all) to 1 (fully).
+SetParallaxScale: (ext) Sets the depth of material's parallax mapping.
+SetMaterialWorkflow: (ext) Sets the workflow of material: WORKFLOW_METALLIC, or WORKFLOW_SPECULAR with the specular colour red, green, blue 0-255.
 
 # Brushes
 CreateBrush: Creates a brush with colour red, green, blue (0-255, default white) and returns its handle.
@@ -891,11 +910,155 @@ EntityLOD: (ext) Makes the level entity (a level of detail of entity) show only 
 CameraExposure: (ext) Sets the exposure of camera: mode 0 uses a fixed exposure, 1 adjusts it automatically between min_luminance and max_luminance.
 CameraColorGrading: (ext) Applies a colour grading table to camera, from a 256x16 image file; an empty file name removes it.
 CameraToTexture: (ext) Makes camera render into texture instead of the screen; texture 0 renders to the screen again.
-LoadShader: (ext) Loads a custom Fyrox shader file (.shader) and returns it, or 0 if it cannot be loaded.
-EntityShader: (ext) Draws entity with a shader loaded by LoadShader.
-ShaderFloat: (ext) Sets the float property called name of entity's custom shader to value.
-ShaderVector: (ext) Sets the vector property called name of entity's custom shader to x, y, z, w.
-ShaderTexture: (ext) Sets the texture property called name of entity's custom shader to texture.
+
+# Shaders
+LoadShader: (ext) Loads a shader and compiles it: a GLSL file (.glsl), a WGSL file (.wgsl), a Fyrox shader file (.shader), or a built-in shader named "builtin:<name>" (unlit, textured, diffuse, phong, blinnphong, pbr, toon, water, hologram, ... see docs/SHADERS.md). Returns the shader; ShaderError tells why one failed to compile. Returns 0 only if the file cannot be read.
+CreateShader: (ext) Creates a shader from source text in language "glsl" (default), "wgsl" or "fyrox" and returns it. It is compiled by CompileShader, or when first used.
+CompileShader: (ext) Compiles shader and returns 1 on success. On failure it returns 0, ShaderError holds the file, line and message, and the last version that compiled stays in use.
+ReloadShader: (ext) Reads shader's file again and compiles it; returns 1 on success.
+FreeShader: (ext) Frees shader; entities drawn with it go back to their normal materials.
+ValidateShader: (ext) Checks shader's current source (including a GPU compile once the window is open) without using it; returns 1 if it is valid, otherwise 0 and ShaderError says why.
+ShaderValidate: (ext) Same as ValidateShader.
+ShaderExists: (ext) Returns 1 if shader is a shader that exists.
+ShaderCompiled: (ext) Returns 1 if the last compile of shader succeeded.
+ShaderError: (ext) Returns the error of shader's last compile or validation, with file and line (empty if there was none).
+ShaderCompileError: (ext) Same as ShaderError.
+ShaderLog: (ext) Returns shader's log: each compile, warning, error and hot reload, one per line.
+ShaderSource: (ext) Replaces the whole source of shader with source; compile it again with CompileShader.
+ShaderVertexSource: (ext) Sets the vertex stage of shader to source (the text after //! vertex); compile it again with CompileShader.
+ShaderFragmentSource: (ext) Sets the fragment stage of shader to source (the text after //! fragment); compile it again with CompileShader.
+ShaderGeometrySource: (ext) Always fails with an explanation: Fyrox's OpenGL 3.3 renderer has no geometry stage. Make geometry with the mesh commands or displace vertices in a vertex shader.
+ShaderComputeSource: (ext) Always fails with an explanation: Fyrox's renderer has no compute stage. Compute into a texture with a post-processing effect and PostProcessOutput, or on the CPU.
+ShaderGetSource: (ext) Returns shader's source: stage 0 the source as written, 1 the generated vertex program, 2 the generated fragment program, 3 the Fyrox shader text.
+ShaderApply: (ext) Draws entity with shader (0 = back to its normal materials).
+EntityShader: (ext) Draws entity with shader (0 = back to its normal materials). Same as ShaderApply with the arguments the other way round.
+EntityMaterial: (ext) Draws entity with material (a shader or a material from CreatePBRMaterial, CreateToonMaterial, ...); 0 goes back to the normal materials.
+ShaderEnable: (ext) Turns shader back on after ShaderDisable.
+ShaderDisable: (ext) Turns shader off: its entities are drawn with their normal materials until ShaderEnable.
+ShaderClone: (ext) Returns a copy of shader with its own parameters (it shares the compiled program).
+ShaderSave: (ext) Saves shader to file: a .shader or .ron file gets the Fyrox shader, anything else the source. Returns 1 on success.
+ShaderHotReload: (ext) With enable 1 (default), shader is compiled again whenever its file or a file it includes changes; a broken edit keeps the previous version and is reported in ShaderError.
+ShaderSetKeyword: (ext) Turns keyword on (enable 1) or off (0) in shader: it becomes #define keyword in the source, and a //! directive can depend on it. Each set of keywords is compiled once and reused.
+ShaderFloat: (ext) Sets the float parameter called name to value for entity only (other entities with the same shader keep the shader's value).
+ShaderVector: (ext) Sets the vector parameter called name to x, y, z, w for entity only.
+ShaderTexture: (ext) Sets the texture parameter called name to texture for entity only.
+
+# Shader parameters
+ShaderSetParameter: (ext) Sets the parameter called name of shader from text: numbers separated by commas or spaces ("1, 0.5, 0") or, for a texture parameter, a texture handle.
+ShaderGetParameter: (ext) Returns the value of shader's parameter called name as text (numbers separated by commas, or a texture handle).
+ShaderSetFloat: (ext) Sets the float parameter called name of shader to value.
+ShaderSetInt: (ext) Sets the integer parameter called name of shader to value.
+ShaderSetBool: (ext) Sets the bool parameter called name of shader to value (0 false, anything else true).
+ShaderSetVector2: (ext) Sets the vec2 parameter called name of shader to x, y.
+ShaderSetVector3: (ext) Sets the vec3 parameter called name of shader to x, y, z.
+ShaderSetVector4: (ext) Sets the vec4 parameter called name of shader to x, y, z, w.
+ShaderSetMatrix3: (ext) Sets the mat3 parameter called name of shader from 9 numbers in values, column by column.
+ShaderSetMatrix4: (ext) Sets the mat4 parameter called name of shader from 16 numbers in values, column by column.
+ShaderSetColor: (ext) Sets the colour parameter called name of shader from red, green, blue and alpha 0-255 (alpha default 255); shaders get them as 0-1.
+ShaderSetTexture: (ext) Sets the texture parameter called name of shader to texture.
+ShaderSetTextureArray: (ext) Stacks the textures listed in textures (handles separated by commas, all the same size) into one array texture for parameter name; read layer n in GLSL with nb_textureArray(name, uv, n).
+ShaderSetCubeMap: (ext) Sets the samplerCube parameter called name of shader to a cube map texture (loaded with flag 128).
+ShaderSetTime: (ext) Sets the nb_time value shader sees to time seconds; -1 (default) goes back to the running time.
+ShaderSetResolution: (ext) Sets the nb_resolution value shader sees to width x height pixels; 0 (default) goes back to the window size.
+ShaderSetCamera: (ext) Gives shader camera's position and matrices, in the parameters nb_cameraPosition, nb_viewMatrix, nb_projectionMatrix and nb_viewProjection it declares.
+ShaderSetLight: (ext) Gives shader light's position, direction (towards the light), colour and range, in the parameters nb_lightPosition, nb_lightDirection, nb_lightColor and nb_lightRange it declares; for arrays, index picks the element.
+ShaderSetMaterial: (ext) Copies into shader every parameter value of material that both declare, and returns how many were copied.
+ShaderSetBuffer: (ext) Sets the array parameter called name of shader (float[n], vec4[n], ...) from the numbers in values.
+ShaderParameterExists: (ext) Returns 1 if shader declares a parameter called name.
+ShaderParameterCount: (ext) Returns the number of parameters shader declares (textures included).
+ShaderParameterName: (ext) Returns the name of shader's parameter number index (0 to ShaderParameterCount - 1).
+ShaderParameterType: (ext) Returns the type of shader's parameter called name: "float", "vec3", "mat4", "float[16]", "sampler2D", "samplerCube", ...
+
+# Shader debugging
+ShaderDebug: (ext) Returns a report on shader: language, backend, status, passes, parameters, bindings, attributes, files, keywords, resource use and the last error.
+ShaderGetUniforms: (ext) Returns shader's uniform parameters as "name:type" separated by commas.
+ShaderGetAttributes: (ext) Returns the vertex attributes shader reads as "name@location" separated by commas.
+ShaderGetBindings: (ext) Returns shader's texture and uniform block bindings as "name:kind@binding" separated by commas.
+ShaderGetResourceInfo: (ext) Returns shader's resource use: entities, materials, passes, parameters, keywords, compiles, last compile time, compiled shaders cached and cache hits.
+ShaderGetCompilationStatus: (ext) Returns shader's state: SHADER_NOT_COMPILED, SHADER_COMPILED, SHADER_FAILED, or SHADER_VALIDATED (checked, waiting for the window to open for the GPU check).
+ShaderGetBackend: (ext) Returns the rendering backend and shader languages, and for a shader its source language.
+
+# Post-processing
+CreatePostProcess: (ext) Creates a post-processing effect from source (GLSL with vec4 nb_post(vec2 uv), or WGSL) and returns it. Add it to a camera with AddPostProcess.
+LoadPostProcess: (ext) Loads a post-processing effect from a file or "builtin:<name>" (bloom, exposure, tonemap, vignette, chromatic, grain, colorgrade, gamma, contrast, saturation, brightness, fxaa, outline, pixelate, crt, distortion, heathaze, blur, gaussian, radialblur, sharpen, dof, motionblur, ssr, ssao, fog, underwater, rain, snow, invert) and returns it, or 0 on failure.
+AddPostProcess: (ext) Adds effect to the chain of camera (0 = every camera).
+RemovePostProcess: (ext) Removes effect from the chain of camera (0 = from every chain); the effect still exists.
+FreePostProcess: (ext) Removes effect from every chain and frees it.
+SetPostProcess: (ext) Makes effect the only effect of camera; effect 0 clears camera's chain.
+SetPostProcessParameter: (ext) Sets the parameter called name of effect from text (numbers separated by commas, or a texture handle).
+SetPostProcessEnabled: (ext) Turns effect on (enable 1) or off (0) without removing it from its chains.
+SetPostProcessOrder: (ext) Sets where effect runs in its chain: lower orders run first (effects start in the order they were made).
+PostProcessInput: (ext) Chooses what effect reads: 0 (POST_PREVIOUS) the result so far, -1 (POST_ORIGINAL) the scene before any effect, or another effect's output.
+PostProcessOutput: (ext) Makes effect draw into texture instead of the screen chain (render to texture); 0 draws to the chain again.
+PostProcessResolution: (ext) Draws effect at scale (0.05 to 1) of the screen size, for cheaper blurs and glows.
+PostProcessCamera: (ext) Makes effect run only for camera.
+PostProcessPriority: (ext) A negative priority runs effect on the HDR image before tone mapping; 0 or more runs it on the final image.
+PostProcessShader: (ext) Returns the shader of effect, for the ShaderSet* and Shader debugging commands.
+SetUnderwaterEffect: (ext) Turns the underwater effect of camera on or off: tinted, wavy view with fog when the camera is below water_level; red, green, blue set the water colour.
+SetRainEffect: (ext) Draws rain streaks over camera's view with amount 0-1 (0 turns it off) and speed.
+SetSnowEffect: (ext) Draws falling snow over camera's view with amount 0-1 (0 turns it off) and speed.
+SetAtmosphericFog: (ext) Adds height fog to camera from the depth buffer: density (0 turns it off), colour red, green, blue, and how fast it thins with height.
+
+# Shadows
+SetShadowMode: (ext) Sets real-time shadows: SHADOW_OFF, SHADOW_HARD or SHADOW_SOFT (filtered edges).
+SetShadowQuality: (ext) Sets shadow map size and precision from quality 0 (512, half precision) to 3 (4096, full precision).
+SetShadowResolution: (ext) Sets the shadow map size of directional and spot lights to size (64-8192); point lights use half.
+SetShadowBias: (ext) Sets the shadow bias of every light (it moves shadows slightly to stop speckled "shadow acne"); new lights get it too.
+SetShadowSoftness: (ext) Turns filtered soft shadow edges on (softness above 0) or off (0). Fyrox's soft shadows have a fixed filter size.
+SetShadowDistance: (ext) Sets how far from the camera shadows are drawn, in world units.
+SetShadowCascadeCount: (ext) Sets how many cascades (1 to 3) directional light shadows are split into; more cascades keep near shadows sharp.
+EnableShadows: (ext) Turns real-time shadows on.
+DisableShadows: (ext) Turns real-time shadows off.
+
+# Toon and stylized materials
+CreateToonMaterial: (ext) Creates a stylized material and returns it; mode is a shading mode (SHADING_TOON default, SHADING_CEL, SHADING_FLAT, SHADING_UNLIT, SHADING_VERTEXLIT, SHADING_PIXEL, SHADING_PS1, SHADING_MATCAP, SHADING_POSTERIZE, SHADING_HANDPAINTED, ...).
+SetToonRamp: (ext) Lights material through a ramp texture: the light level picks a colour across it. Texture 0 goes back to steps.
+SetLightingRamp: (ext) Same as SetToonRamp, for any ramp-lit material.
+SetToonSteps: (ext) Sets how many flat bands of light material has (1 = two-tone).
+SetToonOutline: (ext) Gives entities with material an outline of width units drawn around them (enable 1), or removes it (0).
+SetOutlineColor: (ext) Sets the outline colour of material, red, green, blue and alpha 0-255.
+SetOutlineWidth: (ext) Sets the outline width of material in units.
+SetRimLighting: (ext) Turns rim lighting (a glow along the edges facing away from the camera) of material on or off; strength sets how bright it is.
+SetRimColor: (ext) Sets the rim lighting colour of material, red, green, blue 0-255.
+SetRimPower: (ext) Sets how thin the rim of material is: higher power gives a thinner rim.
+SetShadingMode: (ext) Switches material to another shading mode (SHADING_TOON, SHADING_CEL, SHADING_FLAT, ...), keeping the parameters both modes have.
+SetVertexLighting: (ext) Lights material per vertex (enable 1, the look of early 3D hardware) or goes back to toon shading (0).
+SetFlatShading: (ext) Shades material with one flat colour per triangle (enable 1, low-poly look) or goes back to toon shading (0).
+SetPixelShading: (ext) Draws material with crisp texture pixels and banded light (enable 1, pixel-art look) or goes back to toon shading (0).
+
+# Water, wind and foliage
+CreateWaterMaterial: (ext) Creates an animated water material and returns it: waves, depth colour, foam, reflections and refraction. Give the water mesh enough vertices for the waves.
+SetWaterWaves: (ext) Sets the waves of material: height, length (units between crests) and the direction dir_x, dir_z they travel.
+SetWaterSpeed: (ext) Sets how fast the waves of material move.
+SetWaterDepth: (ext) Sets the depth in units at which material reaches its deep colour.
+SetWaterReflection: (ext) Sets how much material reflects (0-1), optionally from cubemap.
+SetWaterRefraction: (ext) Sets how much material bends the view of what is under the water.
+SetWaterFoam: (ext) Sets how much foam material shows near shores and on crests, and its colour red, green, blue.
+SetWaterColor: (ext) Sets the shallow and deep colours of water material, 0-255.
+SetWindDirection: (ext) Sets the direction x, z of the global wind, used by foliage and wind materials.
+SetWindStrength: (ext) Sets the strength of the global wind.
+CreateFoliageMaterial: (ext) Creates a material for leaves and grass that sways in the wind and returns it; tips (higher vertices) move more than roots.
+SetFoliageWind: (ext) Gives foliage material its own wind strength, speed and stiffness instead of the global wind.
+
+# Procedural materials
+CreateProceduralShader: (ext) Creates a procedural material and returns it: kind 0 a gradient, 1 noise, 2 a pattern. Mix them with the commands below.
+SetGradient: (ext) Sets the gradient of material: GRADIENT_LINEAR, GRADIENT_RADIAL, GRADIENT_ANGULAR or GRADIENT_NONE.
+SetGradientColor: (ext) Sets gradient colour index (0 start, 1 end) of material, red, green, blue, alpha 0-255.
+SetGradientDirection: (ext) Sets the angle of a linear gradient (or the start of an angular one) in degrees.
+SetNoiseType: (ext) Sets the noise of material: NOISE_VALUE, NOISE_PERLIN, NOISE_SIMPLEX, NOISE_VORONOI or NOISE_CELLULAR.
+SetNoiseScale: (ext) Sets the size of noise features of material (higher = smaller features).
+SetNoiseSpeed: (ext) Sets how fast the noise of material moves (0 = still).
+SetNoiseOctaves: (ext) Sets how many layers of finer noise (fractal Brownian motion, 1-12) material adds together.
+SetNoisePersistence: (ext) Sets how strong each finer noise layer of material is compared with the one before (usually 0.5).
+SetNoiseLacunarity: (ext) Sets how much finer each noise layer of material is than the one before (usually 2).
+SetNoiseStrength: (ext) Sets how much the noise of material disturbs its gradient.
+SetPattern: (ext) Sets the pattern of material: PATTERN_NONE, PATTERN_CHECKER, PATTERN_GRID, PATTERN_STRIPES, PATTERN_DOTS, PATTERN_CELLS or PATTERN_NOISE.
+SetPatternScale: (ext) Sets how many times the pattern of material repeats across it.
+SetPatternColor: (ext) Sets the pattern colour of material, red, green, blue, alpha 0-255 (alpha sets how strongly it covers the gradient).
+SetPatternRotation: (ext) Rotates the pattern of material by angle degrees.
+SetDistortion: (ext) Warps material's gradient and pattern with its noise by amount.
+SetProceduralSeed: (ext) Sets the seed of material, giving a different variation of its noise and cells.
+BakeProceduralTexture: (ext) Draws procedural material into a new texture of width x height and returns it, so it can be used as any texture (with normal_map 1 it makes a normal map from its noise instead).
 
 # Loading and saving scenes
 SaveScene: (ext) Saves every top-level entity as a Fyrox scene file (.rgs) that LoadMesh can load back as one entity; cameras, collision, pick and physics settings and sounds are not saved. Returns 1 on success.

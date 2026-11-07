@@ -28,7 +28,7 @@ impl Host3D<'_> {
         let mut out = Vec::new();
         let mut stack = vec![node];
         while let Some(n) = stack.pop() {
-            stack.extend(graph[n].children().iter().copied().filter(|c| !skip(*c)));
+            stack.extend(graph[n].children().iter().copied().filter(|c| !skip(*c) && graph[*c].name() != crate::shader::OUTLINE_NODE));
             if graph[n].cast::<Mesh>().is_some() {
                 out.push(n);
             }

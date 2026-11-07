@@ -4,6 +4,59 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Shaders, materials and post-processing
+
+A shader system: programs write, load, compile, change and apply GPU
+shaders with BASIC commands, and get ready-made materials and screen
+effects without writing any. The guide is
+[docs/SHADERS.md](docs/SHADERS.md).
+
+* **Shaders** – `LoadShader` now takes GLSL files (`.glsl`), WGSL files
+  (`.wgsl`, checked and translated to GLSL by the naga library), Fyrox
+  `.shader` files and 32 built-in shaders (`"builtin:toon"`). GLSL shaders
+  get `//!` directives (pass, blending, culling, lighting model, shadows),
+  `#include` with a built-in library (lighting, noise, patterns, colour),
+  `uniform` lines as parameters, and surface shaders: write
+  `nb_surface` and NeptuneBASIC adds the vertex program, skinning,
+  lighting and shadow passes. Vertex hooks (`nb_displace`) move vertices
+  without writing a whole vertex program.
+* **Compiling** – `CreateShader`, `CompileShader`, `ValidateShader`,
+  `ReloadShader`, `ShaderSource`/`ShaderVertexSource`/`ShaderFragmentSource`.
+  Shaders are compiled on the GPU straight away; errors give the file and
+  line of your source (even inside includes), and a failed compile keeps
+  the last working version. `ShaderHotReload` recompiles a shader when its
+  file changes.
+* **Parameters** – `ShaderSetFloat`, `ShaderSetInt`, `ShaderSetBool`,
+  `ShaderSetVector2/3/4`, `ShaderSetMatrix3/4`, `ShaderSetColor`,
+  `ShaderSetTexture`, `ShaderSetCubeMap`, `ShaderSetTextureArray`,
+  `ShaderSetBuffer`, `ShaderSetParameter`, `ShaderSetTime`,
+  `ShaderSetResolution`, `ShaderSetCamera`, `ShaderSetLight`,
+  `ShaderSetMaterial`, keywords (`ShaderSetKeyword`), and reflection
+  (`ShaderParameterCount`, `ShaderParameterName`, `ShaderParameterType`).
+* **Debugging** – `ShaderError`, `ShaderLog`, `ShaderDebug`,
+  `ShaderGetUniforms`, `ShaderGetAttributes`, `ShaderGetBindings`,
+  `ShaderGetResourceInfo`, `ShaderGetCompilationStatus`, `ShaderGetBackend`.
+* **Materials** – `CreatePBRMaterial` (with `SetAlbedo`, `SetMetallic`,
+  `SetRoughness`, normal, AO, emissive, opacity, height and environment
+  maps, specular workflow), `CreateToonMaterial` (toon, cel, flat, pixel
+  art, PS1, vertex-lit and more; outlines, rim light, ramps),
+  `CreateWaterMaterial`, `CreateFoliageMaterial` with global wind, and
+  `CreateProceduralShader` (gradients, noise, patterns), with
+  `BakeProceduralTexture` to turn one into a texture.
+* **Post-processing** – effect chains per camera: `LoadPostProcess`,
+  `CreatePostProcess`, `AddPostProcess` and friends, with 30 built-in
+  effects (bloom, CRT, depth of field, motion blur, SSR, SSAO, fog,
+  pixelation, rain, snow, ...) and your own `nb_post` shaders.
+* **Shadows** – `SetShadowMode`, `SetShadowQuality`,
+  `SetShadowResolution`, `SetShadowBias`, `SetShadowSoftness`,
+  `SetShadowDistance`, `SetShadowCascadeCount`, `EnableShadows`,
+  `DisableShadows`.
+* **Fast by default** – compiled shaders are shared by every object with
+  the same source, and entities with the same material share it, so a
+  shader adds no per-object pipelines or per-frame rebuilds.
+* **Examples** – `examples/shaders.nb` shows every material and effect;
+  `examples/shadertests.nb` runs 20 acceptance checks on the GPU.
+
 ## Benchmarks and speed-ups
 
 * **`neptune bench`** – Runs the benchmark programs in `benchmarks/`

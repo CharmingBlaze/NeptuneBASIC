@@ -5,8 +5,26 @@
 //! The starting level comes from `neptune run --quality <level>` (or the
 //! `NEPTUNE_QUALITY` environment variable) and defaults to high. Low also
 //! turns off multisampling and is meant for older integrated GPUs.
+//!
+//! Shadow controls (ext): `SetShadowMode`, `SetShadowQuality`,
+//! `SetShadowResolution`, `SetShadowSoftness`, `SetShadowDistance`,
+//! `SetShadowCascadeCount`, `SetShadowBias`, `EnableShadows` and
+//! `DisableShadows`. Fyrox 1.0 has hard or PCF-filtered (soft) shadow maps,
+//! three cascades for directional lights, cube maps for point lights and
+//! no contact shadows; soft shadows are on or off, not a radius.
 
-use fyrox::renderer::QualitySettings;
+use fyrox::renderer::{QualitySettings, ShadowMapPrecision};
+use fyrox::scene::light::{directional::{DirectionalLight, FrustumSplitOptions}, point::PointLight, spot::SpotLight};
+use neptune_vm::value::Value;
+
+use fyrox::graph::SceneGraph;
+
+use crate::commands::Cmd;
+use crate::world::Host3D;
+
+pub const SHADOW_OFF: i32 = 0;
+pub const SHADOW_HARD: i32 = 1;
+pub const SHADOW_SOFT: i32 = 2;
 
 pub const EFFECT_BLOOM: i32 = 1;
 pub const EFFECT_SSAO: i32 = 2;
@@ -23,11 +41,34 @@ pub struct Quality {
     pub fxaa: Option<bool>,
     pub shadows: Option<bool>,
     pub scatter: Option<bool>,
+    /// PCF filtering of every shadow map.
+    pub soft_shadows: Option<bool>,
+    /// Shadow map size of directional and spot lights (point lights half).
+    pub shadow_size: Option<usize>,
+    pub shadow_precision_full: Option<bool>,
+    /// Distance shadows reach (all light kinds).
+    pub shadow_distance: Option<f32>,
+    /// Applied to lights: bias (0 = Fyrox default) and cascade count.
+    pub shadow_bias: Option<f32>,
+    pub cascades: i32,
 }
 
 impl Default for Quality {
     fn default() -> Self {
-        Quality { level: initial_level(), bloom: None, ssao: None, fxaa: None, shadows: None, scatter: None }
+        Quality {
+            level: initial_level(),
+            bloom: None,
+            ssao: None,
+            fxaa: None,
+            shadows: None,
+            scatter: None,
+            soft_shadows: None,
+            shadow_size: None,
+            shadow_precision_full: None,
+            shadow_distance: None,
+            shadow_bias: None,
+            cascades: 3,
+        }
     }
 }
 
@@ -94,7 +135,37 @@ impl Quality {
         if let Some(b) = self.scatter {
             q.light_scatter_enabled = b;
         }
+        if let Some(s) = self.soft_shadows {
+            q.csm_settings.pcf = s;
+            q.point_soft_shadows = s;
+            q.spot_soft_shadows = s;
+        }
+        if let Some(n) = self.shadow_size {
+            q.csm_settings.size = n;
+            q.spot_shadow_map_size = n;
+            q.point_shadow_map_size = (n / 2).max(64);
+        }
+        if let Some(full) = self.shadow_precision_full {
+            let p = if full { ShadowMapPrecision::Full } else { ShadowMapPrecision::Half };
+            q.csm_settings.precision = p;
+            q.spot_shadow_map_precision = p;
+            q.point_shadow_map_precision = p;
+        }
+        if let Some(d) = self.shadow_distance {
+            q.point_shadows_distance = d;
+            q.spot_shadows_distance = d;
+        }
         q
+    }
+
+    /// Far planes of the three cascades for the cascade count and distance.
+    pub fn cascade_planes(&self) -> [f32; 3] {
+        let d = self.shadow_distance.unwrap_or(64.0).max(0.1);
+        match self.cascades {
+            1 => [d, d, d],
+            2 => [d * 0.3, d, d],
+            _ => [d * 0.08, d * 0.4, d],
+        }
     }
 
     pub fn set_effect(&mut self, effect: i32, on: bool) -> Result<(), String> {
@@ -109,6 +180,115 @@ impl Quality {
         Ok(())
     }
 }
+
+impl Host3D<'_> {
+    /// Gives every light in the scene the program's shadow settings.
+    pub fn apply_light_shadows(&mut self) -> Result<(), String> {
+        let q = self.world.quality;
+        let custom_split = q.cascades != 3 || q.shadow_distance.is_some();
+        let planes = q.cascade_planes();
+        let graph = self.graph()?;
+        let handles: Vec<_> = graph.pair_iter().map(|(h, _)| h).collect();
+        for h in handles {
+            let n = &mut graph[h];
+            if let Some(l) = n.cast_mut::<DirectionalLight>() {
+                let mut o = (*l.csm_options).clone();
+                if custom_split {
+                    o.split_options = FrustumSplitOptions::Absolute { far_planes: planes };
+                }
+                if let Some(b) = q.shadow_bias {
+                    o.set_shadow_bias(b);
+                }
+                l.csm_options.set_value_and_mark_modified(o);
+            } else if let Some(l) = n.cast_mut::<PointLight>() {
+                if let Some(b) = q.shadow_bias {
+                    l.set_shadow_bias(b);
+                }
+            } else if let Some(l) = n.cast_mut::<SpotLight>() {
+                if let Some(b) = q.shadow_bias {
+                    l.set_shadow_bias(b);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn shadows_changed(&mut self) -> Result<Value, String> {
+        self.world.quality_dirty = true;
+        if self.scene().is_ok() {
+            self.apply_light_shadows()?;
+        }
+        Ok(Value::Null)
+    }
+}
+
+/// The shadow commands; see the module comment.
+pub static COMMANDS: &[(&str, Cmd)] = &[
+    ("SetShadowMode%mode", |h, a, _| {
+        let q = &mut h.world.quality;
+        match a[0].int() {
+            SHADOW_OFF => q.shadows = Some(false),
+            SHADOW_HARD => {
+                q.shadows = Some(true);
+                q.soft_shadows = Some(false);
+            }
+            SHADOW_SOFT => {
+                q.shadows = Some(true);
+                q.soft_shadows = Some(true);
+            }
+            m => return Err(format!("SetShadowMode: mode must be SHADOW_OFF, SHADOW_HARD or SHADOW_SOFT, not {m}")),
+        }
+        h.shadows_changed()
+    }),
+    ("SetShadowQuality%quality", |h, a, _| {
+        let (size, full) = match a[0].int() {
+            0 => (512, false),
+            1 => (1024, false),
+            2 => (2048, true),
+            3 => (4096, true),
+            l => return Err(format!("SetShadowQuality: quality must be 0-3, not {l}")),
+        };
+        h.world.quality.shadow_size = Some(size);
+        h.world.quality.shadow_precision_full = Some(full);
+        h.shadows_changed()
+    }),
+    ("SetShadowResolution%size", |h, a, _| {
+        let n = a[0].int();
+        if !(64..=8192).contains(&n) {
+            return Err(format!("SetShadowResolution: size must be 64-8192, not {n}"));
+        }
+        h.world.quality.shadow_size = Some(n as usize);
+        h.shadows_changed()
+    }),
+    ("SetShadowBias#bias", |h, a, _| {
+        h.world.quality.shadow_bias = Some(a[0].float().max(0.0));
+        h.shadows_changed()
+    }),
+    ("SetShadowSoftness#softness", |h, a, _| {
+        h.world.quality.soft_shadows = Some(a[0].float() > 0.0);
+        h.shadows_changed()
+    }),
+    ("SetShadowDistance#distance", |h, a, _| {
+        h.world.quality.shadow_distance = Some(a[0].float().max(0.1));
+        h.shadows_changed()
+    }),
+    ("SetShadowCascadeCount%count", |h, a, _| {
+        let n = a[0].int();
+        if !(1..=3).contains(&n) {
+            return Err(format!("SetShadowCascadeCount: Fyrox has 1 to 3 cascades, not {n}"));
+        }
+        h.world.quality.cascades = n;
+        h.shadows_changed()
+    }),
+    ("EnableShadows", |h, _, _| {
+        h.world.quality.shadows = Some(true);
+        h.shadows_changed()
+    }),
+    ("DisableShadows", |h, _, _| {
+        h.world.quality.shadows = Some(false);
+        h.shadows_changed()
+    }),
+];
 
 #[cfg(test)]
 mod tests {
@@ -127,5 +307,18 @@ mod tests {
         q.set_effect(EFFECT_SHADOWS, true).unwrap();
         assert!(q.settings().spot_shadows_enabled && q.settings().spot_shadow_map_size >= 256);
         assert!(q.set_effect(99, true).is_err());
+    }
+
+    #[test]
+    fn shadow_settings() {
+        let mut q = Quality { level: 2, ..Quality::default() };
+        q.soft_shadows = Some(false);
+        q.shadow_size = Some(1024);
+        let s = q.settings();
+        assert!(!s.csm_settings.pcf && !s.point_soft_shadows);
+        assert_eq!((s.csm_settings.size, s.point_shadow_map_size), (1024, 512));
+        q.cascades = 1;
+        q.shadow_distance = Some(40.0);
+        assert_eq!(q.cascade_planes(), [40.0, 40.0, 40.0]);
     }
 }

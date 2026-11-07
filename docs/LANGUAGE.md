@@ -299,10 +299,33 @@ CameraToTexture securitycam, screentexture
 CameraExposure cam, 1                    ; automatic exposure
 CameraColorGrading cam, "warm_lut.png"   ; 256x16 lookup table
 
-water = LoadShader("water.shader")       ; Fyrox shader file
-EntityShader mesh, water
-ShaderFloat mesh, "time", MilliSecs() / 1000.0
 VertexData surface, v, 0, phase, height  ; read in the shader at location 8
+```
+
+## Shaders and materials (ext)
+
+Shaders are written in GLSL (or WGSL) and used from BASIC; ready-made
+materials and screen effects need no shader code. The full guide, with
+the shader language, every built-in and examples, is
+[SHADERS.md](SHADERS.md).
+
+```basic
+gold = CreatePBRMaterial()               ; ready-made materials
+SetAlbedo gold, 255, 200, 90 : SetMetallic gold, 1
+EntityMaterial ball, gold
+
+hero = CreateToonMaterial(SHADING_TOON)
+SetToonOutline hero, True, 0.04
+
+glow = LoadShader("shaders/glow.glsl")   ; your own shader
+ShaderHotReload glow                     ; recompiles when the file changes
+ShaderSetColor glow, "tint", 255, 120, 0
+ShaderApply glow, sword
+If ShaderCompiled(glow) = 0 Then DebugLog ShaderError(glow)
+
+crt = LoadPostProcess("builtin:crt")     ; screen effects
+AddPostProcess crt, camera
+SetShadowMode SHADOW_SOFT
 ```
 
 ## Building worlds (ext)

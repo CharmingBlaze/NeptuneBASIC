@@ -20,6 +20,10 @@ SOURCES = [
     ("crates/neptune-runtime/src/gui_lists.rs", "GUI"),
     ("crates/neptune-runtime/src/gui_dialogs.rs", "GUI"),
     ("crates/neptune-runtime/src/gui_editors.rs", "GUI"),
+    ("crates/neptune-runtime/src/shader.rs", "Shaders"),
+    ("crates/neptune-runtime/src/matcmds.rs", "Materials"),
+    ("crates/neptune-runtime/src/postfx.rs", "Post-processing"),
+    ("crates/neptune-runtime/src/quality.rs", "Shadows"),
 ]
 # an entry is the signature then a closure or a function name
 ENTRY = re.compile(r'^\s*\("([^"\\]*(?:\\.[^"\\]*)*)",\s*(?:\||[a-z_])')
@@ -33,6 +37,7 @@ def commands():
     for path, default in SOURCES:
         section = default
         in_aliases = False
+        in_table = False
         with open(os.path.join(ROOT, path), encoding="utf-8") as f:
             for line in f:
                 if "pub static ALIASES" in line:
@@ -51,7 +56,13 @@ def commands():
                 if m:
                     section = m.group(1)
                     continue
-                m = ENTRY.match(line)
+                # only entries of a command table count
+                if "pub static COMMANDS" in line:
+                    in_table = True
+                    continue
+                if line.startswith("];"):
+                    in_table = False
+                m = ENTRY.match(line) if in_table else None
                 if m:
                     sig = m.group(1).replace('\\"', '"')
                     n = NAME.match(sig)

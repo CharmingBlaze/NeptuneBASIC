@@ -1,0 +1,239 @@
+; Shader gallery: every kind of shader the shader system offers, side by side.
+; Run from the repository root: neptune run examples/shaders.nb
+;
+; Row 1: unlit, textured, diffuse (Lambert), Phong, Blinn-Phong, PBR,
+;        normal mapping, metal, glass
+; Row 2: water, toon, cel, toon with outline, hologram, dissolve, fire,
+;        smoke, force field
+; Row 3: gradient, procedural noise, custom vertex displacement, custom
+;        GLSL file (rim toon), WGSL file, foliage wind, PS1, pixel art, flat
+; Keys: 1 bloom  2 pixelation  3 CRT  4 heat distortion  5 custom post shader
+;       6 vignette+grain  7 depth outlines  Arrows: orbit  Esc: quit
+
+Graphics3D 1280, 720
+SetWindowTitle "Shaders"
+
+camera = CreateCamera()
+CameraClsColor camera, 40, 46, 60
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 50, 30, 0
+AmbientLight 70, 70, 80
+lamp = CreateLight(LIGHT_POINT)
+PositionEntity lamp, 0, 4, -3
+LightColor lamp, 255, 180, 120
+LightRange lamp, 12
+SetShadowMode SHADOW_SOFT
+SetShadowQuality 2
+
+ground = CreatePlane()
+checker = LoadTexture("examples/media/checker.png")
+EntityTexture ground, checker
+ScaleTexture checker, 8, 8
+PositionEntity ground, 0, -1, 0
+
+; textures made on the CPU from procedural materials
+bumps = CreateProceduralShader(1)
+SetNoiseScale bumps, 5
+bumpmap = BakeProceduralTexture(bumps, 256, 256, True)
+
+Dim obj(30)
+Dim label$(30)
+Global count = 0
+
+; ---- row 1: lighting models and PBR
+Function Place(e, name$)
+    Local i = count
+    obj(i) = e
+    label(i) = name
+    PositionEntity e, (i Mod 9) * 2.4 - 9.6, 5.4 - (i / 9) * 2.7, 0
+    ScaleEntity e, 0.85, 0.85, 0.85
+    count = count + 1
+    Return e
+End Function
+
+unlit = LoadShader("builtin:unlit")
+ShaderSetTexture unlit, "albedoMap", checker
+s = Place(CreateSphere(24), "unlit") : ShaderApply unlit, s
+
+textured = LoadShader("builtin:textured")
+ShaderSetTexture textured, "albedoMap", checker
+s = Place(CreateSphere(24), "textured") : ShaderApply textured, s
+
+diffuse = LoadShader("builtin:diffuse")
+ShaderSetColor diffuse, "albedo", 220, 120, 60
+s = Place(CreateSphere(24), "diffuse") : ShaderApply diffuse, s
+
+phong = LoadShader("builtin:phong")
+ShaderSetColor phong, "albedo", 60, 160, 220
+ShaderSetFloat phong, "shininess", 64
+s = Place(CreateSphere(24), "phong") : ShaderApply phong, s
+
+blinn = LoadShader("builtin:blinnphong")
+ShaderSetColor blinn, "albedo", 160, 220, 80
+s = Place(CreateSphere(24), "blinn-phong") : ShaderApply blinn, s
+
+pbr = CreatePBRMaterial()
+SetAlbedo pbr, 200, 60, 60
+SetMetallic pbr, 0.2
+SetRoughness pbr, 0.35
+s = Place(CreateSphere(24), "PBR") : EntityMaterial s, pbr
+
+normal = CreatePBRMaterial()
+SetAlbedo normal, 180, 180, 190
+SetNormalMap normal, bumpmap, 0.7
+s = Place(CreateCube(), "normal map") : EntityMaterial s, normal
+
+metal = CreatePBRMaterial()
+SetAlbedo metal, 230, 190, 120
+SetMetallic metal, 1
+SetRoughness metal, 0.2
+s = Place(CreateSphere(24), "metal") : EntityMaterial s, metal
+
+glass = LoadShader("builtin:glass")
+s = Place(CreateSphere(24), "glass") : ShaderApply glass, s
+
+; ---- row 2: stylized and effects
+water = CreateWaterMaterial()
+SetWaterWaves water, 0.08, 1.5
+; a small grid of quads, so the vertex waves have vertices to move
+pond = CreateMesh()
+ps = CreateSurface(pond)
+For z = 0 To 16
+    For x = 0 To 16
+        AddVertex ps, x / 8.0 - 1, 0, z / 8.0 - 1, x / 16.0, z / 16.0
+        If x > 0 And z > 0
+            v = z * 17 + x
+            AddTriangle ps, v - 18, v - 1, v
+            AddTriangle ps, v - 18, v, v - 17
+        EndIf
+    Next
+Next
+UpdateNormals pond
+s = Place(pond, "water") : EntityMaterial s, water
+TurnEntity s, -35, 0, 0
+
+toon = CreateToonMaterial(SHADING_TOON)
+SetAlbedo toon, 255, 140, 60
+s = Place(CreateSphere(24), "toon") : EntityMaterial s, toon
+
+cel = CreateToonMaterial(SHADING_CEL)
+SetAlbedo cel, 90, 200, 255
+s = Place(CreateSphere(24), "cel") : EntityMaterial s, cel
+
+outlined = CreateToonMaterial(SHADING_TOON)
+SetAlbedo outlined, 120, 255, 120
+SetToonOutline outlined, True, 0.06
+SetOutlineColor outlined, 20, 30, 20
+s = Place(CreateSphere(24), "outline") : EntityMaterial s, outlined
+
+holo = LoadShader("builtin:hologram")
+s = Place(CreateSphere(24), "hologram") : ShaderApply holo, s
+
+dissolve = LoadShader("builtin:dissolve")
+ShaderSetTexture dissolve, "albedoMap", checker
+s = Place(CreateCube(), "dissolve") : ShaderApply dissolve, s
+
+fire = LoadShader("builtin:fire")
+s = Place(CreateSprite(), "fire") : ShaderApply fire, s
+
+smoke = LoadShader("builtin:smoke")
+s = Place(CreateSprite(), "smoke") : ShaderApply smoke, s
+
+shield = LoadShader("builtin:forcefield")
+s = Place(CreateSphere(32), "force field") : ShaderApply shield, s
+
+; ---- row 3: procedural and custom shaders
+grad = CreateProceduralShader(0)
+SetGradient grad, GRADIENT_RADIAL
+SetGradientColor grad, 0, 255, 230, 120
+SetGradientColor grad, 1, 200, 40, 120
+s = Place(CreateCube(), "gradient") : EntityMaterial s, grad
+
+noise = CreateProceduralShader(1)
+SetNoiseType noise, NOISE_VORONOI
+SetNoiseScale noise, 6
+SetNoiseSpeed noise, 0.2
+s = Place(CreateSphere(24), "noise") : EntityMaterial s, noise
+
+displace = LoadShader("builtin:displace")
+ShaderSetFloat displace, "amount", 0.15
+s = Place(CreateSphere(48), "displacement") : ShaderApply displace, s
+
+custom = LoadShader("examples/media/shaders/rimtoon.glsl")
+ShaderHotReload custom
+s = Place(CreateSphere(24), "custom GLSL") : ShaderApply custom, s
+
+wgsl = LoadShader("examples/media/shaders/ripple.wgsl")
+s = Place(CreateCube(), "WGSL") : ShaderApply wgsl, s
+
+leaves = CreateFoliageMaterial()
+SetAlbedo leaves, 80, 180, 60
+SetWindDirection 1, 0.3
+SetWindStrength 0.4
+s = Place(CreateCone(12), "wind") : EntityMaterial s, leaves
+
+ps1 = CreateToonMaterial(SHADING_PS1)
+ShaderSetTexture ps1, "albedoMap", checker
+s = Place(CreateCube(), "PS1") : EntityMaterial s, ps1
+
+pixel = CreateToonMaterial(SHADING_PIXEL)
+ShaderSetTexture pixel, "albedoMap", checker
+s = Place(CreateSphere(16), "pixel art") : EntityMaterial s, pixel
+
+flat = CreateToonMaterial(SHADING_FLAT)
+SetAlbedo flat, 200, 200, 255
+s = Place(CreateSphere(10), "flat") : EntityMaterial s, flat
+
+; ---- post-processing
+bloom = LoadPostProcess("builtin:bloom")
+pixelate = LoadPostProcess("builtin:pixelate")
+crt = LoadPostProcess("builtin:crt")
+haze = LoadPostProcess("builtin:heathaze")
+SetPostProcessParameter haze, "startDistance", "4"
+scan = LoadPostProcess("examples/media/shaders/scanlines_post.glsl")
+vig = LoadPostProcess("builtin:vignette")
+grain = LoadPostProcess("builtin:grain")
+edges = LoadPostProcess("builtin:outline")
+Dim fx(7)
+fx(1) = bloom : fx(2) = pixelate : fx(3) = crt : fx(4) = haze : fx(5) = scan : fx(6) = vig : fx(7) = edges
+Dim on(7)
+
+yaw# = 0
+pitch# = 15
+While Not KeyHit(KEY_ESCAPE)
+    If KeyDown(KEY_LEFT) Then yaw = yaw + 1
+    If KeyDown(KEY_RIGHT) Then yaw = yaw - 1
+    If KeyDown(KEY_UP) Then pitch = pitch + 0.5
+    If KeyDown(KEY_DOWN) Then pitch = pitch - 0.5
+    RotateEntity camera, pitch, yaw, 0
+    PositionEntity camera, 0, 2.7, 0
+    MoveEntity camera, 0, 0, -15
+
+    For k = 1 To 7
+        If KeyHit(KEY_1 + k - 1)
+            on(k) = 1 - on(k)
+            If on(k)
+                AddPostProcess fx(k), camera
+                If k = 6 Then AddPostProcess grain, camera
+            Else
+                RemovePostProcess fx(k), camera
+                If k = 6 Then RemovePostProcess grain, camera
+            EndIf
+        EndIf
+    Next
+
+    t# = MilliSecs() / 1000.0
+    ShaderSetFloat dissolve, "amount", 0.5 + Sin(t * 60) * 0.45
+    For i = 0 To count - 1
+        If label(i) <> "fire" And label(i) <> "smoke" And label(i) <> "water" Then TurnEntity obj(i), 0, 0.4, 0
+    Next
+
+    RenderWorld
+    For i = 0 To count - 1
+        CameraProject camera, EntityX(obj(i)), EntityY(obj(i)) - 1.1, EntityZ(obj(i))
+        Text ProjectedX() - Len(label(i)) * 3, ProjectedY(), label(i)
+    Next
+    Text 10, 10, "1 bloom  2 pixelation  3 CRT  4 heat haze  5 custom post  6 vignette+grain  7 outlines   arrows orbit"
+    Flip
+Wend
+End
