@@ -81,6 +81,11 @@ impl Ord for Open {
 }
 
 impl NavIndex {
+    /// The triangles' corners (for drawing the mesh).
+    pub fn triangles(&self) -> impl Iterator<Item = [V3; 3]> + '_ {
+        self.tris.iter().map(|t| t.map(|i| self.verts[i as usize]))
+    }
+
     pub fn new(verts: &[V3], tris: &[[u32; 3]]) -> NavIndex {
         let verts = verts.to_vec();
         let tris = tris.to_vec();

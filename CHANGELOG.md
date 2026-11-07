@@ -4,6 +4,14 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Debug drawing
+
+* **Seeing what the game does** – `DebugLine`, `DebugBox`, `DebugSphere`,
+  `DebugEntity` (an entity's bounding box), `DebugAxes` (which way it
+  faces) and `DebugNavMesh` (where agents can walk) draw lines in the 3D
+  world for the next frame. `DebugPhysics` shows every physics collider and
+  `DebugCollisions` every `EntityRadius` and `EntityBox` shape, every frame
+  until turned off. Example: `examples/debugdraw.nb`.
 ## Light settings
 
 * **Cookies** – `LightCookie` makes a spot light project a texture like a

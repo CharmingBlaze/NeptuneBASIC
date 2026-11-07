@@ -1496,6 +1496,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
             h.flush_meshes()?;
             h.face_sprites()
         })?;
+        h.flush_debug_draw()?;
         h.commit_buffers()?;
         // A program that renders repeatedly without Flip still needs frames shown.
         if h.world.renders > h.world.renders_at_flip {
@@ -2813,6 +2814,43 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("LightShadows%light%enable", |h, a, _| {
         let (light, _) = light_of(h, a[0].int())?;
         h.graph()?[light].set_cast_shadows(a[1].int() != 0);
+        VOID
+    }),
+    // (ext) debug drawing for the next frame (see debugdraw.rs)
+    ("DebugLine#x1#y1#z1#x2#y2#z2#red=255#green=255#blue=255", |h, a, _| {
+        let c = crate::debugdraw::color(a[6].float(), a[7].float(), a[8].float());
+        h.world.debug.line(v3(a, 0), v3(a, 3), c);
+        VOID
+    }),
+    ("DebugBox#x#y#z#width#height#depth#red=255#green=255#blue=255", |h, a, _| {
+        let c = crate::debugdraw::color(a[6].float(), a[7].float(), a[8].float());
+        h.world.debug.aabb(v3(a, 0), v3(a, 3), c);
+        VOID
+    }),
+    ("DebugSphere#x#y#z#radius#red=255#green=255#blue=255", |h, a, _| {
+        let c = crate::debugdraw::color(a[4].float(), a[5].float(), a[6].float());
+        let r = a[3].float().abs();
+        h.world.debug.ellipsoid(v3(a, 0), r, r, c);
+        VOID
+    }),
+    ("DebugEntity%entity#red=255#green=255#blue=0", |h, a, _| {
+        h.debug_entity(a[0].int(), crate::debugdraw::color(a[1].float(), a[2].float(), a[3].float()))?;
+        VOID
+    }),
+    ("DebugAxes%entity#size=1", |h, a, _| {
+        h.debug_axes(a[0].int(), a[1].float())?;
+        VOID
+    }),
+    ("DebugNavMesh%navmesh#red=0#green=255#blue=120", |h, a, _| {
+        h.debug_navmesh(a[0].int(), crate::debugdraw::color(a[1].float(), a[2].float(), a[3].float()))?;
+        VOID
+    }),
+    ("DebugPhysics%enable", |h, a, _| {
+        h.world.debug.physics = a[0].int() != 0;
+        VOID
+    }),
+    ("DebugCollisions%enable", |h, a, _| {
+        h.world.debug.collisions = a[0].int() != 0;
         VOID
     }),
     // (ext) brightness multiplier (HDR: above 1 is brighter than white)

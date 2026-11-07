@@ -1,0 +1,79 @@
+; Debug drawing: see physics colliders, collision shapes, a navigation mesh,
+; an entity's axes and box, and lines of your own while a game runs.
+; Run from the repository root: neptune run examples/debugdraw.nb
+; D: debug drawing on / off   Esc: quit
+
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Debug drawing"
+
+cam = CreateCamera()
+PositionEntity cam, 0, 12, -16
+LookAt cam, 0, 0, 2
+CameraClsColor cam, 40, 44, 52
+sun = CreateLight(1)
+RotateEntity sun, 50, 30, 0
+
+; a floor the agents walk on, and its navigation mesh
+floor = CreateCube()
+ScaleEntity floor, 10, 0.1, 10
+EntityColor floor, 90, 96, 104
+EntityPhysics floor, 2, 1
+nav = CreateNavMesh(floor)
+
+; boxes falling onto it (physics)
+Dim boxes(5)
+For i = 0 To 5
+    boxes(i) = CreateCube()
+    ScaleEntity boxes(i), 0.6, 0.6, 0.6
+    PositionEntity boxes(i), Rnd(-4, 4), 4 + i * 1.5, Rnd(-2, 6)
+    EntityColor boxes(i), 200, 140, 80
+    EntityPhysics boxes(i), 1, 1
+Next
+
+; a player with a collision sphere (Blitz-style collisions)
+player = CreateSphere(12)
+PositionEntity player, -5, 1, -4
+EntityColor player, 80, 160, 230
+EntityType player, 1
+EntityRadius player, 1
+
+; a ship that turns, to show its axes
+ship = CreateCone(12)
+ScaleEntity ship, 0.6, 1.2, 0.6
+RotateEntity ship, 90, 0, 0
+PositionEntity ship, 5, 2, -4
+EntityColor ship, 220, 220, 230
+
+debug = 1
+DebugPhysics True
+DebugCollisions True
+frames = 0
+While True
+    frames = frames + 1
+    If KeyHit(KEY_D)
+        debug = 1 - debug
+        DebugPhysics debug
+        DebugCollisions debug
+    EndIf
+    UpdateWorld
+    TurnEntity ship, 0, 1, 0
+    PositionEntity player, -5 + Sin(frames) * 2, 1, -4
+
+    If debug
+        DebugNavMesh nav
+        DebugAxes ship, 2.5
+        DebugEntity ship
+        ; where the player is looking: a line 6 units ahead, and a target box
+        TFormPoint 0, 0, 6, player, 0
+        DebugLine EntityX(player), 1, EntityZ(player), TFormedX(), 1, TFormedZ(), 255, 60, 60
+        DebugBox 0, 1, 7, 3, 2, 2, 60, 255, 120
+        DebugSphere 5, 2, -4, 3, 255, 160, 0
+    EndIf
+
+    RenderWorld
+    Color 255, 255, 255
+    onOff$ = "off" : If debug Then onOff$ = "on"
+    Text 12, 12, $"D: debug drawing {onOff$}   Esc: quit"
+    Flip
+    If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+Wend

@@ -215,6 +215,8 @@ pub struct World {
     pub audio: crate::audiobus::Buses,
     /// (ext) Baked lightmaps (see `lightbake.rs`).
     pub lightmaps: crate::lightbake::Lightmaps,
+    /// (ext) Debug lines for the next frame (see `debugdraw.rs`).
+    pub debug: crate::debugdraw::DebugDraw,
     /// (ext) 2D physics: bodies, joints, pixels per metre, per-body
     /// (friction, bounce, density, sensor), the last ray hit.
     pub bodies2d: Vec<Option<crate::physics2d::Body2D>>,
@@ -379,6 +381,7 @@ impl Default for World {
             probes_around_cameras: Default::default(),
             audio: Default::default(),
             lightmaps: Default::default(),
+            debug: Default::default(),
             graded_cameras: Default::default(),
             gamma: Default::default(),
             gamma_dirty: false,

@@ -797,6 +797,16 @@ ProjectedZ: Returns the depth from the last CameraProject; 0 means the point is 
 EntityInView: Returns 1 if entity is inside camera's view.
 EntityVisible: Returns 1 if nothing pickable as an obscurer blocks the line between src_entity and dest_entity.
 
+# Debug drawing
+DebugLine: (ext) Draws a line from x1, y1, z1 to x2, y2, z2 in the 3D world for the next frame, in colour red, green, blue (default white). Call it every frame for as long as you want to see it.
+DebugBox: (ext) Draws the edges of a box centred on x, y, z, width by height by depth, for the next frame (default white).
+DebugSphere: (ext) Draws a wire sphere of radius around x, y, z for the next frame (default white).
+DebugEntity: (ext) Draws entity's bounding box, turned and scaled with it, for the next frame (default yellow).
+DebugAxes: (ext) Draws entity's own X (red), Y (green) and Z (blue) axes, size long, for the next frame: shows which way it faces.
+DebugNavMesh: (ext) Draws the triangles of a navigation mesh for the next frame (default green), to see where agents can walk.
+DebugPhysics: (ext) Turns drawing of every physics collider (3D and 2D) on (enable 1) or off (0), every frame until turned off.
+DebugCollisions: (ext) Turns drawing of every entity's collision shape on (1) or off (0): EntityRadius spheres and ellipsoids in yellow, EntityBox boxes in cyan, every frame until turned off.
+
 # 3D physics
 EntityPhysics: (ext) Makes entity a rigid body: body_type 1 dynamic, 2 static, 3 kinematic; shape 0 automatic, 1 box, 2 sphere, 3 capsule, 4 cylinder, 5 mesh, 6 convex hull; mass in kilograms.
 PhysicsGravity: (ext) Sets the world's gravity vector x, y, z, in units per second squared.

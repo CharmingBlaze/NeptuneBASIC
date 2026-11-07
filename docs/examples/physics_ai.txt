@@ -885,3 +885,44 @@ CameraToTexture securityCamera, tex
 monitor = CreateCube()
 EntityTexture monitor, tex
 CameraToTexture securityCamera, 0    ; texture 0 renders to the screen again
+
+=== DebugLine
+; show where a ray goes: from the player 20 units forward, in red
+player = CreatePivot()
+TFormPoint 0, 0, 20, player, 0
+DebugLine EntityX(player), EntityY(player), EntityZ(player), TFormedX(), TFormedY(), TFormedZ(), 255, 0, 0
+
+=== DebugBox
+; mark the area a trigger covers, in green
+DebugBox 0, 1, 10, 4, 2, 4, 0, 255, 0
+
+=== DebugSphere
+; show how far an enemy can hear: a sphere of radius 15 around it
+enemy = CreateCube()
+DebugSphere EntityX(enemy), EntityY(enemy), EntityZ(enemy), 15, 255, 160, 0
+
+=== DebugEntity
+; outline the crate the player is looking at
+crate = CreateCube()
+DebugEntity crate
+
+=== DebugAxes
+; see which way a turned ship faces (blue is forward)
+ship = CreateCone()
+TurnEntity ship, 0, 45, 0
+DebugAxes ship, 3
+
+=== DebugNavMesh
+; see where agents can walk
+floor = CreateCube()
+ScaleEntity floor, 10, 0.1, 10
+navmesh = CreateNavMesh(floor)
+DebugNavMesh navmesh
+
+=== DebugPhysics
+; show every physics collider while testing, until turned off
+DebugPhysics True
+
+=== DebugCollisions
+; show the collision spheres and boxes of everything with EntityType
+DebugCollisions True
