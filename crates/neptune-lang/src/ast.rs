@@ -124,6 +124,7 @@ pub struct Stmt {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum StmtKind {
     Expr(Expr),
     Assign(Var, Expr),

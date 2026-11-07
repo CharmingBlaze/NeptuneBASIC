@@ -297,6 +297,7 @@ pub fn rects_overlap(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
 
 /// Pixel-perfect collision of two image frames drawn at the given positions
 /// (scale is ignored, as in Blitz).
+#[allow(clippy::too_many_arguments)]
 pub fn images_collide(a: &Image2D, ax: f32, ay: f32, af: u32, b: &Image2D, bx: f32, by: f32, bf: u32) -> bool {
     let (ax, ay) = (ax - a.handle.0, ay - a.handle.1);
     let (bx, by) = (bx - b.handle.0, by - b.handle.1);

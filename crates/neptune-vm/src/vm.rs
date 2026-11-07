@@ -13,6 +13,9 @@ use neptune_lang::sema::{float_to_int, format_float, str_to_float, str_to_int};
 use crate::stdlib::{self, Core};
 use crate::value::{Heap, ObjRef, Value, NO_OBJECT};
 
+/// A vector's storage and an index checked against it.
+type VectorSlot = (Rc<RefCell<Vec<Value>>>, usize);
+
 /// Engine-provided native commands (ids are relative to the host's first command).
 pub trait Host {
     fn call(&mut self, id: u32, args: &[Value], ctx: &mut NativeCtx) -> Result<Value, String>;
@@ -259,7 +262,7 @@ impl Vm {
         Ok(flat)
     }
 
-    fn vector_index(v: &Value, i: i32) -> Result<(Rc<RefCell<Vec<Value>>>, usize), String> {
+    fn vector_index(v: &Value, i: i32) -> Result<VectorSlot, String> {
         match v {
             Value::Vector(vec) => {
                 let len = vec.borrow().len();

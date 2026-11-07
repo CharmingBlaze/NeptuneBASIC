@@ -4,6 +4,11 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Clean clippy
+
+* **Code** – `cargo clippy --all-targets` reports no warnings again. Small
+  tidy-ups only; nothing changes for programs.
+
 ## Shader guide command index
 
 * **Docs** – the shader guide ([docs/SHADERS.md](docs/SHADERS.md)) now

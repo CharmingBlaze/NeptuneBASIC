@@ -16,8 +16,9 @@ pub type TypeId = u32;
 pub type FuncId = u32;
 
 /// Static type of a value.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum Ty {
+    #[default]
     Int,
     Float,
     Str,

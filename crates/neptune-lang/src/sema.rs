@@ -56,12 +56,6 @@ struct FnCtx {
     n_tmp: u32,
 }
 
-impl Default for Ty {
-    fn default() -> Self {
-        Ty::Int
-    }
-}
-
 struct Sema<'a> {
     prog: &'a ast::Program,
     diags: &'a mut Diagnostics,
@@ -113,7 +107,7 @@ fn ty_name(t: &Ty, types: &[TypeDef]) -> String {
         Ty::Int => "Int".into(),
         Ty::Float => "Float".into(),
         Ty::Str => "String".into(),
-        Ty::Obj(id) => format!("{}", types[*id as usize].name),
+        Ty::Obj(id) => types[*id as usize].name.clone(),
         Ty::Null => "Null".into(),
         Ty::Variant => "Variant".into(),
         Ty::Vector(e) => format!("{}[]", ty_name(e, types)),

@@ -346,7 +346,7 @@ mod tests {
             response: Response::Slide,
             shape: Shape::Triangles(box_triangles([2.0, -1.0, -1.0, 1.0, 2.0, 2.0], |p| p)),
         };
-        let (p, _) = collide_and_slide(V3::zeros(), V3::new(5.0, 0.0, 0.0), V3::new(0.5, 0.5, 0.5), &[wall.clone()]);
+        let (p, _) = collide_and_slide(V3::zeros(), V3::new(5.0, 0.0, 0.0), V3::new(0.5, 0.5, 0.5), std::slice::from_ref(&wall));
         assert!(close(p.x, 1.5), "{p:?}");
         // grazing past the box corner pushes the sphere around it
         let (p, hits) = collide_and_slide(V3::new(0.0, 0.0, -1.4), V3::new(5.0, 0.0, -1.4), V3::new(0.5, 0.5, 0.5), &[wall]);
@@ -369,7 +369,7 @@ mod tests {
         // rest on the slope, then apply "gravity" a few times
         let mut p = V3::new(0.0, 3.0, 0.0);
         for _ in 0..10 {
-            p = collide_and_slide(p, p - V3::new(0.0, 0.5, 0.0), V3::new(1.0, 1.0, 1.0), &[slope.clone()]).0;
+            p = collide_and_slide(p, p - V3::new(0.0, 0.5, 0.0), V3::new(1.0, 1.0, 1.0), std::slice::from_ref(&slope)).0;
         }
         assert!(p.x.abs() < 0.05, "slid downhill to {p:?}");
         let mut s = slope.clone();
