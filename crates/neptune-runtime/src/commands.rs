@@ -1829,6 +1829,15 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.paint_terrain(a[0].int(), a[1].int(), a[2].float(), a[3].float(), a[4].float(), a[5].float())?;
         VOID
     }),
+    ("ModifyTerrainLayer%terrain%grid_x%grid_z%layer#weight", |h, a, _| {
+        let e = a[0].int();
+        let was = h.terrain(e)?.painted();
+        h.terrain_mut(e)?.set_layer(a[1].int(), a[2].int(), a[3].int(), a[4].float())?;
+        if !was {
+            h.refresh_material(e)?;
+        }
+        VOID
+    }),
     ("#TerrainLayerWeight%terrain%layer#x#z", |h, a, _| float(h.terrain_layer_weight(a[0].int(), a[1].int(), a[2].float(), a[3].float())?)),
     ("LoadTerrainLayers%terrain$file", |h, a, _| {
         h.load_terrain_layers(a[0].int(), &a[1].str())?;

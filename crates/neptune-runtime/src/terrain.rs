@@ -18,9 +18,9 @@
 //! Level of detail: `TerrainDetail` with a triangle budget splits the grid
 //! into chunks of `CHUNK` squares and draws far chunks with fewer, larger
 //! squares, choosing each chunk's step every render so the whole terrain
-//! uses about that many triangles. Skirts hang from chunk edges to hide
-//! the gaps between chunks of different detail. Collisions and picks use
-//! the full grid.
+//! uses about that many triangles. Where a chunk meets a coarser one, its
+//! edge follows the coarser edge, so no gaps open between them. Collisions
+//! and picks use the full grid.
 
 use fyrox::core::algebra::Vector3;
 
@@ -132,6 +132,24 @@ impl TerrainState {
         self.built_for = None;
     }
 
+    /// `ModifyTerrainLayer`: how much painted layer 1-3 covers grid point (x, z).
+    pub fn set_layer(&mut self, x: i32, z: i32, layer: i32, weight: f32) -> Result<(), String> {
+        let n = self.size as i32;
+        if !(0..=n).contains(&x) || !(0..=n).contains(&z) {
+            return Err(format!("terrain position {x},{z} out of range (0-{n})"));
+        }
+        if !(1..=3).contains(&layer) {
+            return Err(format!("ModifyTerrainLayer: layer must be 1 to 3, not {layer}"));
+        }
+        if self.weights.is_empty() {
+            self.weights = vec![[0.0; 3]; self.heights.len()];
+        }
+        let i = self.idx(x as usize, z as usize);
+        self.weights[i][layer as usize - 1] = weight.clamp(0.0, 1.0);
+        self.built_for = None;
+        Ok(())
+    }
+
     /// `PaintTerrain` in grid units: a soft round brush.
     pub fn paint(&mut self, layer: usize, cx: f32, cz: f32, radius: f32, strength: f32) {
         let r = radius.max(0.5);
@@ -209,30 +227,75 @@ impl TerrainState {
         changed
     }
 
-    /// Chunked geometry with the chosen steps, plus skirts.
+    /// The grid lines of chunk `k` (along one axis) with a step.
+    fn chunk_line(&self, k: usize, step: usize) -> Vec<usize> {
+        let (a, b) = (k * CHUNK, ((k + 1) * CHUNK).min(self.size));
+        let mut v: Vec<usize> = (a..b).step_by(step.max(1)).collect();
+        v.push(b);
+        v
+    }
+
+    /// Height at `along` on a chunk edge as a coarser neighbour draws it:
+    /// interpolated between the neighbour's points (`line`). `at` gives the
+    /// grid position of a point on the edge.
+    fn edge_height(&self, along: usize, line: &[usize], at: impl Fn(usize) -> (usize, usize)) -> f32 {
+        let h = |p: usize| {
+            let (x, z) = at(p);
+            self.heights[self.idx(x, z)]
+        };
+        match line.windows(2).find(|w| w[0] <= along && along <= w[1]) {
+            Some(w) if w[1] > w[0] => {
+                let t = (along - w[0]) as f32 / (w[1] - w[0]) as f32;
+                h(w[0]) + (h(w[1]) - h(w[0])) * t
+            }
+            _ => h(along),
+        }
+    }
+
+    /// Chunked geometry with the chosen steps. Where a chunk meets a coarser
+    /// neighbour, its edge follows the neighbour's edge so no gaps open.
     fn chunked_geometry(&self, s: Vector3<f32>) -> (Vec<Vert>, Vec<[u32; 3]>) {
-        let n = self.size;
         let c = self.chunks();
+        let step_of = |cx: usize, cz: usize| self.steps.get(cz * c + cx).copied().unwrap_or(1) as usize;
         let mut verts = Vec::new();
         let mut tris = Vec::new();
         for cz in 0..c {
             for cx in 0..c {
-                let step = self.steps.get(cz * c + cx).copied().unwrap_or(1) as usize;
-                let line = |k: usize| {
-                    let (a, b) = (k * CHUNK, ((k + 1) * CHUNK).min(n));
-                    let mut v: Vec<usize> = (a..b).step_by(step).collect();
-                    v.push(b);
-                    v
+                let step = step_of(cx, cz);
+                let (xs, zs) = (self.chunk_line(cx, step), self.chunk_line(cz, step));
+                // coarser neighbours' points along each shared edge
+                let coarser = |n: Option<(usize, usize)>, k: usize| {
+                    n.map(|(nx, nz)| step_of(nx, nz)).filter(|&ns| ns > step).map(|ns| self.chunk_line(k, ns))
                 };
-                let (xs, zs) = (line(cx), line(cz));
+                let left = coarser(cx.checked_sub(1).map(|x| (x, cz)), cz);
+                let right = coarser((cx + 1 < c).then_some((cx + 1, cz)), cz);
+                let near = coarser(cz.checked_sub(1).map(|z| (cx, z)), cx);
+                let far = coarser((cz + 1 < c).then_some((cx, cz + 1)), cx);
                 let (w, rows) = (xs.len() as u32, zs.len() as u32);
                 let base = verts.len() as u32;
-                let (mut lo, mut hi) = (f32::MAX, f32::MIN);
-                for &z in &zs {
-                    for &x in &xs {
-                        let v = self.vertex(x, z, s);
-                        lo = lo.min(v.pos.y);
-                        hi = hi.max(v.pos.y);
+                for (j, &z) in zs.iter().enumerate() {
+                    for (i, &x) in xs.iter().enumerate() {
+                        let mut v = self.vertex(x, z, s);
+                        if i == 0 {
+                            if let Some(l) = &left {
+                                v.pos.y = self.edge_height(z, l, |p| (x, p));
+                            }
+                        }
+                        if i == xs.len() - 1 {
+                            if let Some(l) = &right {
+                                v.pos.y = self.edge_height(z, l, |p| (x, p));
+                            }
+                        }
+                        if j == 0 {
+                            if let Some(l) = &near {
+                                v.pos.y = self.edge_height(x, l, |p| (p, z));
+                            }
+                        }
+                        if j == zs.len() - 1 {
+                            if let Some(l) = &far {
+                                v.pos.y = self.edge_height(x, l, |p| (p, z));
+                            }
+                        }
                         verts.push(v);
                     }
                 }
@@ -242,29 +305,6 @@ impl TerrainState {
                         // clockwise seen from above (Blitz front faces)
                         tris.push([cc, d, b]);
                         tris.push([cc, b, a]);
-                    }
-                }
-                // skirts: each edge copied downwards, drawn from both sides
-                let depth = (hi - lo) + 0.01;
-                let edges: [Vec<u32>; 4] = [
-                    (0..w).map(|i| base + i).collect(),
-                    (0..w).map(|i| base + (rows - 1) * w + i).collect(),
-                    (0..rows).map(|j| base + j * w).collect(),
-                    (0..rows).map(|j| base + j * w + w - 1).collect(),
-                ];
-                for edge in edges {
-                    let start = verts.len() as u32;
-                    for &e in &edge {
-                        let mut v = verts[e as usize];
-                        v.pos.y -= depth;
-                        verts.push(v);
-                    }
-                    for k in 0..edge.len() as u32 - 1 {
-                        let (a, b, la, lb) = (edge[k as usize], edge[k as usize + 1], start + k, start + k + 1);
-                        tris.push([a, b, lb]);
-                        tris.push([a, lb, la]);
-                        tris.push([a, lb, b]);
-                        tris.push([a, la, lb]);
                     }
                 }
             }
@@ -566,8 +606,29 @@ mod tests {
         assert_eq!(t.steps[0], *t.steps.iter().min().unwrap());
         assert!(t.steps.last().unwrap() > &t.steps[0]);
         let (v, tri) = t.geometry(Vector3::new(1.0, 1.0, 1.0));
-        assert!(!v.is_empty() && tri.len() > tris);
+        assert!(!v.is_empty() && tri.len() == tris);
         // collisions still use every square
         assert_eq!(t.full_triangles().len(), full);
+    }
+
+    #[test]
+    fn finer_chunk_edges_follow_coarser_neighbours() {
+        let mut t = TerrainState::new(32, 0);
+        for z in 0..=32 {
+            for x in 0..=32 {
+                t.set_height(x, z, ((x * 7 + z * 13) % 11) as f32 / 10.0).unwrap();
+            }
+        }
+        t.budget = 1;
+        // chunk (0, 0) fine, its right neighbour coarse
+        t.steps = vec![1, 4, 1, 1];
+        let (v, _) = t.geometry(Vector3::new(1.0, 1.0, 1.0));
+        // the fine chunk's right edge (x = 16) at z = 2 lies between the coarse points z = 0 and z = 4
+        let p = v.iter().find(|p| p.pos.x == 16.0 && p.pos.z == 2.0).unwrap();
+        let expect = (t.height(16, 0) + t.height(16, 4)) / 2.0;
+        assert!((p.pos.y - expect).abs() < 1e-6, "{} {}", p.pos.y, expect);
+        // inside the chunk heights are exact
+        let q = v.iter().find(|p| p.pos.x == 5.0 && p.pos.z == 2.0).unwrap();
+        assert_eq!(q.pos.y, t.height(5, 2));
     }
 }

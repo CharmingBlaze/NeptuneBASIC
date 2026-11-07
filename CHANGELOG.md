@@ -4,6 +4,20 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Island demo
+
+* **`examples/island.nb`** – A whole island made by the program: its shape
+  from noise, beaches, rocky slopes, a snowy peak and white surf painted by
+  height and slope, over 3000 pines and oaks planted as prefabs, and a sea
+  that is clear turquoise over the shallows and deep blue further out. The
+  camera circles the island; O lands on the beach to walk or fly.
+* **`ModifyTerrainLayer`** sets how much a painted terrain layer covers one
+  grid point, for painting a whole terrain by height or slope in a loop.
+* **Fix: terrain level of detail** – The strips that hid the gaps between
+  detailed and coarse parts of a terrain showed up in reflections as lines
+  and walls in the water. Coarse and detailed parts now join exactly
+  instead, so no strips are needed.
+
 ## World building
 
 * **Painted terrain, terrain level of detail, prefabs and multiple

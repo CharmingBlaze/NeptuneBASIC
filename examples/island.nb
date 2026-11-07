@@ -1,0 +1,386 @@
+; Island: a generated island with beaches and surf, pine and oak forests,
+; rocky slopes, a snowy peak and a deep blue sea.
+; Run from the repository root: neptune run examples/island.nb
+; The camera circles the island. O lands you on the beach to walk:
+; WASD move, mouse or arrows look, Shift run, F fly, O back to orbiting,
+; 1-4 quality, Esc quit. Everything is made by the program: the island from
+; noise, the textures from speckles, the trees from cones and spheres.
+
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Island"
+SeedRnd 2026
+
+Const GRID = 256          ; terrain squares per side
+Const CELL# = 3.2         ; metres per square: about 820 m across
+Const TALL# = 160         ; highest possible ground, in metres
+Const SEA# = 48           ; sea level
+
+; ---- sky, light and haze: the sky's low band and the fog share one colour,
+; so the sea melts into the sky with no horizon line
+sky = CreateTexture(64, 64, 1 + 128)
+For face = 0 To 5
+    SetCubeFace sky, face
+    SetBuffer TextureBuffer(sky)
+    For y = 0 To 63
+        ; overhead blue down to the fog colour, reached at the horizon
+        t# = y / 31.5
+        If t > 1 Then t = 1
+        If face = 4 Then t = 0
+        If face = 5 Then t = 1
+        Color 128 + t * 68, 178 + t * 40, 222 + t * 14
+        Rect 0, y, 64, 1
+    Next
+Next
+SetBuffer BackBuffer()
+SkyBox sky
+
+cam = CreateCamera()
+CameraRange cam, 0.3, 2200
+CameraClsColor cam, 196, 218, 236
+CameraFogMode cam, 1
+CameraFogColor cam, 196, 218, 236
+CameraFogRange cam, 300, 1400
+
+sun = CreateLight(1)
+RotateEntity sun, 42, 30, 0
+LightColor sun, 255, 240, 214
+LightShadows sun, True
+AmbientLight 96, 104, 116
+GraphicsQuality QUALITY_HIGH
+
+; ---- the island's shape: a round coast broken up by noise, a peak in the middle
+Dim noise#(3, 129, 129)
+For o = 0 To 3
+    For i = 0 To (8 Shl o) + 1
+        For j = 0 To (8 Shl o) + 1
+            noise(o, i, j) = Rnd(0, 1)
+        Next
+    Next
+Next
+
+; smooth value noise from octave o at u, v (0 to 1)
+Function Octave#(o, u#, v#)
+    cells = 8 Shl o
+    ; outside 0 to 1 the pattern repeats
+    u = u - Floor(u)
+    v = v - Floor(v)
+    x# = u * cells
+    y# = v * cells
+    i = Floor(x)
+    j = Floor(y)
+    fx# = x - i
+    fy# = y - j
+    fx = fx * fx * (3 - 2 * fx)
+    fy = fy * fy * (3 - 2 * fy)
+    a# = noise(o, i, j) + (noise(o, i + 1, j) - noise(o, i, j)) * fx
+    b# = noise(o, i, j + 1) + (noise(o, i + 1, j + 1) - noise(o, i, j + 1)) * fx
+    Return a + (b - a) * fy
+End Function
+
+Function SmoothStep#(lo#, hi#, x#)
+    t# = (x - lo) / (hi - lo)
+    If t < 0 Then t = 0
+    If t > 1 Then t = 1
+    Return t * t * (3 - 2 * t)
+End Function
+
+ground = CreateTerrain(GRID)
+ScaleEntity ground, CELL, TALL, CELL
+PositionEntity ground, -GRID * CELL / 2, 0, -GRID * CELL / 2
+Dim hgt#(GRID, GRID)
+For x = 0 To GRID
+    For z = 0 To GRID
+        u# = x / Float(GRID)
+        v# = z / Float(GRID)
+        n# = 0.45 * Octave(1, u, v) + 0.3 * Octave(2, u, v) + 0.25 * Octave(3, u, v)
+        ; distance from the middle, pushed about by the noise for a ragged coast
+        d# = Sqr((u - 0.5) ^ 2 + (v - 0.5) ^ 2) * 2 + (Octave(0, u, v) - 0.5) * 0.3
+        land# = 1 - SmoothStep(0.55, 0.9, d)
+        peak# = Exp(-((d / 0.32) ^ 2))
+        metres# = land * (52 + 26 * n) + peak * (95 * (0.6 + 0.4 * n))
+        h# = metres / TALL
+        If h > 1 Then h = 1
+        hgt(x, z) = h
+        ModifyTerrain ground, x, z, h
+    Next
+Next
+
+; ---- textures, and painting by height and slope -----------------------
+Function Speckles(r, g, b, spread)
+    t = CreateTexture(64, 64)
+    SetBuffer TextureBuffer(t)
+    ClsColor r, g, b
+    Cls
+    For i = 1 To 700
+        k = Rand(-spread, spread)
+        Color r + k, g + k, b + k
+        Rect Rand(0, 63), Rand(0, 63), Rand(1, 3), Rand(1, 3)
+    Next
+    SetBuffer BackBuffer()
+    ScaleTexture t, 0.25, 0.25   ; four repeats per terrain square
+    Return t
+End Function
+
+TerrainLayer ground, Speckles(96, 120, 56, 16), 0     ; grass
+TerrainLayer ground, Speckles(138, 120, 98, 24), 1    ; rock
+TerrainLayer ground, Speckles(214, 200, 160, 12), 2   ; sand
+TerrainLayer ground, Speckles(242, 246, 250, 6), 3    ; snow, and surf at the waterline
+For x = 0 To GRID
+    For z = 0 To GRID
+        metres# = hgt(x, z) * TALL
+        x0 = x - 1 : If x0 < 0 Then x0 = 0
+        x1 = x + 1 : If x1 > GRID Then x1 = GRID
+        z0 = z - 1 : If z0 < 0 Then z0 = 0
+        z1 = z + 1 : If z1 > GRID Then z1 = GRID
+        ; rise over run
+        slope# = Sqr((hgt(x1, z) - hgt(x0, z)) ^ 2 + (hgt(x, z1) - hgt(x, z0)) ^ 2) * TALL / (2 * CELL)
+        rock# = SmoothStep(0.55, 0.95, slope)
+        surf# = SmoothStep(SEA - 1.6, SEA - 0.4, metres) * (1 - SmoothStep(SEA + 0.1, SEA + 0.9, metres))
+        ModifyTerrainLayer ground, x, z, 1, rock
+        ModifyTerrainLayer ground, x, z, 2, 1 - SmoothStep(SEA + 1.5, SEA + 4, metres)
+        ModifyTerrainLayer ground, x, z, 3, surf * 0.85 + SmoothStep(128, 140, metres) * (1 - rock * 0.5)
+    Next
+Next
+TerrainDetail ground, 90000
+
+; ---- the sea: a grid over the island coloured by the depth below it
+; (clear turquoise over the shallows, deep blue further out), and an
+; opaque deep blue ring around it out to the horizon
+Const SEAGRID = 128
+half# = GRID * CELL / 2
+water = CreateMesh()
+ss = CreateSurface(water)
+For j = 0 To SEAGRID
+    For i = 0 To SEAGRID
+        wx# = -half + i * 2 * half / SEAGRID
+        wz# = -half + j * 2 * half / SEAGRID
+        v = AddVertex(ss, wx, SEA, wz, i / 8.0, j / 8.0)
+        deep# = SmoothStep(0, 9, SEA - hgt(i * GRID / SEAGRID, j * GRID / SEAGRID) * TALL)
+        VertexColor ss, v, 16 + deep * (30 - 16), 168 + deep * (78 - 168), 176 + deep * (138 - 176), 0.55 + deep * 0.45
+    Next
+Next
+For j = 0 To SEAGRID - 1
+    For i = 0 To SEAGRID - 1
+        a = j * (SEAGRID + 1) + i
+        ; clockwise seen from above
+        AddTriangle ss, a + SEAGRID + 1, a + SEAGRID + 2, a + 1
+        AddTriangle ss, a + SEAGRID + 1, a + 1, a
+    Next
+Next
+UpdateNormals water
+EntityFX water, 2 + 32       ; vertex colours, with their alpha
+EntityShininess water, 0.35
+
+ocean = CreateMesh()
+os = CreateSurface(ocean)
+far# = 6000
+; inner corners (the sea grid's edge), then outer corners
+AddVertex os, -half, SEA, -half : AddVertex os, half, SEA, -half
+AddVertex os, half, SEA, half : AddVertex os, -half, SEA, half
+AddVertex os, -far, SEA, -far : AddVertex os, far, SEA, -far
+AddVertex os, far, SEA, far : AddVertex os, -far, SEA, far
+For k = 0 To 3
+    n = (k + 1) Mod 4
+    AddTriangle os, k, n, n + 4
+    AddTriangle os, k, n + 4, k + 4
+Next
+UpdateNormals ocean
+EntityColor ocean, 30, 78, 138
+EntityShininess ocean, 0.35
+
+; ---- trees: a few shapes built once as prefabs, planted many times -----
+Function Pine(trunkH#, crownW#, layers, r, g, b)
+    root = CreatePivot()
+    trunk = CreateCylinder(5, True, root)
+    ScaleEntity trunk, 0.22, trunkH / 2, 0.22
+    PositionEntity trunk, 0, trunkH / 2, 0
+    EntityColor trunk, 92, 64, 42
+    For i = 0 To layers - 1
+        c = CreateCone(7, True, root)
+        w# = crownW * (1 - i * 0.24)
+        ScaleEntity c, w, 2.0, w
+        PositionEntity c, 0, trunkH + 1.4 + i * 1.9, 0
+        EntityColor c, r + i * 6, g + i * 8, b + i * 4
+    Next
+    Return CreatePrefab(root)
+End Function
+
+Function Oak(trunkH#, crownW#, puffs, r, g, b)
+    root = CreatePivot()
+    trunk = CreateCylinder(5, True, root)
+    ScaleEntity trunk, 0.3, trunkH / 2, 0.3
+    PositionEntity trunk, 0, trunkH / 2, 0
+    EntityColor trunk, 104, 76, 52
+    For i = 0 To puffs - 1
+        c = CreateSphere(6, root)
+        ScaleEntity c, crownW, crownW * 0.8, crownW
+        a# = i * 360.0 / puffs
+        off# = 0 : If puffs > 1 Then off = crownW * 0.5
+        PositionEntity c, Cos(a) * off, trunkH + crownW * 0.6 + (i Mod 2) * 0.6, Sin(a) * off
+        EntityColor c, r + i * 5, g + i * 6, b
+    Next
+    Return CreatePrefab(root)
+End Function
+
+Dim kind(3)
+kind(0) = Pine(2.4, 2.0, 2, 30, 86, 44)
+kind(1) = Pine(3.0, 2.3, 3, 26, 78, 48)
+kind(2) = Oak(2.6, 2.4, 1, 62, 112, 44)
+kind(3) = Oak(2.4, 2.0, 3, 72, 118, 40)
+
+boulder = CreateSphere(5)
+ScaleEntity boulder, 1.1, 0.6, 0.9
+EntityColor boulder, 128, 116, 102
+stone = CreatePrefab(boulder)
+
+; forests where the forest noise is high (clearings elsewhere), on grass,
+; below the snow; pines higher up, oaks lower down
+Const SPACING# = 4.6
+trees = 0
+For gx# = -half To half Step SPACING
+    For gz# = -half To half Step SPACING
+        tx# = gx + Rnd(-2, 2)
+        tz# = gz + Rnd(-2, 2)
+        forest# = Octave(1, tx / (half * 2) + 0.5, tz / (half * 2) + 0.73)
+        If forest > 0.48 + Rnd(0, 0.12)
+            ty# = TerrainY(ground, tx, 0, tz)
+            If ty > SEA + 2.5 And ty < 124 And TerrainLayerWeight(ground, 0, tx, tz) > 0.65
+                If ty > 85 + Rnd(-20, 20) Then k = Rand(0, 1) Else k = Rand(0, 3)
+                t = InstancePrefab(kind(k))
+                PositionEntity t, tx, ty - 0.3, tz
+                TurnEntity t, 0, Rnd(360), 0
+                s# = Rnd(0.8, 1.35)
+                ScaleEntity t, s, s * Rnd(0.85, 1.2), s
+                trees = trees + 1
+            EndIf
+        EndIf
+    Next
+Next
+For i = 1 To 180
+    tx# = Rnd(-half, half)
+    tz# = Rnd(-half, half)
+    If TerrainLayerWeight(ground, 1, tx, tz) > 0.3 Or Rnd(1) < 0.15
+        ty# = TerrainY(ground, tx, 0, tz)
+        If ty > SEA - 1
+            r = InstancePrefab(stone)
+            PositionEntity r, tx, ty, tz
+            TurnEntity r, Rnd(-10, 10), Rnd(360), 0
+            bs# = Rnd(0.8, 3)
+            ScaleEntity r, 1.1 * bs, 0.6 * bs, 0.9 * bs
+        EndIf
+    EndIf
+Next
+
+; ---- where walking starts: on the south beach --------------------------
+sx# = 0
+sz# = -half
+While sz < half And TerrainY(ground, sx, 0, sz) < SEA + 0.8
+    sz = sz + 2
+Wend
+sz = sz + 4
+; face along the beach: the direction whose ground 40 m ahead is nearest beach height
+startYaw# = 0
+best# = 1000
+For a = 0 To 345 Step 15
+    ahead# = TerrainY(ground, sx - Sin(a) * 40, 0, sz + Cos(a) * 40)
+    If ahead > SEA And Abs(ahead - (SEA + 3)) < best
+        best = Abs(ahead - (SEA + 3))
+        startYaw = a
+    EndIf
+Next
+
+orbit = 1
+fly = 0
+angle# = 200
+yaw# = 0
+pitch# = 0
+frames = 0
+fps# = 60
+prev = MilliSecs()
+While True
+    frames = frames + 1
+    now = MilliSecs()
+    dt# = (now - prev) / 1000.0
+    prev = now
+    If dt > 0.1 Then dt = 0.1
+    If dt > 0 Then fps = fps * 0.95 + (1 / dt) * 0.05
+
+    If KeyHit(KEY_O)
+        orbit = 1 - orbit
+        If orbit = 0
+            ; land on the beach, looking inland
+            PositionEntity cam, sx, TerrainY(ground, sx, 0, sz) + 1.75, sz
+            yaw = startYaw : pitch = 0 : fly = 0
+            HidePointer
+            MoveMouse 640, 360
+            MouseXSpeed() : MouseYSpeed()
+        Else
+            ShowPointer
+        EndIf
+    EndIf
+    If KeyHit(KEY_1) Then GraphicsQuality QUALITY_LOW
+    If KeyHit(KEY_2) Then GraphicsQuality QUALITY_MEDIUM
+    If KeyHit(KEY_3) Then GraphicsQuality QUALITY_HIGH
+    If KeyHit(KEY_4) Then GraphicsQuality QUALITY_ULTRA
+
+    If orbit
+        ; circle the island
+        angle = angle + 9 * dt
+        PositionEntity cam, Sin(angle) * 520, 210, Cos(angle) * 520
+        LookAt cam, 0, 40, 0
+    Else
+        ; look
+        yaw = yaw - MouseXSpeed() * 0.14
+        pitch = pitch + MouseYSpeed() * 0.14
+        yaw = yaw + (KeyDown(KEY_LEFT) - KeyDown(KEY_RIGHT)) * 80 * dt
+        pitch = pitch + (KeyDown(KEY_DOWN) - KeyDown(KEY_UP)) * 50 * dt
+        If pitch > 80 Then pitch = 80
+        If pitch < -80 Then pitch = -80
+        RotateEntity cam, pitch, yaw, 0
+        MoveMouse 640, 360
+        If KeyHit(KEY_F) Then fly = 1 - fly
+
+        ; move: walking keeps level, flying goes where you look
+        spd# = 6
+        If KeyDown(KEY_LSHIFT) Then spd = 18
+        If fly Then spd = spd * 4
+        spd = spd * dt
+        fwd# = (KeyDown(KEY_W) - KeyDown(KEY_S)) * spd
+        side# = (KeyDown(KEY_D) - KeyDown(KEY_A)) * spd
+        If fly
+            MoveEntity cam, side, 0, fwd
+        Else
+            TurnEntity cam, -pitch, 0, 0
+            MoveEntity cam, side, 0, fwd
+            TurnEntity cam, pitch, 0, 0
+        EndIf
+
+        ; stay on the land or the water, whichever is higher, and near the island
+        px# = EntityX(cam)
+        pz# = EntityZ(cam)
+        If px < -half Then px = -half
+        If px > half Then px = half
+        If pz < -half Then pz = -half
+        If pz > half Then pz = half
+        h# = TerrainY(ground, px, 0, pz)
+        If h < SEA Then h = SEA
+        py# = EntityY(cam)
+        If fly = 0 Then py = h + 1.75
+        If fly = 1 And py < h + 2 Then py = h + 2
+        PositionEntity cam, px, py, pz
+    EndIf
+
+    RenderWorld
+    Color 255, 250, 236
+    If orbit
+        Text 12, 12, "O: land and walk   1-4 quality   Esc quit"
+    Else
+        mode$ = "walk"
+        If fly Then mode$ = "fly"
+        Text 12, 12, "WASD move   Shift run   F fly / walk   O orbit   1-4 quality   Esc quit"
+        Text 12, 52, $"{mode$}   height {Int(EntityY(cam) - SEA)} m"
+    EndIf
+    Text 12, 32, $"fps {Int(fps)}   {trees} trees"
+    Flip
+    If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+Wend

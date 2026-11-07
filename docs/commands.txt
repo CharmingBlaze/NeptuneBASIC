@@ -713,6 +713,7 @@ TerrainDetail: Sets terrain level of detail: about detail_level triangles are dr
 TerrainShading: Accepted for compatibility; terrain shading is handled by the GPU.
 TerrainLayer: (ext) Gives terrain a texture for layer 0 (the base, the same as EntityTexture) to 3. Layers 1 to 3 are painted over the base with PaintTerrain or LoadTerrainLayers (grass, rock, sand, snow...); scale them with ScaleTexture.
 PaintTerrain: (ext) Paints layer (0-3) of terrain with a soft round brush at world position x, z: radius in world units, strength 0-1 (how much a single stroke adds; negative removes). Painting a layer also uncovers it from the layers above it; painting layer 0 brings the base back.
+ModifyTerrainLayer: (ext) Sets how much painted layer (1-3) covers terrain at grid point grid_x, grid_z, from 0 to 1, without changing the other layers (like ModifyTerrain for heights; layers above still cover it). Useful for painting by height or slope in a loop.
 TerrainLayerWeight: (ext) Returns how much of layer (0-3) shows on terrain at world position x, z, from 0 to 1 (for footstep sounds, placing trees on grass, slowing down in sand).
 LoadTerrainLayers: (ext) Paints terrain's layers 1, 2 and 3 from the red, green and blue of an image file (a splat map, as painted in another program), stretched over the whole terrain; the top of the image is the far (+Z) edge.
 
