@@ -38,6 +38,7 @@ pub mod pbr;
 pub mod camerafx;
 pub mod skybox;
 pub mod debugdraw;
+pub mod cloth;
 pub mod decal;
 pub mod lod;
 pub mod particles;

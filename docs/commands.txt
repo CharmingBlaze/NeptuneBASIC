@@ -866,6 +866,24 @@ DebugNavMesh: (ext) Draws the triangles of a navigation mesh for the next frame 
 DebugPhysics: (ext) Turns drawing of every physics collider (3D and 2D) on (enable 1) or off (0), every frame until turned off.
 DebugCollisions: (ext) Turns drawing of every entity's collision shape on (1) or off (0): EntityRadius spheres and ellipsoids in yellow, EntityBox boxes in cyan, every frame until turned off.
 
+# Cloth and ropes
+CreateCloth: (ext) Creates a sheet of cloth width by height, with columns by rows squares, and returns it. It hangs down from its top edge in the entity's XY plane: position and turn it, then pin it (ClothPinEdge) or let it fall. Drawn on both sides.
+CreateRope: (ext) Creates a rope from x1, y1, z1 to x2, y2, z2 in segments pieces, thickness across, and returns it. length 0 makes it exactly as long as the distance; a longer length lets it sag.
+ClothPin: (ext) Holds one point of a cloth (column, row; row 0 is the top) or rope (column is the point, 0 the start, -1 the end) still. With entity, the point is held to that entity and moves with it.
+ClothUnpin: (ext) Lets a pinned point go again: a flag torn from its pole, a rope cut loose.
+ClothPinEdge: (ext) Pins a whole edge of a cloth: edge 0 top, 1 bottom, 2 left, 3 right; with entity, it moves with that entity (a cape on a character, a curtain on a moving rail).
+ClothStiffness: (ext) Sets how much a cloth or rope resists stretching (stretch, 0 to 1, default 1) and folding (bend, 0 to 1, default 0.15): low bend for silk, high for canvas.
+ClothDamping: (ext) Sets how quickly a cloth or rope stops moving (0 to 1, default 0.01): more for heavy wet cloth, less for light fabric.
+ClothGravity: (ext) Sets the pull on a cloth or rope in units a second squared (default 0, -9.8, 0).
+ClothWind: (ext) Sets how much the wind (SetWindDirection and SetWindStrength) blows the cloth or rope, with gusts (default 1); 0 means not at all.
+ClothCollide: (ext) Makes a cloth or rope slide over entity as a sphere of radius (0 uses its EntityRadius, or 1). Call once for each body, ball or pole it should touch.
+ClothFloor: (ext) Stops a cloth or rope falling below height y (enable 1), or lets it fall through (0).
+ClothTear: (ext) Lets a cloth tear where it is stretched past stretch times its length (1.5 tears easily, 3 needs a hard pull); 1 or less never tears (the default).
+ResetCloth: (ext) Puts a cloth or rope back as it was made, at the entity's current place, still.
+ClothPointX: (ext) Returns the world X of a point of a cloth (column, row) or rope (column, -1 the end): to hang a lantern on a rope or attach something to a corner.
+ClothPointY: (ext) Returns the world Y of a point of a cloth or rope.
+ClothPointZ: (ext) Returns the world Z of a point of a cloth or rope.
+
 # 3D physics
 EntityPhysics: (ext) Makes entity a rigid body: body_type 1 dynamic, 2 static, 3 kinematic; shape 0 automatic, 1 box, 2 sphere, 3 capsule, 4 cylinder, 5 mesh, 6 convex hull; mass in kilograms.
 PhysicsGravity: (ext) Sets the world's gravity vector x, y, z, in units per second squared.

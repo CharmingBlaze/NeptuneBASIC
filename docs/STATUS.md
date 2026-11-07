@@ -80,6 +80,7 @@ gamepad constants, modern command names, ...).
 | Collisions | done | `EntityType`, `EntityRadius`, `EntityBox`, `Collisions` (methods 1–3, responses 1–3), `ResetEntity`, `EntityCollided`, `CountCollisions`, `CollisionX/Y/Z/NX/NY/NZ/Time/Entity/Surface/Triangle`, `ClearCollisions` |
 | Picking | done | `EntityPickMode`, `LinePick`, `CameraPick`, `EntityPick`, `Picked*`, `CameraProject`, `Projected*`, `EntityVisible`, `EntityInView` |
 | Debug drawing (ext) | done | `DebugLine`, `DebugBox`, `DebugSphere`, `DebugEntity` (bounding box), `DebugAxes`, `DebugNavMesh` for the next frame; `DebugPhysics` (every 3D and 2D collider) and `DebugCollisions` (`EntityRadius` and `EntityBox` shapes) every frame |
+| Cloth and ropes (ext) | done | `CreateCloth` and `CreateRope` simulated on the CPU (Verlet points with stretch, shear and bend links, 120 steps a second): `ClothPin`, `ClothPinEdge` (to a place or to a moving entity: capes, curtains), `ClothUnpin`, `ClothStiffness`, `ClothDamping`, `ClothGravity`, `ClothWind` (the global wind, with gusts), `ClothCollide` (spheres, with friction), `ClothFloor`, `ClothTear`, `ResetCloth`, `ClothPointX/Y/Z`. Cloth is drawn on both sides |
 | PBR materials (ext) | done | `EntityMetallic`, `EntityRoughness`, `EntityEmissive` (glows with `PostEffect EFFECT_BLOOM`; the glow is multiplied by the surface colour), and maps: `EntityMetallicMap`, `EntityRoughnessMap`, `EntityEmissiveMap`, `EntityAOMap`, `EntityLightmap` (second UV set), `EntityHeightMap` (parallax mapping). They apply to the standard material, not the classic shader |
 | Sky box (ext) | done | `SkyBox` shows a cube map texture (`LoadTexture file, 128` or `CreateTexture w, h, 128`) as the sky |
 | Camera effects (ext) | done | `CameraExposure` (fixed or automatic exposure on the HDR image), `CameraColorGrading` (a 256x16 colour lookup table per camera), `CameraToTexture` (a camera draws into a texture: monitors, mini-maps) |
@@ -244,6 +245,7 @@ and windowing (see the CI workflow for the list).
 | `examples/lights.nb` | spot lights through window bars and stained glass (cookies), a lantern glowing in hazy air (scattering) |
 | `examples/debugdraw.nb` | debug drawing: physics colliders, collision spheres, a navigation mesh, an entity's axes and box, lines and boxes of your own |
 | `examples/essentials.nb` | game essentials: input actions with keys or gamepad and a rebindable dash, gems that pop in with tweens, sparks (2D particles), camera shake, rumble, fades and a saved best score |
+| `examples/cloth.nb` | cloth and ropes: a flag in the wind, a curtain a ball pushes through, a cape on a walking figure, a lantern on a rope, a sheet dropped onto a rock (Space) |
 | `examples/rendering.nb` | sky box, PBR materials, glow, parallax, decal, soft particles, level of detail, a camera on a screen, automatic exposure, a custom shader |
 | `examples/movie.nb` | makes a movie from images, then plays it over a 3D scene |
 | `examples/games/starcourier.nb` | **complete 2D game**: shooter with states, pickups, particles, sound, gamepad, high score, attract mode |

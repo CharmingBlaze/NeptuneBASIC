@@ -1493,6 +1493,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let tween = a[0].float();
         h.in_each_scene(|h| {
             h.apply_tweens()?;
+            h.update_softs()?;
             before_render(h, tween)?;
             h.retune_emitters(h.world.update_dt)?;
             h.watch_probes()?;
@@ -2892,6 +2893,78 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.world.debug.collisions = a[0].int() != 0;
         VOID
     }),
+    // (ext) cloth and ropes (see cloth.rs)
+    ("%CreateCloth#width#height%columns=16%rows=16", |h, a, _| int(h.create_cloth(a[0].float(), a[1].float(), a[2].int(), a[3].int())?)),
+    ("%CreateRope#x1#y1#z1#x2#y2#z2%segments=20#thickness=0.05#length=0", |h, a, _| {
+        int(h.create_rope(v3(a, 0), v3(a, 3), a[6].int(), a[7].float() / 2.0, a[8].float())?)
+    }),
+    ("ClothPin%cloth%column%row=0%entity=0", |h, a, _| {
+        if a[3].int() != 0 {
+            h.ent(a[3].int())?;
+        }
+        let s = h.soft(a[0].int())?;
+        let i = s.point_index(a[1].int(), a[2].int())?;
+        s.pin(i, a[3].int());
+        VOID
+    }),
+    ("ClothUnpin%cloth%column%row=0", |h, a, _| {
+        let s = h.soft(a[0].int())?;
+        let i = s.point_index(a[1].int(), a[2].int())?;
+        s.unpin(i);
+        VOID
+    }),
+    ("ClothPinEdge%cloth%edge=0%entity=0", |h, a, _| {
+        if a[2].int() != 0 {
+            h.ent(a[2].int())?;
+        }
+        let s = h.soft(a[0].int())?;
+        for i in s.edge_points(a[1].int()) {
+            s.pin(i, a[2].int());
+        }
+        VOID
+    }),
+    ("ClothStiffness%cloth#stretch=1#bend=0.15", |h, a, _| {
+        let s = h.soft(a[0].int())?;
+        (s.stretch, s.bend) = (a[1].float().clamp(0.0, 1.0), a[2].float().clamp(0.0, 1.0));
+        VOID
+    }),
+    ("ClothDamping%cloth#damping", |h, a, _| {
+        h.soft(a[0].int())?.damping = a[1].float().clamp(0.0, 1.0);
+        VOID
+    }),
+    ("ClothGravity%cloth#x#y#z", |h, a, _| {
+        h.soft(a[0].int())?.gravity = v3(a, 1);
+        VOID
+    }),
+    ("ClothWind%cloth#amount", |h, a, _| {
+        h.soft(a[0].int())?.wind = a[1].float();
+        VOID
+    }),
+    ("ClothCollide%cloth%entity#radius=0", |h, a, _| {
+        let e = a[1].int();
+        h.ent(e)?;
+        let s = h.soft(a[0].int())?;
+        s.colliders.retain(|(c, _)| *c != e);
+        if a[2].float() >= 0.0 {
+            s.colliders.push((e, a[2].float()));
+        }
+        VOID
+    }),
+    ("ClothFloor%cloth#y%enable=1", |h, a, _| {
+        h.soft(a[0].int())?.floor = (a[2].int() != 0).then(|| a[1].float());
+        VOID
+    }),
+    ("ClothTear%cloth#stretch", |h, a, _| {
+        h.soft(a[0].int())?.tear = if a[1].float() > 1.0 { a[1].float() } else { 0.0 };
+        VOID
+    }),
+    ("ResetCloth%cloth", |h, a, _| {
+        h.reset_soft(a[0].int())?;
+        VOID
+    }),
+    ("#ClothPointX%cloth%column%row=0", |h, a, _| cloth_point(h, a, 0)),
+    ("#ClothPointY%cloth%column%row=0", |h, a, _| cloth_point(h, a, 1)),
+    ("#ClothPointZ%cloth%column%row=0", |h, a, _| cloth_point(h, a, 2)),
     // (ext) brightness multiplier (HDR: above 1 is brighter than white)
     ("LightIntensity%light#intensity", |h, a, _| {
         let (light, kind) = light_of(h, a[0].int())?;
@@ -4172,6 +4245,13 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         int(1)
     }),
 ];
+
+/// `ClothPointX/Y/Z`: a point of a cloth or rope in world space.
+fn cloth_point(h: &mut Host3D, a: &[Value], axis: usize) -> Result<Value, String> {
+    let s = h.soft(a[0].int())?;
+    let i = s.point_index(a[1].int(), a[2].int())?;
+    float(s.point(i)[axis])
+}
 
 fn bind_action(h: &mut Host3D, action: &str, input: &str) -> Result<Value, String> {
     if action.trim().is_empty() {

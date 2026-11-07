@@ -1,0 +1,93 @@
+; Examples for cloth and ropes. Format: see tools/check_doc_examples.py.
+
+=== CreateCloth
+; a banner hanging from a beam
+banner = CreateCloth(2, 3, 16, 24)
+PositionEntity banner, 0, 5, 0
+ClothPinEdge banner, 0
+
+=== CreateRope
+; a rope from a hook to the ground, a little slack
+rope = CreateRope(0, 5, 0, 1, 0, 0, 20, 0.05, 6)
+ClothPin rope, 0
+
+=== ClothPin
+; a washing-line towel held by two pegs
+towel = CreateCloth(1, 1.4, 10, 14)
+ClothPin towel, 0, 0
+ClothPin towel, 10, 0
+
+=== ClothUnpin
+; one peg lets go and the towel swings down
+towel = CreateCloth(1, 1.4, 10, 14)
+ClothPin towel, 0, 0
+ClothPin towel, 10, 0
+ClothUnpin towel, 10, 0
+
+=== ClothPinEdge
+; a cape that follows its wearer
+hero = CreateCylinder()
+cape = CreateCloth(0.9, 1.5, 8, 12)
+PositionEntity cape, 0, 0.9, -0.4
+ClothPinEdge cape, 0, hero
+
+=== ClothStiffness
+; stiff canvas that hardly folds
+tent = CreateCloth(3, 2)
+ClothStiffness tent, 1, 0.8
+
+=== ClothDamping
+; heavy wet cloth that settles fast
+sheet = CreateCloth(2, 2)
+ClothDamping sheet, 0.1
+
+=== ClothGravity
+; under water, things sink slowly
+weed = CreateRope(0, 0, 0, 0, 2, 0, 12, 0.03)
+ClothGravity weed, 0, 1.5, 0          ; it floats upwards instead
+
+=== ClothWind
+flag = CreateCloth(1.2, 2)
+ClothPinEdge flag, 0
+SetWindDirection 1, 0
+SetWindStrength 0.3
+ClothWind flag, 3
+
+=== ClothCollide
+; a tablecloth over a round table and a ball on it
+table = CreateCylinder(24)
+ball = CreateSphere()
+EntityRadius ball, 0.5
+cloth = CreateCloth(3, 3)
+ClothCollide cloth, table, 1
+ClothCollide cloth, ball
+
+=== ClothFloor
+sheet = CreateCloth(2, 2)
+ClothFloor sheet, 0                   ; lies on the ground at height 0
+
+=== ClothTear
+; a sail that rips in a storm
+sail = CreateCloth(2, 3)
+ClothPinEdge sail, 0
+ClothTear sail, 1.6
+
+=== ResetCloth
+flag = CreateCloth(1.2, 2)
+ClothPinEdge flag, 0
+ResetCloth flag                       ; straight and still again
+
+=== ClothPointX
+; a lantern hangs on the end of a rope
+rope = CreateRope(0, 4, 0, 0, 2, 0)
+ClothPin rope, 0
+lantern = CreateSphere()
+PositionEntity lantern, ClothPointX(rope, -1), ClothPointY(rope, -1), ClothPointZ(rope, -1)
+
+=== ClothPointY
+sheet = CreateCloth(2, 2)
+Print ClothPointY(sheet, 8, 16)       ; how low the bottom middle hangs
+
+=== ClothPointZ
+rope = CreateRope(0, 4, 0, 0, 2, 0)
+Print ClothPointZ(rope, -1)

@@ -224,6 +224,8 @@ pub struct World {
     /// (ext) 2D particle systems (see `particles2d.rs`) and their default dot.
     pub particles2d: Vec<Option<crate::particles2d::System>>,
     pub particle_dot: Option<fyrox::resource::texture::TextureResource>,
+    /// (ext) Cloths and ropes (see `cloth.rs`).
+    pub softs: Vec<crate::cloth::Soft>,
     /// (ext) 2D physics: bodies, joints, pixels per metre, per-body
     /// (friction, bounce, density, sensor), the last ray hit.
     pub bodies2d: Vec<Option<crate::physics2d::Body2D>>,
@@ -393,6 +395,7 @@ impl Default for World {
             shakes: Vec::new(),
             particles2d: Vec::new(),
             particle_dot: None,
+            softs: Vec::new(),
             graded_cameras: Default::default(),
             gamma: Default::default(),
             gamma_dirty: false,

@@ -4,6 +4,20 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Cloth and ropes
+
+* **Cloth** – `CreateCloth` makes a sheet that hangs, falls, flaps in the
+  wind (`ClothWind`) and drapes over things (`ClothCollide`, `ClothFloor`).
+  Pin a corner or a whole edge in place, or to a moving entity, for flags,
+  curtains, capes and sails (`ClothPin`, `ClothPinEdge`, `ClothUnpin`). It
+  can be stiff or soft (`ClothStiffness`, `ClothDamping`) and can tear
+  (`ClothTear`).
+* **Ropes** – `CreateRope` makes a rope between two points that swings and
+  sags; pin its ends and read where its points are (`ClothPointX/Y/Z`) to
+  hang a lantern, a bucket or a bridge plank on it.
+* The new example `examples/cloth.nb` shows a flag, a curtain, a cape, a
+  lantern on a rope and a sheet dropped onto a rock.
+
 ## Game essentials
 
 * **Input actions** – name the controls (`"jump"`, `"fire"`) and bind keys,
