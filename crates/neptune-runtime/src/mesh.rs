@@ -375,6 +375,10 @@ impl Host3D<'_> {
         self.rebuild_terrains()?;
         let dirty: Vec<usize> =
             self.world.surfaces.iter().enumerate().filter(|(_, s)| s.as_ref().is_some_and(|s| s.dirty && !self.elsewhere(s.entity))).map(|(i, _)| i).collect();
+        if !dirty.is_empty() {
+            // geometry changed: cached pick shapes are stale
+            self.world.pick_gen += 1;
+        }
         for i in dirty {
             let Some(info) = self.world.surfaces[i].as_mut() else { continue };
             info.dirty = false;

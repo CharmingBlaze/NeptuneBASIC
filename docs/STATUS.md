@@ -132,6 +132,7 @@ for older integrated GPUs; `ultra` turns everything up.
 |---|---|
 | `neptune run/check/disasm/commands` CLI | done |
 | `neptune build`: stand-alone game folder (executable + media; no console window on Windows) | done |
+| `neptune bench`: runs the programs in `benchmarks/` (language, entities, models, physics, queries, rendering) and the island and beach demos uncapped (`neptune run --uncapped`), detects the machine, writes [docs/BENCHMARKS.md](BENCHMARKS.md) | done |
 | `neptune plugins`: list loaded plugins and plugin folders | done |
 | `neptune lsp`: language server (errors as you type, completion, hover, signature help, outline, go to definition) | done |
 | VS Code extension: highlighting, language server, run (F5), build | done (`editors/vscode`) |

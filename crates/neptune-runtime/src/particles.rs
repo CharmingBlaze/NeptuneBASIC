@@ -15,7 +15,10 @@ use fyrox::{
         color_gradient::{ColorGradient, GradientPoint},
         uuid::Uuid,
     },
-    material::{Material, MaterialResource},
+    material::{
+        shader::{Shader, ShaderResource},
+        Material, MaterialResource,
+    },
     scene::{
         base::BaseBuilder,
         particle_system::{
@@ -27,8 +30,23 @@ use fyrox::{
 
 use crate::world::{Host3D, Kind};
 
-/// Fyrox moves particles by their velocity once per update (60 a second).
-const UPDATES_PER_SECOND: f32 = 60.0;
+/// Fyrox moves a particle by its velocity once per update, whatever the
+/// update's length, while sizes, spins and lifetimes use the length. Games
+/// update 60 times a second; with `--uncapped` the length varies, so
+/// emitters are re-tuned to it each frame (`retune_emitters`).
+pub const UPDATE: f32 = 1.0 / 60.0;
+
+/// The particle shader (see particle.shader), loaded once.
+fn shader() -> ShaderResource {
+    thread_local! {
+        static SHADER: ShaderResource = ShaderResource::new_ok(
+            Uuid::new_v4(),
+            ResourceKind::Embedded,
+            Shader::from_string(include_str!("particle.shader")).expect("built-in particle shader is valid"),
+        );
+    }
+    SHADER.with(|s| s.clone())
+}
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -49,6 +67,8 @@ pub struct Settings {
     pub softness: f32,
     pub playing: bool,
     pub local: bool,
+    /// The update length the velocities were set for.
+    pub tuned_for: f32,
 }
 
 impl Default for Settings {
@@ -70,6 +90,7 @@ impl Default for Settings {
             softness: 1.0,
             playing: true,
             local: false,
+            tuned_for: UPDATE,
         }
     }
 }
@@ -81,22 +102,29 @@ fn range(a: f32, b: f32) -> std::ops::Range<f32> {
 }
 
 impl Settings {
-    fn emitter(&self) -> fyrox::scene::particle_system::emitter::Emitter {
-        let per_update = |v: f32| v / UPDATES_PER_SECOND;
-        // Blitz space: X is mirrored
+    /// Launch velocity ranges (x, y, z) as distances per update of
+    /// `tuned_for` seconds (sizes and spins are per second). Blitz space:
+    /// X is mirrored.
+    fn velocity_ranges(&self) -> [std::ops::Range<f32>; 3] {
+        let per_update = |v: f32| v * self.tuned_for;
         let v = [-self.velocity[0], self.velocity[1], self.velocity[2]];
         let s = self.spread;
+        [0, 1, 2].map(|i| range(per_update(v[i] - s), per_update(v[i] + s)))
+    }
+
+    fn emitter(&self) -> fyrox::scene::particle_system::emitter::Emitter {
+        let [vx, vy, vz] = self.velocity_ranges();
         let spin = (self.spin.0.to_radians(), self.spin.1.to_radians());
         let base = BaseEmitterBuilder::new()
             .with_spawn_rate(self.rate)
             .with_max_particles(self.max.unwrap_or(u32::MAX))
             .with_lifetime_range(range(self.life.0, self.life.1))
             .with_size_range(range(self.size * 0.9, self.size * 1.1))
-            .with_size_modifier_range(range(per_update(self.grow), per_update(self.grow)))
-            .with_x_velocity_range(range(per_update(v[0] - s), per_update(v[0] + s)))
-            .with_y_velocity_range(range(per_update(v[1] - s), per_update(v[1] + s)))
-            .with_z_velocity_range(range(per_update(v[2] - s), per_update(v[2] + s)))
-            .with_rotation_speed_range(range(per_update(spin.0), per_update(spin.1)))
+            .with_size_modifier_range(range(self.grow, self.grow))
+            .with_x_velocity_range(vx)
+            .with_y_velocity_range(vy)
+            .with_z_velocity_range(vz)
+            .with_rotation_speed_range(range(spin.0, spin.1))
             .with_rotation_range(range(0.0, std::f32::consts::TAU));
         match self.shape {
             1 => CuboidEmitterBuilder::new(base)
@@ -146,7 +174,7 @@ impl Host3D<'_> {
         let Some(s) = e.emitter.as_deref().cloned() else { return Ok(false) };
         let (node, tex) = (e.node, e.textures[0]);
         let tex = if tex != 0 { Some(self.texture(tex)?.resource.clone()) } else { None };
-        let mut m = Material::standard_particle_system();
+        let mut m = Material::from_shader(shader());
         if let Some(t) = tex {
             m.bind("diffuseTexture", t);
         }
@@ -163,6 +191,30 @@ impl Host3D<'_> {
         Ok(true)
     }
 
+    /// Scales emitters' launch speeds to the length of the latest update
+    /// (it only differs from 1/60 s with `--uncapped`).
+    pub fn retune_emitters(&mut self, dt: f32) -> Result<(), String> {
+        let dt = dt.clamp(1e-4, 0.25);
+        let stale: Vec<i32> = self
+            .entities()
+            .filter(|(_, e)| e.emitter.as_ref().is_some_and(|s| (s.tuned_for - dt).abs() > 0.1 * dt))
+            .map(|(i, _)| i)
+            .collect();
+        for e in stale {
+            let s = self.emitter_mut(e)?;
+            s.tuned_for = dt;
+            let ranges = s.velocity_ranges();
+            let node = self.ent(e)?.node;
+            if let Some(ps) = self.graph()?[node].cast_mut::<ParticleSystem>() {
+                for em in ps.emitters.get_value_mut_and_mark_modified().iter_mut() {
+                    let [x, y, z] = ranges.clone();
+                    em.set_x_velocity_range(x).set_y_velocity_range(y).set_z_velocity_range(z);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// `EmitterClear`: removes the particles in flight.
     pub fn clear_particles(&mut self, e: i32) -> Result<(), String> {
         let node = self.ent(e)?.node;
@@ -176,6 +228,24 @@ impl Host3D<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launch_speeds_follow_the_update_length() {
+        let mut s = Settings { velocity: [0.0, 6.0, 0.0], spread: 0.0, ..Default::default() };
+        // 6 units a second is 0.1 per 1/60 s update
+        assert!((s.velocity_ranges()[1].start - 0.1).abs() < 1e-5);
+        // twice as long an update: twice as far per update
+        s.tuned_for = 2.0 * UPDATE;
+        assert!((s.velocity_ranges()[1].start - 0.2).abs() < 1e-5);
+        // Blitz X is mirrored
+        s.velocity = [3.0, 0.0, 0.0];
+        assert!(s.velocity_ranges()[0].start < 0.0);
+    }
+
+    #[test]
+    fn the_particle_shader_parses() {
+        assert!(Shader::from_string(include_str!("particle.shader")).is_ok());
+    }
 
     #[test]
     fn ranges_are_never_empty() {

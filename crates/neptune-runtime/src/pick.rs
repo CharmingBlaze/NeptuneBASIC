@@ -59,10 +59,11 @@ fn ray_sphere(o: &V3, dir: &V3, c: &V3, r: f32) -> Option<f32> {
 
 /// Finds the nearest hit along the segment `origin .. origin + line`.
 /// With `radius > 0` a sphere of that radius is swept instead of a ray.
-pub fn pick(origin: V3, line: V3, radius: f32, targets: &[(i32, Shape)]) -> Option<PickHit> {
+pub fn pick<'a>(origin: V3, line: V3, radius: f32, targets: impl IntoIterator<Item = (i32, &'a Shape)>) -> Option<PickHit> {
     let mut best: Option<PickHit> = None;
     let limit = |b: &Option<PickHit>| b.map_or(1.0, |h| h.time);
     for (entity, shape) in targets {
+        let entity = &entity;
         match shape {
             Shape::Sphere { center, radius: r } => {
                 let hit = if radius > 0.0 {
@@ -110,26 +111,26 @@ mod tests {
 
     #[test]
     fn ray_hits_nearest_target() {
-        let targets = vec![
+        let targets = [
             (1, Shape::Triangles(box_triangles([4.0, -1.0, -1.0, 2.0, 2.0, 2.0], |p| p))),
             (2, Shape::Sphere { center: V3::new(2.0, 0.0, 0.0), radius: 0.5 }),
         ];
-        let h = pick(V3::zeros(), V3::new(10.0, 0.0, 0.0), 0.0, &targets).unwrap();
+        let h = pick(V3::zeros(), V3::new(10.0, 0.0, 0.0), 0.0, targets.iter().map(|(e, s)| (*e, s))).unwrap();
         assert_eq!(h.entity, 2);
         assert!(close(h.point.x, 1.5) && close(h.time, 0.15) && close(h.normal.x, -1.0));
         // aim above the sphere: hits the box face at x = 4
-        let h = pick(V3::new(0.0, 0.8, 0.0), V3::new(10.0, 0.0, 0.0), 0.0, &targets).unwrap();
+        let h = pick(V3::new(0.0, 0.8, 0.0), V3::new(10.0, 0.0, 0.0), 0.0, targets.iter().map(|(e, s)| (*e, s))).unwrap();
         assert_eq!(h.entity, 1);
         assert!(close(h.point.x, 4.0) && close(h.normal.x, -1.0) && h.triangle >= 0);
         // too short to reach anything
-        assert!(pick(V3::zeros(), V3::new(1.0, 0.0, 0.0), 0.0, &targets).is_none());
+        assert!(pick(V3::zeros(), V3::new(1.0, 0.0, 0.0), 0.0, targets.iter().map(|(e, s)| (*e, s))).is_none());
     }
 
     #[test]
     fn swept_pick_uses_radius() {
-        let targets = vec![(5, Shape::Sphere { center: V3::new(5.0, 1.2, 0.0), radius: 0.5 })];
-        assert!(pick(V3::zeros(), V3::new(10.0, 0.0, 0.0), 0.0, &targets).is_none());
-        let h = pick(V3::zeros(), V3::new(10.0, 0.0, 0.0), 1.0, &targets).unwrap();
+        let targets = [(5, Shape::Sphere { center: V3::new(5.0, 1.2, 0.0), radius: 0.5 })];
+        assert!(pick(V3::zeros(), V3::new(10.0, 0.0, 0.0), 0.0, targets.iter().map(|(e, s)| (*e, s))).is_none());
+        let h = pick(V3::zeros(), V3::new(10.0, 0.0, 0.0), 1.0, targets.iter().map(|(e, s)| (*e, s))).unwrap();
         assert_eq!(h.entity, 5);
     }
 }

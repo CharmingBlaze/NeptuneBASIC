@@ -225,22 +225,43 @@ fn pick_line(
     exclude: &[i32],
     obscurers_only: bool,
 ) -> Result<Option<crate::pick::PickHit>, String> {
-    let targets = pick_targets(h, exclude, obscurers_only)?;
-    Ok(crate::pick::pick(origin, line, radius, &targets))
+    let all = all_pick_targets(h)?;
+    let targets = all.iter().filter(|t| !exclude.contains(&t.entity) && (!obscurers_only || t.obscurer)).map(|t| (t.entity, &t.shape));
+    Ok(crate::pick::pick(origin, line, radius, targets))
 }
 
 /// The pickable entities' shapes (built once for many picks).
 pub(crate) fn pick_targets(h: &mut Host3D, exclude: &[i32], obscurers_only: bool) -> Result<Vec<(i32, crate::collision::Shape)>, String> {
+    let all = all_pick_targets(h)?;
+    Ok(all.iter().filter(|t| !exclude.contains(&t.entity) && (!obscurers_only || t.obscurer)).map(|t| (t.entity, t.shape.clone())).collect())
+}
+
+/// A pickable entity's shape in world space.
+#[derive(Debug)]
+pub struct PickTarget {
+    pub entity: i32,
+    pub obscurer: bool,
+    pub shape: crate::collision::Shape,
+}
+
+/// Every pickable entity's shape, built once and reused by later picks
+/// until an entity changes or a frame passes (`World::pick_gen`).
+fn all_pick_targets(h: &mut Host3D) -> Result<std::rc::Rc<Vec<PickTarget>>, String> {
     h.flush_meshes()?;
-    let candidates: Vec<(i32, i32)> = h
-        .entities()
-        .filter(|(i, e)| e.pick_mode != 0 && !e.hidden && !exclude.contains(i) && (!obscurers_only || e.obscurer))
-        .map(|(i, e)| (i, e.pick_mode))
-        .collect();
-    let mut targets = Vec::with_capacity(candidates.len());
-    for (e, mode) in candidates {
-        targets.push((e, collision_shape(h, e, mode)?));
+    let scene = h.world.current_scene;
+    if let Some((s, gen, targets)) = &h.world.pick_cache {
+        if *s == scene && *gen == h.world.pick_gen {
+            return Ok(targets.clone());
+        }
     }
+    let candidates: Vec<(i32, i32, bool)> =
+        h.entities().filter(|(_, e)| e.pick_mode != 0 && !e.hidden).map(|(i, e)| (i, e.pick_mode, e.obscurer)).collect();
+    let mut targets = Vec::with_capacity(candidates.len());
+    for (entity, mode, obscurer) in candidates {
+        targets.push(PickTarget { entity, obscurer, shape: collision_shape(h, entity, mode)? });
+    }
+    let targets = std::rc::Rc::new(targets);
+    h.world.pick_cache = Some((scene, h.world.pick_gen, targets.clone()));
     Ok(targets)
 }
 
@@ -1404,9 +1425,11 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("RenderWorld#tween=1", |h, a, ctx| {
         h.scene()?;
+        h.world.pick_gen += 1;
         let tween = a[0].float();
         h.in_each_scene(|h| {
             before_render(h, tween)?;
+            h.retune_emitters(h.world.update_dt)?;
             h.flush_meshes()?;
             h.face_sprites()
         })?;
@@ -1431,6 +1454,8 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("Flip%vwait=1", |h, _, ctx| {
         h.scene()?;
+        // animation and physics move things between frames
+        h.world.pick_gen += 1;
         h.watch_assets()?;
         h.commit_buffers()?;
         h.ui_end_frame();

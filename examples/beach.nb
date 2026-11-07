@@ -459,6 +459,7 @@ HidePointer
 MoveMouse 640, 360
 MouseXSpeed() : MouseYSpeed()
 
+benchFrames = Int(GetEnv("NEPTUNE_BENCH_FRAMES"))
 frames = 0
 fps# = 60
 prev = MilliSecs()
@@ -527,4 +528,15 @@ While True
     Text 12, 32, $"fps {Int(fps)}   {mode$}"
     Flip
     If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+
+    ; `neptune bench` measures this demo: it sets NEPTUNE_BENCH_FRAMES
+    If benchFrames > 0
+        If frames = 60 Then benchStart = MilliSecs()
+        If frames = 60 + benchFrames
+            out = WriteFile(GetEnv("NEPTUNE_BENCH_OUT"))
+            WriteLine out, "demos|beach demo, standing on the sand|" + Str(benchFrames * 1000.0 / Max(1, MilliSecs() - benchStart)) + "|fps"
+            CloseFile out
+            End
+        EndIf
+    EndIf
 Wend

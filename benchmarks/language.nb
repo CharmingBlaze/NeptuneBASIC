@@ -1,0 +1,113 @@
+; Language benchmarks: the bytecode VM on its own (no window).
+; Times are wall-clock milliseconds measured with MilliSecs.
+Include "bench.nb"
+
+Type Particle
+    Field x#, y#, vx#, vy#
+End Type
+
+Function Fibo(n)
+    If n < 2 Then Return n
+    Return Fibo(n - 1) + Fibo(n - 2)
+End Function
+
+Dim sortData(200000)
+
+Function QuickSort(lo, hi)
+    While lo < hi
+        p = sortData((lo + hi) / 2)
+        i = lo
+        j = hi
+        While i <= j
+            While sortData(i) < p : i = i + 1 : Wend
+            While sortData(j) > p : j = j - 1 : Wend
+            If i <= j
+                t = sortData(i) : sortData(i) = sortData(j) : sortData(j) = t
+                i = i + 1
+                j = j - 1
+            EndIf
+        Wend
+        ; recurse into the smaller half, loop on the larger
+        If j - lo < hi - i
+            QuickSort(lo, j)
+            lo = i
+        Else
+            QuickSort(i, hi)
+            hi = j
+        EndIf
+    Wend
+End Function
+
+; 1. function calls: recursive Fibonacci
+t = MilliSecs()
+r = Fibo(30)
+Report "language", "fib(30), recursive calls", MilliSecs() - t, "ms"
+
+; 2. integer loop arithmetic
+t = MilliSecs()
+sum = 0
+For i = 1 To 20000000
+    sum = sum + (i * i) Mod 7
+Next
+Report "language", "20M integer loop iterations", MilliSecs() - t, "ms"
+
+; 3. floating point and maths functions
+t = MilliSecs()
+acc# = 0
+For i = 1 To 3000000
+    acc = acc + Sin(i * 0.001) * Cos(i * 0.002) + Sqr(i)
+Next
+Report "language", "3M float sin/cos/sqrt", MilliSecs() - t, "ms"
+
+; 4. strings: build, search, slice
+t = MilliSecs()
+s$ = ""
+For i = 1 To 100000
+    s = s + Chr(65 + i Mod 26)
+Next
+found = 0
+For i = 1 To 20000
+    If Instr(s, "XYZ", i) > 0 Then found = found + 1
+    part$ = Mid(s, i, 10)
+Next
+Report "language", "100k string appends + 20k searches", MilliSecs() - t, "ms"
+
+; 5. arrays: quicksort 200k random integers
+SeedRnd 1
+For i = 0 To 199999
+    sortData(i) = Rand(0, 1000000)
+Next
+t = MilliSecs()
+QuickSort(0, 199999)
+Report "language", "quicksort 200k integers", MilliSecs() - t, "ms"
+
+; 6. objects: 200k Type instances, updated 10 times, deleted
+t = MilliSecs()
+For i = 1 To 200000
+    p.Particle = New Particle
+    p\x = i : p\vx = 1.5 : p\vy = -0.5
+Next
+For pass = 1 To 10
+    For p.Particle = Each Particle
+        p\x = p\x + p\vx
+        p\y = p\y + p\vy
+    Next
+Next
+Delete Each Particle
+Report "language", "200k objects x 10 updates", MilliSecs() - t, "ms"
+
+; 7. sieve of Eratosthenes up to 5M
+Dim composite(5000000)
+t = MilliSecs()
+primes = 0
+For i = 2 To 5000000
+    If composite(i) = 0
+        primes = primes + 1
+        j = i * 2
+        While j <= 5000000
+            composite(j) = 1
+            j = j + i
+        Wend
+    EndIf
+Next
+Report "language", "prime sieve to 5M", MilliSecs() - t, "ms"

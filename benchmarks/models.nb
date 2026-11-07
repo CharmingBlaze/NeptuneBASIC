@@ -1,0 +1,42 @@
+; Models and loading: animated glTF characters, loading times, caching.
+Include "bench.nb"
+Graphics3D 1280, 720
+cam = BenchScene(0, 60, -90, 0, 0, 0)
+
+; first load of a file, then the same file again (shared, see assets.rs)
+t = MilliSecs()
+fox = LoadAnimMesh("examples/media/Fox.glb")
+Report "models", "load Fox.glb (first time)", MilliSecs() - t, "ms"
+t = MilliSecs()
+For i = 1 To 50
+    extra = LoadAnimMesh("examples/media/Fox.glb")
+    FreeEntity extra
+Next
+Report "models", "load Fox.glb again (each, cached)", (MilliSecs() - t) / 50.0, "ms"
+t = MilliSecs()
+For i = 1 To 100
+    tex = LoadTexture("examples/media/checker.png")
+Next
+Report "models", "LoadTexture (each, cached)", (MilliSecs() - t) / 100.0, "ms"
+
+; animated characters, every one playing its walk
+ScaleEntity fox, 0.1, 0.1, 0.1
+HideEntity fox
+Data 10, 50, 100, 200
+For stage = 1 To 4
+    Read n
+    Dim foxes(n)
+    side = Ceil(Sqr(n))
+    For i = 0 To n - 1
+        f = CopyEntity(fox)
+        ShowEntity f
+        PositionEntity f, (i Mod side) * 8 - side * 4, 0, (i / side) * 8 - side * 4
+        Animate f, 1, 1, 1
+        foxes(i) = f
+    Next
+    Report "models", $"{n} animated Fox models", MeasureFps(200, 20), "fps"
+    For i = 0 To n - 1
+        FreeEntity foxes(i)
+    Next
+Next
+End

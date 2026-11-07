@@ -96,7 +96,7 @@ impl Host3D<'_> {
             let local = self.parent_world(e)?.rot.transpose() * world_rot;
             let node = self.ent(e)?.node;
             let sm = Matrix3::from_diagonal(&Vector3::new(-1.0, 1.0, 1.0));
-            let q = fyrox::core::algebra::UnitQuaternion::from_matrix(&(sm * local * sm));
+            let q = crate::transform::quat(&(sm * local * sm));
             self.graph()?[node].local_transform_mut().set_rotation(q);
         }
         Ok(())

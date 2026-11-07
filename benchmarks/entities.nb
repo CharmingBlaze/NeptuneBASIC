@@ -1,0 +1,56 @@
+; Entities: how many objects can be drawn and moved each frame.
+Include "bench.nb"
+Graphics3D 1280, 720
+cam = BenchScene(0, 120, -160, 0, 0, 0)
+
+proto = CreateCube()
+EntityColor proto, 200, 120, 80
+HideEntity proto
+
+Data 1000, 5000, 10000, 20000
+For stage = 1 To 4
+    Read n
+    ; creating n copies
+    t = MilliSecs()
+    side = Ceil(Sqr(n))
+    Dim cubes(n)
+    For i = 0 To n - 1
+        c = CopyEntity(proto)
+        ShowEntity c
+        PositionEntity c, (i Mod side) * 2.5 - side * 1.25, 0, (i / side) * 2.5 - side * 1.25
+        cubes(i) = c
+    Next
+    Report "entities", $"create {n} copies", MilliSecs() - t, "ms"
+
+    ; still
+    Report "entities", $"{n} still cubes", MeasureFps(200, 20), "fps"
+
+    ; every cube turned every frame
+    t = MilliSecs()
+    For f = 1 To 200
+        For i = 0 To n - 1
+            TurnEntity cubes(i), 0, 2, 0
+        Next
+        UpdateWorld
+        RenderWorld
+        Flip
+    Next
+    Report "entities", $"{n} cubes all turning", 200000.0 / Max(1, MilliSecs() - t), "fps"
+
+    For i = 0 To n - 1
+        FreeEntity cubes(i)
+    Next
+Next
+
+; the same 20000 cubes merged into batches (EntityBatch)
+n = 20000
+side = Ceil(Sqr(n))
+group = CreateMesh()
+For i = 0 To n - 1
+    c = CopyEntity(proto, group)
+    ShowEntity c
+    PositionEntity c, (i Mod side) * 2.5 - side * 1.25, 0, (i / side) * 2.5 - side * 1.25
+Next
+EntityBatch group, 1
+Report "entities", "20000 still cubes, batched", MeasureFps(200, 20), "fps"
+End

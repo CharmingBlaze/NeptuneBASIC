@@ -470,6 +470,7 @@ For a = 0 To 345 Step 15
     EndIf
 Next
 
+benchFrames = Int(GetEnv("NEPTUNE_BENCH_FRAMES"))
 orbit = 1
 fly = 0
 angle# = 200
@@ -569,4 +570,15 @@ While True
     Text 12, 32, $"fps {Int(fps)}   {trees} trees   {palms} palms"
     Flip
     If frames > 8 And KeyHit(KEY_ESCAPE) Then End
+
+    ; `neptune bench` measures this demo: it sets NEPTUNE_BENCH_FRAMES
+    If benchFrames > 0
+        If frames = 60 Then benchStart = MilliSecs()
+        If frames = 60 + benchFrames
+            out = WriteFile(GetEnv("NEPTUNE_BENCH_OUT"))
+            WriteLine out, "demos|island demo, orbiting (" + trees + " trees, " + palms + " palms)|" + Str(benchFrames * 1000.0 / Max(1, MilliSecs() - benchStart)) + "|fps"
+            CloseFile out
+            End
+        EndIf
+    EndIf
 Wend

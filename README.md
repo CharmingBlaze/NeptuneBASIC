@@ -71,6 +71,9 @@ Other commands:
 
 * `neptune run --quality low <file>` – run with the low graphics preset
   (also `medium`, `high`, `ultra`).
+* `neptune run --uncapped <file>` – no vsync and no 60 updates-a-second
+  limit: the program runs as fast as the machine allows (used by the
+  benchmarks, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
 * `neptune build <file>` – make a stand-alone game in `dist/<name>/`
   (executable plus the media files the program uses). Build NeptuneBASIC
   with `--release` first so the game runs at full speed.

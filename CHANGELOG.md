@@ -4,6 +4,30 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Benchmarks and speed-ups
+
+* **`neptune bench`** – Runs the benchmark programs in `benchmarks/`
+  (language, entities, models, physics, queries, rendering) and the island
+  and beach demos, and writes the results with a description of the machine
+  to [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Anyone can re-run it to
+  compare.
+* **`neptune run --uncapped`** – Runs a program without vsync and without
+  the engine's 60 updates a second, so frame rates show what the machine
+  can do (used by the benchmarks).
+* **Faster navigation** – Agents and `FindPath` were slow on big navigation
+  meshes (50 agents ran at 15 frames a second). Navigation meshes now have
+  their own index and path search: 50 agents run at over 160, and 500 at
+  60. `FindPath` is about three times faster.
+* **Faster picking** – `LinePick`, `CameraPick` and `EntityPick` reuse
+  the shapes of pickable objects until something changes: 5 ms became
+  0.03 ms per pick with 400 objects.
+* **Fix: particles** – Particles drew as squares instead of their texture's
+  soft shape (Fyrox only used the texture's red channel); they now use the
+  texture's colour and alpha. `EmitterSize` growth and `EmitterSpin` were
+  60 times too slow.
+* **Faster transforms** – Turning a rotation into the form the renderer
+  uses no longer runs an iterative solver for every moved entity.
+
 ## Beach demo, water, clouds and erosion
 
 * **`examples/beach.nb`** – A tropical shore: water you can see the sand

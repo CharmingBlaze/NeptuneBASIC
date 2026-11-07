@@ -21,7 +21,7 @@ use std::collections::{BinaryHeap, HashMap};
 
 use fyrox::{
     core::{algebra::Vector3, math::TriangleDefinition},
-    utils::navmesh::{Navmesh, NavmeshAgent},
+    utils::navmesh::Navmesh,
 };
 
 use crate::world::Host3D;
@@ -30,6 +30,8 @@ type V3 = Vector3<f32>;
 
 pub struct NavMesh {
     pub mesh: Navmesh,
+    /// Fast closest-point and path queries (see navquery.rs).
+    pub index: crate::navquery::NavIndex,
 }
 
 impl std::fmt::Debug for NavMesh {
@@ -176,7 +178,9 @@ pub struct Agent {
     pub height: f32,
     /// Where the goal was when the path was made.
     planned_for: Option<V3>,
-    finder: NavmeshAgent,
+    /// Seconds since the path was made (a moving goal is re-planned at most
+    /// four times a second).
+    planned_ago: f32,
 }
 
 impl std::fmt::Debug for Agent {
@@ -198,7 +202,9 @@ impl Host3D<'_> {
         if mesh.triangles().is_empty() {
             return Err("the navigation mesh has no walkable triangles".into());
         }
-        self.world.navmeshes.push(Some(NavMesh { mesh }));
+        let tris: Vec<[u32; 3]> = mesh.triangles().iter().map(|t| t.0).collect();
+        let index = crate::navquery::NavIndex::new(mesh.vertices(), &tris);
+        self.world.navmeshes.push(Some(NavMesh { mesh, index }));
         Ok(self.world.navmeshes.len() as i32)
     }
 
@@ -230,7 +236,7 @@ impl Host3D<'_> {
         for j in 0..rows {
             for i in 0..cols {
                 let p = Vector3::new(x + i as f32 * cell, top, z + j as f32 * cell);
-                if let Some(hit) = crate::pick::pick(p, Vector3::new(0.0, -2.0 * top.abs().max(1000.0), 0.0), 0.0, &targets) {
+                if let Some(hit) = crate::pick::pick(p, Vector3::new(0.0, -2.0 * top.abs().max(1000.0), 0.0), 0.0, targets.iter().map(|(e, s)| (*e, s))) {
                     if hit.normal.y >= min_up {
                         heights[j * cols + i] = Some(hit.point.y);
                     }
@@ -266,7 +272,7 @@ impl Host3D<'_> {
 
     /// The point of a navigation mesh closest to `p`.
     pub fn navmesh_closest(&self, n: i32, p: V3) -> Result<Option<V3>, String> {
-        Ok(self.navmesh(n)?.mesh.query_closest(p).map(|(q, _)| q))
+        Ok(self.navmesh(n)?.index.closest(p).map(|(q, _)| q))
     }
 
     fn add_path(&mut self, points: Vec<V3>) -> i32 {
@@ -288,10 +294,8 @@ impl Host3D<'_> {
 
     /// `FindPath`: the shortest way over a navigation mesh, or 0 if there is none.
     pub fn find_path(&mut self, n: i32, from: V3, to: V3) -> Result<i32, String> {
-        let mut finder = NavmeshAgent::new();
-        let ok = finder.calculate_path(&self.navmesh(n)?.mesh, from, to).is_ok();
-        let points = finder.path().to_vec();
-        if !ok || points.is_empty() {
+        let points = self.navmesh(n)?.index.path(from, to).unwrap_or_default();
+        if points.is_empty() {
             return Ok(0);
         }
         Ok(self.add_path(points))
@@ -332,7 +336,7 @@ impl Host3D<'_> {
             arrived: true,
             height,
             planned_for: None,
-            finder: NavmeshAgent::new(),
+            planned_ago: 0.0,
         };
         self.world.agents.push(Some(agent));
         Ok(self.world.agents.len() as i32)
@@ -394,14 +398,16 @@ impl Host3D<'_> {
             }
             let mut new_pos = pos;
             if let (Some(goal), false) = (ag.goal, ag.arrived) {
-                let replan = ag.path.is_empty() || ag.planned_for.is_none_or(|p| (p - goal).norm() > ag.radius.max(0.25));
+                ag.planned_ago += dt;
+                let moved = ag.planned_for.is_none_or(|p| (p - goal).norm() > ag.radius.max(0.25));
+                let replan = ag.path.is_empty() || (moved && ag.planned_ago >= 0.25);
                 if replan {
-                    let nav = &self.navmesh(ag.navmesh)?.mesh;
-                    if ag.finder.calculate_path(nav, pos, goal).is_ok() {
-                        ag.path = ag.finder.path().to_vec();
+                    if let Some(path) = self.navmesh(ag.navmesh)?.index.path(pos, goal) {
+                        ag.path = path;
                         ag.next = 1.min(ag.path.len().saturating_sub(1));
                     }
                     ag.planned_for = Some(goal);
+                    ag.planned_ago = 0.0;
                 }
                 // walk towards the next corner, past corners already reached
                 let mut budget = ag.speed * dt;

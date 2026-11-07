@@ -1,0 +1,79 @@
+; Queries: picking, navigation meshes, pathfinding, agents, erosion.
+Include "bench.nb"
+Graphics3D 1280, 720
+cam = BenchScene(0, 80, -90, 0, 0, 0)
+
+; a level: floor and 400 boxes, all pickable
+floorBox = CreateCube()
+ScaleEntity floorBox, 100, 0.1, 100
+PositionEntity floorBox, 0, -0.1, 0
+EntityPickMode floorBox, 2
+SeedRnd 3
+For i = 1 To 400
+    b = CreateCube()
+    ScaleEntity b, Rnd(0.5, 2), Rnd(0.5, 3), Rnd(0.5, 2)
+    PositionEntity b, Rnd(-90, 90), 1, Rnd(-90, 90)
+    EntityPickMode b, 2
+Next
+
+t = MilliSecs()
+hits = 0
+For i = 1 To 5000
+    If LinePick(Rnd(-90, 90), 20, Rnd(-90, 90), Rnd(-5, 5), -40, Rnd(-5, 5)) Then hits = hits + 1
+Next
+Report "queries", "LinePick among 400 boxes (each)", (MilliSecs() - t) / 5000.0, "ms"
+
+t = MilliSecs()
+nav = GenerateNavMesh(-95, -95, 190, 190, 1)
+Report "queries", "GenerateNavMesh 190x190 m, 1 m cells", MilliSecs() - t, "ms"
+
+t = MilliSecs()
+found = 0
+For i = 1 To 2000
+    p = FindPath(nav, Rnd(-90, 90), 0, Rnd(-90, 90), Rnd(-90, 90), 0, Rnd(-90, 90))
+    If p Then found = found + 1 : FreePath p
+Next
+Report "queries", "FindPath across the navmesh (each)", (MilliSecs() - t) / 2000.0, "ms"
+
+grid = CreatePathGrid(256, 256)
+For i = 1 To 15000
+    SetPathCost grid, Rand(0, 255), Rand(0, 255), 0
+Next
+t = MilliSecs()
+For i = 1 To 500
+    p = FindGridPath(grid, Rand(0, 255), Rand(0, 255), Rand(0, 255), Rand(0, 255))
+    If p Then FreePath p
+Next
+Report "queries", "grid A* on 256x256 with walls (each)", (MilliSecs() - t) / 500.0, "ms"
+
+; agents walking the navmesh
+Data 50, 200, 500
+For stage = 1 To 3
+    Read n
+    Dim walkers(n), agents(n)
+    For i = 0 To n - 1
+        w = CreateSphere(6)
+        PositionEntity w, NavMeshX(nav, Rnd(-90, 90), 0, Rnd(-90, 90)), 0.5, NavMeshZ(nav, Rnd(-90, 90), 0, Rnd(-90, 90))
+        walkers(i) = w
+        agents(i) = CreateAgent(w, nav, 4, 0.5)
+        AgentMoveTo agents(i), Rnd(-90, 90), 0, Rnd(-90, 90)
+    Next
+    Report "queries", $"{n} agents walking the navmesh", MeasureFps(200, 10), "fps"
+    For i = 0 To n - 1
+        FreeAgent agents(i)
+        FreeEntity walkers(i)
+    Next
+Next
+
+; terrain erosion
+land = CreateTerrain(256)
+ScaleEntity land, 3, 120, 3
+For x = 0 To 256
+    For z = 0 To 256
+        ModifyTerrain land, x, z, 0.5 + 0.4 * Sin(x * 3) * Cos(z * 2.5)
+    Next
+Next
+t = MilliSecs()
+ErodeTerrain land, 100000, 1
+Report "queries", "ErodeTerrain 256 grid, 100k raindrops", MilliSecs() - t, "ms"
+End

@@ -27,6 +27,7 @@ pub mod keyanim;
 pub mod material;
 pub mod mesh;
 pub mod mirror;
+pub mod navquery;
 pub mod model;
 pub mod movie;
 pub mod loading;
@@ -168,18 +169,28 @@ pub fn run_program(program: neptune_lang::Program) -> Result<(), RunError> {
     }
     // from now on Print/Write draw on the screen, like Blitz3D in graphics mode
     vm.core.output = neptune_vm::stdlib::Output::Shared(world.print_sink.clone());
+    // `neptune run --uncapped` (benchmarks): no vsync and one game update
+    // per rendered frame, so programs run as fast as the machine allows
+    let uncapped = std::env::var("NEPTUNE_UNCAPPED").is_ok_and(|v| v != "0");
     let event_loop = EventLoop::new().map_err(|e| RunError::Runtime(format!("cannot create window: {e}")))?;
     let mut executor = Executor::from_params(
         Some(event_loop),
         GraphicsContextParams {
             window_attributes: attrs,
-            vsync: true,
+            vsync: !uncapped,
             msaa_sample_count: world.quality.msaa(),
             graphics_server_constructor: Default::default(),
             named_objects: false,
         },
     );
     executor.set_resource_hot_reloading_enabled(false);
+    if uncapped {
+        // Fyrox runs updates at a fixed rate (60 a second); a tiny step with
+        // throttling on every frame makes it one update per frame instead
+        executor.set_desired_update_rate(10_000.0);
+        executor.set_throttle_threshold(0.0);
+        executor.set_throttle_frame_interval(0);
+    }
     let state = PluginState { vm: Some(vm), world, input, scene: Handle::NONE, error: None, overlay: Default::default(), scale: 1.0 };
     let state = std::rc::Rc::new(std::cell::RefCell::new(state));
     executor.add_plugin(NeptunePlugin { state: state.clone() });
@@ -289,6 +300,7 @@ impl Plugin for NeptunePlugin {
         if context.scenes.try_get(st.scene).is_err() {
             return Ok(());
         }
+        st.world.update_dt = context.dt;
         let result = {
             let scale = st.scale;
             let ui = context.user_interfaces.first_mut();

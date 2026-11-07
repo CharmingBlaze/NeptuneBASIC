@@ -27,6 +27,15 @@ fn rz(a: f32) -> Matrix3<f32> {
 }
 
 /// Blitz `rotationMatrix(pitch, yaw, roll)` (degrees): `yaw * pitch * roll`.
+/// The quaternion of a rotation matrix. Closed form (Shepperd's method),
+/// renormalised so a matrix that drifted a little from many turns still
+/// gives a clean rotation; nalgebra's `from_matrix` is an iterative solver
+/// and was a large part of the cost of moving thousands of entities.
+pub fn quat(m: &Matrix3<f32>) -> UnitQuaternion<f32> {
+    let q = UnitQuaternion::from_rotation_matrix(&fyrox::core::algebra::Rotation3::from_matrix_unchecked(*m));
+    UnitQuaternion::new_normalize(q.into_inner())
+}
+
 pub fn rotation(pitch: f32, yaw: f32, roll: f32) -> Matrix3<f32> {
     ry(-yaw.to_radians()) * rx(pitch.to_radians()) * rz(roll.to_radians())
 }
@@ -89,7 +98,7 @@ impl Xform {
     /// Rotation in Fyrox space.
     pub fn fyrox_rotation(&self) -> UnitQuaternion<f32> {
         let s = Matrix3::from_diagonal(&Vector3::new(-1.0, 1.0, 1.0));
-        UnitQuaternion::from_matrix(&(s * self.rot * s))
+        quat(&(s * self.rot * s))
     }
 }
 
@@ -126,6 +135,22 @@ impl WorldXform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quat_matches_the_iterative_solver() {
+        for (p, y, r) in [(0.0, 0.0, 0.0), (30.0, 45.0, 10.0), (-80.0, 170.0, -45.0), (89.0, -120.0, 179.0), (0.0, 180.0, 0.0)] {
+            let m = rotation(p, y, r);
+            let a = quat(&m);
+            let b = UnitQuaternion::from_matrix(&m);
+            assert!(a.angle_to(&b) < 1e-3, "{p} {y} {r}");
+        }
+        // a matrix that drifted from many small turns still gives a unit quaternion
+        let mut m = Matrix3::identity();
+        for _ in 0..10_000 {
+            m *= rotation(0.7, 1.3, 0.2);
+        }
+        assert!((quat(&m).into_inner().norm() - 1.0).abs() < 1e-5);
+    }
 
     fn close(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-3

@@ -231,6 +231,10 @@ pub struct World {
     pub scenes: Vec<Option<crate::scenes::SceneSlot>>,
     pub current_scene: usize,
     pub prefab_of: std::collections::HashMap<i32, i32>,
+    /// Bumped whenever an entity may have changed; the pick shapes in
+    /// `pick_cache` (scene, generation, shapes) are reused while it stays.
+    pub pick_gen: u64,
+    pub pick_cache: Option<(usize, u64, std::rc::Rc<Vec<crate::commands::PickTarget>>)>,
     /// (ext) Retained GUI widgets.
     pub gui: crate::gui::GuiState,
     /// (ext) `CreateBlendSpace` blend spaces and `CreateTrack` property tracks.
@@ -242,6 +246,8 @@ pub struct World {
     pub graded_cameras: std::collections::HashSet<Handle<Node>>,
     /// `CreateTileMap` tile maps.
     pub tilemaps: Vec<Option<crate::tilemap::TileMap>>,
+    /// Length of the latest engine update in seconds (1/60 unless `--uncapped`).
+    pub update_dt: f32,
     /// Unused mirror cameras made at start-up (see [`MIRROR_POOL`]).
     pub mirror_pool: Vec<Handle<Node>>,
     /// `SetGamma` ramps; `gamma_dirty` asks the engine to apply them (`UpdateGamma`).
@@ -308,6 +314,7 @@ impl Default for World {
             failed_meshes: Default::default(),
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
+            update_dt: crate::particles::UPDATE,
             shaders: Vec::new(),
             gui: Default::default(),
             watch: Default::default(),
@@ -321,6 +328,8 @@ impl Default for World {
             scenes: Vec::new(),
             current_scene: 0,
             prefab_of: Default::default(),
+            pick_gen: 0,
+            pick_cache: None,
             blend_spaces: Vec::new(),
             tracks: Vec::new(),
             joint_info: Default::default(),
@@ -414,11 +423,16 @@ impl<'a> Host3D<'a> {
         self.resources.clone()
     }
 
-    /// Returns a predicate that is true for the nodes of every entity except
-    /// `id`; used to keep subtree walks inside one entity.
+    /// Returns a predicate that is true for the nodes of other entities met
+    /// below `id`'s node; used to keep subtree walks inside one entity. Only
+    /// the entity's own child entities can be in its node tree (entities
+    /// found inside models are registered as children too), so only their
+    /// nodes are checked, not every entity's.
     pub fn other_entity_nodes(&self, id: i32) -> impl Fn(Handle<Node>) -> bool {
-        let set: std::collections::HashSet<Handle<Node>> =
-            self.entities().filter(|(i, _)| *i != id).map(|(_, e)| e.node).collect();
+        let set: std::collections::HashSet<Handle<Node>> = self
+            .ent_any(id)
+            .map(|e| e.children.iter().filter_map(|&c| self.ent_any(c as i32).map(|c| c.node)).collect())
+            .unwrap_or_default();
         move |h| set.contains(&h)
     }
 
@@ -484,6 +498,8 @@ impl<'a> Host3D<'a> {
     }
 
     pub fn ent_mut(&mut self, id: i32) -> Result<&mut Entity, String> {
+        // anything about an entity may change: cached pick shapes are stale
+        self.world.pick_gen += 1;
         let scene = self.world.current_scene;
         match usize::try_from(id - 1).ok().and_then(|i| self.world.entities.get_mut(i)).and_then(Option::as_mut) {
             Some(e) if e.scene == scene => Ok(e),
@@ -953,6 +969,7 @@ impl<'a> Host3D<'a> {
 
     /// The entities of the current scene.
     pub fn entities_mut(&mut self) -> impl Iterator<Item = (i32, &mut Entity)> {
+        self.world.pick_gen += 1;
         let scene = self.world.current_scene;
         self.world.entities.iter_mut().enumerate().filter_map(move |(i, e)| e.as_mut().filter(|e| e.scene == scene).map(|e| (i as i32 + 1, e)))
     }
