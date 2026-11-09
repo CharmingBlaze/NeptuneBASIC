@@ -1,0 +1,209 @@
+; Examples for Tiled maps and sprite sheets. Format: see tools/check_doc_examples.py.
+
+=== LoadTiledMap
+; a level drawn in the Tiled editor
+Graphics 800, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+If map = 0 Then RuntimeError "meadow.tmx not found"
+
+=== FreeTiledMap
+; between levels: free one before loading the next
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+FreeTiledMap map
+
+=== DrawTiledMap
+; every visible layer, scrolled by the 2D camera
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Camera2D 480, 240
+DrawTiledMap map
+
+=== TiledMapImage
+; the picture holding every tile, for drawing tile objects
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+coin = TiledObject(map, 1, "coin")
+DrawImage TiledMapImage(map), TiledObjectX(coin), TiledObjectY(coin), TiledObjectTile(coin)
+
+=== TiledMapProperty
+; a value typed in the map's own properties
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+AppTitle TiledMapProperty(map, "title", "Untitled")
+
+=== CountTiledLayers
+; how many tile layers the map has
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print CountTiledLayers(map)
+
+=== TiledLayerName
+; list the layers
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+For i = 1 To CountTiledLayers(map)
+    Print TiledLayerName(map, i)
+Next
+
+=== TiledLayer
+; a layer is a tile map: make the ground solid
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+ground = TiledLayer(map, "Ground")
+TileMapBody2D ground
+
+=== ShowTiledLayer
+; hide the decoration layer
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+ShowTiledLayer map, "Decor", False
+
+=== CountTiledObjects
+; how many coins are in the level
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print CountTiledObjects(map, "coin")
+
+=== TiledObject
+; the first object of the type spawn
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+start = TiledObject(map, 1, "spawn")
+
+=== FindTiledObject
+; an object by the name given to it in Tiled (0 if there is none)
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+goal = FindTiledObject(map, "Goal")
+
+=== TiledObjectName
+; the name typed in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectName(TiledObject(map, 1, "goal"))
+
+=== TiledObjectType
+; what kind of object the first one is
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectType(TiledObject(map, 1))
+
+=== TiledObjectLayer
+; which object layer it is on
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectLayer(TiledObject(map, 1))
+
+=== TiledObjectX
+; start the player at the marked place
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+start = TiledObject(map, 1, "spawn")
+px# = TiledObjectX(start)
+
+=== TiledObjectY
+; start the player at the marked place
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+start = TiledObject(map, 1, "spawn")
+py# = TiledObjectY(start)
+
+=== TiledObjectWidth
+; the size of an area drawn in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectWidth(FindTiledObject(map, "Goal"))
+
+=== TiledObjectHeight
+; the size of an area drawn in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectHeight(FindTiledObject(map, "Goal"))
+
+=== TiledObjectRotation
+; how far it was turned in Tiled, in degrees
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectRotation(TiledObject(map, 1))
+
+=== TiledObjectShape
+; 2 is a point
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+If TiledObjectShape(TiledObject(map, 1, "spawn")) = 2 Then Print "a point"
+
+=== TiledObjectTile
+; which frame a tile object shows
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectTile(TiledObject(map, 1, "coin"))
+
+=== CountTiledObjectPoints
+; a polyline drawn in Tiled makes a patrol route
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+route = TiledObject(map, 1)
+Print CountTiledObjectPoints(route)
+
+=== TiledObjectPointX
+; walk along a polyline drawn in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+route = TiledObject(map, 1)
+For i = 1 To CountTiledObjectPoints(route)
+    Print TiledObjectPointX(route, i)
+Next
+
+=== TiledObjectPointY
+; walk along a polyline drawn in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+route = TiledObject(map, 1)
+For i = 1 To CountTiledObjectPoints(route)
+    Print TiledObjectPointY(route, i)
+Next
+
+=== TiledObjectProperty
+; text typed on an object, or "" if it has none
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectProperty(TiledObject(map, 1, "goal"), "message", "Well done!")
+
+=== TiledObjectPropertyInt
+; what this coin is worth
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectPropertyInt(TiledObject(map, 1, "coin"), "value", 10)
+
+=== TiledObjectPropertyFloat
+; a number with a fraction
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+speed# = TiledObjectPropertyFloat(TiledObject(map, 1), "speed", 1.5)
+
+=== TiledObjectHasProperty
+; only some coins have a value of their own
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+If TiledObjectHasProperty(TiledObject(map, 1, "coin"), "value") Then Print "valued"
+
+=== LoadSheetImage
+; a character from Aseprite: trimmed frames come back the same size
+Graphics 800, 480, 0, 2
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+MidHandle hero
+DrawImage hero, 100, 100, 0
+
+=== CountSheetTags
+; how many named animations the sheet has
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+Print CountSheetTags(hero)
+
+=== SheetTagName
+; list the named animations
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+For i = 1 To CountSheetTags(hero)
+    Print SheetTagName(hero, i)
+Next
+
+=== SheetTagFirst
+; the frames of a tag, for CreateAnim2D
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+run = CreateAnim2D(hero, SheetTagFirst(hero, "run"), SheetTagLast(hero, "run"), 12)
+
+=== SheetTagLast
+; how long a tag is
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+Print SheetTagLast(hero, "run") - SheetTagFirst(hero, "run") + 1
+
+=== SheetFrameTime
+; how many milliseconds a frame shows
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+Print SheetFrameTime(hero, 0)
+
+=== Anim2DPlayTag
+; safe to ask every frame: it only restarts when the tag changes
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+anim = CreateAnim2D(hero)
+Anim2DPlayTag anim, "run"
+DrawImage hero, 100, 100, Anim2DFrame(anim)
+
+=== Anim2DTag
+; which tag is playing
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+anim = CreateAnim2D(hero)
+Anim2DPlayTag anim, "idle"
+Print Anim2DTag(anim)

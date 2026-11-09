@@ -616,6 +616,18 @@ fn tilemap_mut<'a>(h: &'a mut Host3D, m: i32) -> Result<&'a mut crate::tilemap::
         .ok_or_else(|| format!("Tile map {m} does not exist"))
 }
 
+fn tiled_point(h: &Host3D, a: &[Value]) -> Result<(f32, f32), String> {
+    let i = a[1].int();
+    let p = usize::try_from(i - 1).ok().and_then(|n| crate::tiled::object(h, a[0].int()).ok()?.def.points.get(n).copied());
+    p.ok_or_else(|| format!("point index {i} out of range"))
+}
+
+/// A tag of a sprite sheet image.
+fn sheet_tag(h: &Host3D, image: i32, name: &str) -> Result<crate::spritesheet::SheetTag, String> {
+    let info = h.image(image)?.sheet.as_ref().ok_or_else(|| format!("Image {image} has no tags (use LoadSheetImage)"))?;
+    info.tags.iter().find(|t| t.name.eq_ignore_ascii_case(name)).cloned().ok_or_else(|| format!("Image {image} has no tag '{name}'"))
+}
+
 fn add_tilemap(h: &mut Host3D, map: crate::tilemap::TileMap) -> Result<Value, String> {
     h.world.tilemaps.push(Some(map));
     int(h.world.tilemaps.len() as i32)
@@ -639,10 +651,20 @@ fn draw_tilemap(h: &mut Host3D, m: i32, x: f32, y: f32) -> Result<Value, String>
         crate::buffer::Buffer::Screen => (h.world.width as f32, h.world.height as f32),
         _ => (f32::MAX / 4.0, f32::MAX / 4.0),
     };
-    let x0 = (((-x) / tw).floor() as i32).max(0);
-    let y0 = (((-y) / th).floor() as i32).max(0);
-    let x1 = (((vw - x) / tw).ceil() as i32).min(map.width);
-    let y1 = (((vh - y) / th).ceil() as i32).min(map.height);
+    // the part of the world on screen: through the 2D camera, if it is on
+    let (mut left, mut top, mut right, mut bottom) = (0.0, 0.0, vw, vh);
+    if h.world.canvas.camera_on && vw < f32::MAX / 8.0 {
+        let cam = h.world.canvas.camera;
+        let corners = [cam.to_world(0.0, 0.0), cam.to_world(vw, 0.0), cam.to_world(0.0, vh), cam.to_world(vw, vh)];
+        (left, top, right, bottom) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for (cx, cy) in corners {
+            (left, top, right, bottom) = (left.min(cx), top.min(cy), right.max(cx), bottom.max(cy));
+        }
+    }
+    let x0 = (((left - x) / tw).floor() as i32).max(0);
+    let y0 = (((top - y) / th).floor() as i32).max(0);
+    let x1 = (((right - x) / tw).ceil() as i32).min(map.width);
+    let y1 = (((bottom - y) / th).ceil() as i32).min(map.height);
     let mut cells = Vec::new();
     for cy in y0..y1 {
         for cx in x0..x1 {
@@ -3498,6 +3520,79 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let text = tilemap(h, a[0].int())?.save();
         int(std::fs::write(&*a[1].str(), text).is_ok() as i32)
     }),
+    // (ext) maps made in the Tiled editor (see tiled.rs)
+    ("%LoadTiledMap$file", |h, a, _| int(crate::tiled::load(h, &a[0].str())?)),
+    ("FreeTiledMap%map", |h, a, _| {
+        crate::tiled::free(h, a[0].int())?;
+        VOID
+    }),
+    ("DrawTiledMap%map#x=0#y=0", |h, a, _| {
+        let layers = crate::tiled::map(h, a[0].int())?.layers.clone();
+        for l in layers.iter().filter(|l| l.visible) {
+            draw_tilemap(h, l.map, a[1].float() + l.offset.0, a[2].float() + l.offset.1)?;
+        }
+        VOID
+    }),
+    ("%TiledMapImage%map", |h, a, _| int(crate::tiled::map(h, a[0].int())?.image)),
+    ("$TiledMapProperty%map$name$fallback=\"\"", |h, a, _| {
+        let v = crate::level::prop(&crate::tiled::map(h, a[0].int())?.props, &a[1].str()).map(str::to_string);
+        Ok(Value::Str(v.unwrap_or_else(|| a[2].str().to_string()).as_str().into()))
+    }),
+    ("%CountTiledLayers%map", |h, a, _| int(crate::tiled::map(h, a[0].int())?.layers.len() as i32)),
+    ("$TiledLayerName%map%index", |h, a, _| {
+        let i = a[1].int();
+        let name = usize::try_from(i - 1).ok().and_then(|n| crate::tiled::map(h, a[0].int()).ok()?.layers.get(n).map(|l| l.name.clone()));
+        Ok(Value::Str(name.ok_or_else(|| format!("layer index {i} out of range"))?.as_str().into()))
+    }),
+    ("%TiledLayer%map$name", |h, a, _| {
+        let name = a[1].str();
+        int(crate::tiled::map(h, a[0].int())?.layers.iter().find(|l| l.name.eq_ignore_ascii_case(&name)).map_or(0, |l| l.map))
+    }),
+    ("ShowTiledLayer%map$name%show=1", |h, a, _| {
+        let (m, name) = (a[0].int(), a[1].str());
+        crate::tiled::map(h, m)?;
+        if let Some(t) = h.world.tiled_maps[m as usize - 1].as_mut() {
+            t.layers.iter_mut().filter(|l| l.name.eq_ignore_ascii_case(&name)).for_each(|l| l.visible = a[2].int() != 0);
+        }
+        VOID
+    }),
+    ("%CountTiledObjects%map$type=\"\"", |h, a, _| int(crate::tiled::objects(h, a[0].int(), &a[1].str())?.len() as i32)),
+    ("%TiledObject%map%index$type=\"\"", |h, a, _| {
+        let (list, i) = (crate::tiled::objects(h, a[0].int(), &a[2].str())?, a[1].int());
+        let found = usize::try_from(i - 1).ok().and_then(|n| list.get(n)).copied();
+        int(found.ok_or_else(|| format!("TiledObject index {i} out of range (map has {})", list.len()))?)
+    }),
+    ("%FindTiledObject%map$name", |h, a, _| {
+        let name = a[1].str();
+        let list = crate::tiled::objects(h, a[0].int(), "")?;
+        int(list.into_iter().find(|&o| crate::tiled::object(h, o).is_ok_and(|x| x.def.name.eq_ignore_ascii_case(&name))).unwrap_or(0))
+    }),
+    ("$TiledObjectName%obj", |h, a, _| Ok(Value::Str(crate::tiled::object(h, a[0].int())?.def.name.as_str().into()))),
+    ("$TiledObjectType%obj", |h, a, _| Ok(Value::Str(crate::tiled::object(h, a[0].int())?.def.kind.as_str().into()))),
+    ("$TiledObjectLayer%obj", |h, a, _| Ok(Value::Str(crate::tiled::object(h, a[0].int())?.def.layer.as_str().into()))),
+    ("#TiledObjectX%obj", |h, a, _| float(crate::tiled::object(h, a[0].int())?.def.x)),
+    ("#TiledObjectY%obj", |h, a, _| float(crate::tiled::object(h, a[0].int())?.def.y)),
+    ("#TiledObjectWidth%obj", |h, a, _| float(crate::tiled::object(h, a[0].int())?.def.w)),
+    ("#TiledObjectHeight%obj", |h, a, _| float(crate::tiled::object(h, a[0].int())?.def.h)),
+    ("#TiledObjectRotation%obj", |h, a, _| float(crate::tiled::object(h, a[0].int())?.def.rotation)),
+    ("%TiledObjectShape%obj", |h, a, _| int(crate::tiled::object(h, a[0].int())?.def.shape)),
+    ("%TiledObjectTile%obj", |h, a, _| int(crate::tiled::object(h, a[0].int())?.tile)),
+    ("%CountTiledObjectPoints%obj", |h, a, _| int(crate::tiled::object(h, a[0].int())?.def.points.len() as i32)),
+    ("#TiledObjectPointX%obj%index", |h, a, _| float(tiled_point(h, a)?.0)),
+    ("#TiledObjectPointY%obj%index", |h, a, _| float(tiled_point(h, a)?.1)),
+    ("$TiledObjectProperty%obj$name$fallback=\"\"", |h, a, _| {
+        let v = crate::level::prop(&crate::tiled::object(h, a[0].int())?.def.props, &a[1].str()).map(str::to_string);
+        Ok(Value::Str(v.unwrap_or_else(|| a[2].str().to_string()).as_str().into()))
+    }),
+    ("%TiledObjectPropertyInt%obj$name%fallback=0", |h, a, _| {
+        let v = crate::level::prop(&crate::tiled::object(h, a[0].int())?.def.props, &a[1].str()).and_then(crate::level::text_int);
+        int(v.unwrap_or(a[2].int()))
+    }),
+    ("#TiledObjectPropertyFloat%obj$name#fallback=0", |h, a, _| {
+        let v = crate::level::prop(&crate::tiled::object(h, a[0].int())?.def.props, &a[1].str()).and_then(|s| s.trim().parse::<f32>().ok());
+        float(v.unwrap_or(a[2].float()))
+    }),
+    ("%TiledObjectHasProperty%obj$name", |h, a, _| int(crate::level::prop(&crate::tiled::object(h, a[0].int())?.def.props, &a[1].str()).is_some() as i32)),
     ("FreeTileMap%map", |h, a, _| {
         tilemap(h, a[0].int())?;
         h.world.tilemaps[a[0].int() as usize - 1] = None;
@@ -3569,6 +3664,21 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%ImageLoaded%image", |h, a, _| int(crate::loading::image_state(h, a[0].int())?)),
     ("$ImageName%image", |h, a, _| Ok(Value::Str(h.image(a[0].int())?.path.as_str().into()))),
     ("%LoadImage$file", |h, a, _| add_image(h, crate::image2d::Image2D::load(&a[0].str(), 0, 0, 0, 1))),
+    // (ext) sprite sheets from Aseprite and TexturePacker (see spritesheet.rs)
+    ("%LoadSheetImage$file", |h, a, _| add_image(h, crate::spritesheet::load(&a[0].str()))),
+    ("%CountSheetTags%image", |h, a, _| int(h.image(a[0].int())?.sheet.as_ref().map_or(0, |s| s.tags.len() as i32))),
+    ("$SheetTagName%image%index", |h, a, _| {
+        let i = a[1].int();
+        let name = usize::try_from(i - 1).ok().and_then(|n| h.image(a[0].int()).ok()?.sheet.as_ref()?.tags.get(n).map(|t| t.name.clone()));
+        Ok(Value::Str(name.ok_or_else(|| format!("tag index {i} out of range"))?.as_str().into()))
+    }),
+    ("%SheetTagFirst%image$tag", |h, a, _| int(sheet_tag(h, a[0].int(), &a[1].str())?.first)),
+    ("%SheetTagLast%image$tag", |h, a, _| int(sheet_tag(h, a[0].int(), &a[1].str())?.last)),
+    ("%SheetFrameTime%image%frame", |h, a, _| {
+        let f = a[1].int();
+        let ms = usize::try_from(f).ok().and_then(|n| h.image(a[0].int()).ok()?.sheet.as_ref()?.frame_ms.get(n).copied());
+        int(ms.unwrap_or(0) as i32)
+    }),
     ("%LoadAnimImage$file%width%height%first%count", |h, a, _| {
         let n = |i: usize| a[i].int().max(0) as u32;
         add_image(h, crate::image2d::Image2D::load(&a[0].str(), n(1), n(2), n(3), n(4)))
@@ -3663,6 +3773,30 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         anim2d(h, a[0].int())?.play(a[1].int(), a[2].int(), a[3].float(), a[4].int());
         VOID
     }),
+    // (ext) plays a tag of a sprite sheet; does nothing if it is already playing
+    ("Anim2DPlayTag%anim$tag%mode=0", |h, a, _| {
+        let (id, name) = (a[0].int(), a[1].str());
+        if anim2d(h, id)?.tag == *name {
+            return VOID;
+        }
+        let image = anim2d(h, id)?.image;
+        let tag = sheet_tag(h, image, &name)?;
+        let info = h.image(image)?.sheet.clone().unwrap_or_default();
+        let step = if tag.last >= tag.first { 1 } else { -1 };
+        let mut times = Vec::new();
+        let mut f = tag.first;
+        loop {
+            times.push(info.frame_ms.get(f as usize).copied().unwrap_or(100) as f32 / 1000.0);
+            if f == tag.last {
+                break;
+            }
+            f += step;
+        }
+        let mode = if a[2].int() == 0 { tag.mode } else { a[2].int() };
+        anim2d(h, id)?.play_tag(&name, tag.first, tag.last, mode, times);
+        VOID
+    }),
+    ("$Anim2DTag%anim", |h, a, _| Ok(Value::Str(anim2d(h, a[0].int())?.tag.as_str().into()))),
     ("Anim2DPause%anim%pause=1", |h, a, _| {
         anim2d(h, a[0].int())?.pause(a[1].int() != 0);
         VOID

@@ -1,0 +1,114 @@
+; A 2D level made in the Tiled editor, with a hero from a sprite sheet.
+; The map comes from examples/media/tiled/meadow.tmx: its layers, where you
+; start, the coins and what they are worth, the pits and the goal.
+; The hero's run, idle and jump come from tags in hero.json (Aseprite's format).
+; See docs/TOOLS2D.md.
+;
+; Left/Right to run, Space to jump, Esc to quit.
+
+Graphics 960, 480, 0, 2
+AppTitle "A level from Tiled"
+SetBuffer BackBuffer()
+
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+If map = 0 Then RuntimeError "could not load meadow.tmx"
+
+; a layer is an ordinary tile map, so the ground can become solid
+ground = TiledLayer(map, "Ground")
+TileMapBody2D ground
+mapWidth = TileMapWidth(ground) * 32
+
+; the Tiled point called Start: where the player begins
+start = TiledObject(map, 1, "spawn")
+player = CreateBody2D(0, TiledObjectX(start), TiledObjectY(start))
+Body2DCapsule player, 20, 30
+Body2DFixedRotation player, True
+Body2DFriction player, 0
+
+; a sprite sheet is an ordinary animation image that knows its tags
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+If hero = 0 Then RuntimeError "could not load hero.json"
+MidHandle hero
+anim = CreateAnim2D(hero)
+Anim2DPlayTag anim, "idle"
+
+; coins: tile objects whose worth was typed in Tiled
+coinCount = CountTiledObjects(map, "coin")
+Dim coins(coinCount)
+For i = 1 To coinCount
+    coins(i) = TiledObject(map, i, "coin")
+Next
+tiles = TiledMapImage(map)
+
+goal = TiledObject(map, 1, "goal")
+score = 0
+won = False
+facing = 1
+camx# = TiledObjectX(start)
+
+Function Inside(px#, py#, area)
+    x# = TiledObjectX(area)
+    y# = TiledObjectY(area)
+    Return px >= x And py >= y And px <= x + TiledObjectWidth(area) And py <= y + TiledObjectHeight(area)
+End Function
+
+While Not KeyHit(1)
+    vx# = 0
+    If KeyDown(203) Then vx = -230 : facing = -1
+    If KeyDown(205) Then vx = 230 : facing = 1
+    SetVelocity2D player, vx, Body2DVY(player)
+    feet# = Body2DY(player) + 16
+    onground = RayCast2D(Body2DX(player), feet + 1, Body2DX(player), feet + 6) <> 0
+    If KeyHit(57) And onground Then SetVelocity2D player, vx, -560
+
+    ; the tag says which frames and how long each shows; asking for the one
+    ; already playing changes nothing, so this can run every frame
+    If Not onground
+        Anim2DPlayTag anim, "jump"
+    ElseIf vx <> 0
+        Anim2DPlayTag anim, "run"
+    Else
+        Anim2DPlayTag anim, "idle"
+    End If
+
+    px# = Body2DX(player)
+    py# = Body2DY(player)
+    For i = 1 To coinCount
+        If coins(i)
+            cx# = TiledObjectX(coins(i)) + 16
+            cy# = TiledObjectY(coins(i)) + 16
+            If Abs(px - cx) < 28 And Abs(py - cy) < 32
+                score += TiledObjectPropertyInt(coins(i), "value", 10)
+                coins(i) = 0
+            End If
+        End If
+    Next
+
+    ; areas drawn as rectangles in Tiled
+    For i = 1 To CountTiledObjects(map, "hazard")
+        If Inside(px, py + 16, TiledObject(map, i, "hazard"))
+            PositionBody2D player, TiledObjectX(start), TiledObjectY(start)
+            SetVelocity2D player, 0, 0
+        End If
+    Next
+    If Inside(px, py, goal) Then won = True
+
+    camx = camx + (px - camx) * 0.12
+    If camx < 480 Then camx = 480
+    If camx > mapWidth - 480 Then camx = mapWidth - 480
+
+    ClsColor 130, 190, 240 : Cls
+    Camera2D camx, 240
+    DrawTiledMap map
+    For i = 1 To coinCount
+        If coins(i) Then DrawImage tiles, TiledObjectX(coins(i)), TiledObjectY(coins(i)), TiledObjectTile(coins(i))
+    Next
+    DrawImageEx hero, px, py, Anim2DFrame(anim), 0, facing, 1
+
+    Camera2DEnable False
+    Color 30, 40, 60
+    Text 16, 12, TiledMapProperty(map, "title") + "    Score: " + score
+    If won Then Text 16, 34, "You made it! Esc to quit."
+    Flip
+Wend
+End

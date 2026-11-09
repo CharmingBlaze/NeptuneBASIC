@@ -76,6 +76,8 @@ pub mod probe;
 pub mod primitive;
 pub mod quality;
 pub mod screenshot;
+pub mod spritesheet;
+pub mod tiled;
 pub mod sound;
 pub mod sprite;
 pub mod terrain;

@@ -101,7 +101,7 @@ fn json_text(bytes: &[u8]) -> Result<&str, String> {
 }
 
 /// A custom property's value as text; booleans become `1` and `0`.
-fn prop_text(v: &Json) -> String {
+pub(crate) fn prop_text(v: &Json) -> String {
     match v {
         Json::Str(s) => s.clone(),
         Json::Bool(b) => (if *b { "1" } else { "0" }).to_string(),

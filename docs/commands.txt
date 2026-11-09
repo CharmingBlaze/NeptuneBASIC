@@ -317,6 +317,35 @@ WritePixelFast: Sets the pixel at x, y of a locked buffer to the ARGB colour arg
 CopyRect: Copies a width by height rectangle at src_x, src_y of src_buffer to dest_x, dest_y of dest_buffer (both default to the current buffer).
 
 # Tile maps
+LoadTiledMap: (ext) Loads a map made in the Tiled editor (.tmx or .tmj) with its tilesets, layers and objects, and returns its handle, or 0 on failure. See docs/TOOLS2D.md.
+FreeTiledMap: (ext) Frees a Tiled map with its layers, objects and picture.
+DrawTiledMap: (ext) Draws every visible layer of a Tiled map in order, with its top-left corner at x, y.
+TiledMapImage: (ext) Returns the animation image holding every tile of a Tiled map.
+TiledMapProperty: (ext) Returns a custom property of a Tiled map as text, or fallback if it does not have it.
+CountTiledLayers: (ext) Returns how many tile layers a Tiled map has.
+TiledLayerName: (ext) Returns the name of tile layer number index (from 1).
+TiledLayer: (ext) Returns the layer called name as a tile map for the tile map commands, or 0 if there is none.
+ShowTiledLayer: (ext) Sets whether DrawTiledMap draws the layer called name.
+CountTiledObjects: (ext) Returns how many objects a Tiled map has, or only how many of a type if type is given.
+TiledObject: (ext) Returns object number index (from 1) of a Tiled map, counting as CountTiledObjects does.
+FindTiledObject: (ext) Returns the object called name in a Tiled map, or 0 if there is none.
+TiledObjectName: (ext) Returns the name of a Tiled object.
+TiledObjectType: (ext) Returns the type (class in some versions of Tiled) of a Tiled object.
+TiledObjectLayer: (ext) Returns the name of the object layer a Tiled object is on.
+TiledObjectX: (ext) Returns the left edge of a Tiled object, in pixels from the left of the map.
+TiledObjectY: (ext) Returns the top edge of a Tiled object, in pixels from the top of the map.
+TiledObjectWidth: (ext) Returns the width of a Tiled object in pixels.
+TiledObjectHeight: (ext) Returns the height of a Tiled object in pixels.
+TiledObjectRotation: (ext) Returns the rotation of a Tiled object in degrees clockwise.
+TiledObjectShape: (ext) Returns the shape of a Tiled object: 0 rectangle, 1 ellipse, 2 point, 3 polygon, 4 polyline, 5 tile.
+TiledObjectTile: (ext) Returns the frame of TiledMapImage that a tile object shows, or -1 for other objects.
+CountTiledObjectPoints: (ext) Returns how many corners a polygon or polyline Tiled object has.
+TiledObjectPointX: (ext) Returns the x of corner number index (from 1) of a Tiled object, in map pixels.
+TiledObjectPointY: (ext) Returns the y of corner number index (from 1) of a Tiled object, in map pixels.
+TiledObjectProperty: (ext) Returns a custom property of a Tiled object as text, or fallback if it does not have it.
+TiledObjectPropertyInt: (ext) Returns a custom property of a Tiled object as a whole number, or fallback if it is missing or not a number.
+TiledObjectPropertyFloat: (ext) Returns a custom property of a Tiled object as a decimal number, or fallback if it is missing or not a number.
+TiledObjectHasProperty: (ext) Returns 1 if a Tiled object has the custom property name, otherwise 0.
 CreateTileMap: (ext) Creates an empty tile map of width by height tiles, whose tiles are frames of the animation image image, and returns it.
 LoadTileMap: (ext) Loads a tile map saved with SaveTileMap from file and draws it with the animation image image (one frame per tile). Returns the tile map handle, or 0 if the file cannot be read.
 SaveTileMap: (ext) Saves tile map map (its tiles, terrains and autotile rules) to a text file. Returns 1 on success, 0 on failure.
@@ -343,6 +372,14 @@ WorldToScreen2DX: (ext) Returns the screen X coordinate where world point x,y ap
 WorldToScreen2DY: (ext) Returns the screen Y coordinate where world point x,y appears with the 2D camera.
 
 # 2D animation
+LoadSheetImage: (ext) Loads a sprite sheet from the .json file written by Aseprite or TexturePacker as an animation image of equal frames, keeping its tags and frame times. Returns the image, or 0 on failure. See docs/TOOLS2D.md.
+CountSheetTags: (ext) Returns how many tags a sprite sheet image has.
+SheetTagName: (ext) Returns the name of tag number index (from 1) of a sprite sheet image.
+SheetTagFirst: (ext) Returns the first frame of the tag called tag.
+SheetTagLast: (ext) Returns the last frame of the tag called tag.
+SheetFrameTime: (ext) Returns how many milliseconds a frame of a sprite sheet shows, or 0 for other images.
+Anim2DPlayTag: (ext) Plays a tag of a sprite sheet with its own frame times and direction, or does nothing if that tag is already playing. mode is 0 for the tag's own direction, 1 loop, 2 ping-pong or 3 play once.
+Anim2DTag: (ext) Returns the name of the tag anim is playing, or "" if none.
 CreateAnim2D: (ext) Creates an animation that plays frames first to last (-1 = last frame) of the animation image image at fps frames a second. mode is 1 loop, 2 ping-pong, 3 play once. Returns the animation handle.
 Anim2DPlay: (ext) Starts anim playing frames first to last at fps frames a second, with mode 1 loop, 2 ping-pong or 3 play once.
 Anim2DPause: (ext) Pauses anim (pause 1) or resumes it (pause 0).

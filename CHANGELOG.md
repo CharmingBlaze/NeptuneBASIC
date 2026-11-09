@@ -4,6 +4,23 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## 2D levels and sprites from other tools
+
+* **Maps from Tiled** – `LoadTiledMap` loads a level drawn in the free Tiled
+  editor, with all its layers and flipped tiles, and `DrawTiledMap` draws it.
+  Each layer is an ordinary tile map (`TiledLayer`), so it can be made solid
+  or changed during the game.
+* **Objects** – places and areas marked in Tiled, with their custom values:
+  `CountTiledObjects` and `TiledObject` find every coin or enemy of a type.
+* **Sprite sheets** – `LoadSheetImage` loads sheets from Aseprite and
+  TexturePacker. `Anim2DPlayTag` plays Aseprite's named animations with their
+  own timing, and can be called every frame.
+* See the new guide, [docs/TOOLS2D.md](docs/TOOLS2D.md), and the small game
+  `examples/tiledmap.nb`.
+* `neptune build` also packs the tilesets and pictures maps and sheets use.
+* **Fixed:** with `Camera2D` on, `DrawTileMap` stopped drawing tile maps wider
+  than the screen once you scrolled past the first screenful.
+
 ## Call stacks on runtime errors
 
 * When a program stops with a runtime error, the message now lists the calls

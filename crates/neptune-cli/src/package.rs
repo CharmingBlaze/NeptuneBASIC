@@ -185,6 +185,21 @@ fn add_model_files(rel: &Path, root: &Path, found: &mut BTreeSet<PathBuf>) {
     }
 }
 
+/// Adds the files a Tiled map or a sprite sheet needs: tilesets and images.
+fn add_2d_files(rel: &Path, root: &Path, found: &mut BTreeSet<PathBuf>) {
+    let is = |ext: &str| rel.extension().is_some_and(|x| x.eq_ignore_ascii_case(ext));
+    if !is("tmx") && !is("tmj") && !is("json") {
+        return;
+    }
+    let path = rel.to_string_lossy();
+    let read = |p: &Path| std::fs::read_to_string(root.join(p)).map_err(|e| e.to_string());
+    let mut files = neptune_runtime::tiled::dependencies(&path, &read).unwrap_or_default();
+    if let Some(sheet) = read(rel).ok().and_then(|text| neptune_runtime::spritesheet::parse_sheet(&text).ok()) {
+        files.push(neptune_runtime::spritesheet::image_path(&path, &sheet));
+    }
+    found.extend(files.into_iter().filter(|p| root.join(p).is_file()));
+}
+
 /// Media files named by string literals that exist relative to `root`.
 pub fn media_files(entries: &[Entry], root: &Path) -> BTreeSet<PathBuf> {
     let mut found = BTreeSet::new();
@@ -200,6 +215,7 @@ pub fn media_files(entries: &[Entry], root: &Path) -> BTreeSet<PathBuf> {
             if root.join(&rel).is_file() {
                 found.insert(rel.clone());
                 add_model_files(&rel, root, &mut found);
+                add_2d_files(&rel, root, &mut found);
             }
         }
     }
@@ -290,6 +306,24 @@ pub fn build(main: &str, out: Option<&str>, console: bool) -> Result<PathBuf, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_maps_and_a_sheets_files_are_packed() {
+        let root = std::env::temp_dir().join(format!("neptune_pack2d_{}", std::process::id()));
+        std::fs::create_dir_all(root.join("maps")).unwrap();
+        let map = r#"{"tilewidth":2,"tileheight":2,"width":1,"height":1,"tilesets":[{"firstgid":1,"source":"a.tsj"}],"layers":[]}"#;
+        std::fs::write(root.join("maps/m.tmj"), map).unwrap();
+        std::fs::write(root.join("maps/a.tsj"), r#"{"name":"a","image":"a.png","tilewidth":2,"tileheight":2,"tilecount":1,"columns":1}"#).unwrap();
+        std::fs::write(root.join("maps/a.png"), b"x").unwrap();
+        std::fs::write(root.join("s.json"), r#"{"frames":[{"frame":{"x":0,"y":0,"w":1,"h":1}}],"meta":{"image":"s.png"}}"#).unwrap();
+        std::fs::write(root.join("s.png"), b"x").unwrap();
+        let text = "m = LoadTiledMap(\"maps/m.tmj\") : s = LoadSheetImage(\"s.json\")";
+        let entries = vec![Entry { key: "m".into(), canon: "m".into(), text: text.into() }];
+        let found = media_files(&entries, &root);
+        std::fs::remove_dir_all(&root).ok();
+        let names: Vec<String> = found.iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
+        assert_eq!(names, ["maps/a.png", "maps/a.tsj", "maps/m.tmj", "s.json", "s.png"]);
+    }
 
     #[test]
     fn a_levels_prefabs_are_packed() {

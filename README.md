@@ -112,6 +112,7 @@ neptune run examples/games/orbrun.nb
 * [Shaders, materials and post-processing](docs/SHADERS.md)
 * [Sound: playing, 3D sound, mixing and effects](docs/SOUND.md)
 * [Making levels in Blender](docs/BLENDER.md)
+* [2D levels and sprites from Tiled and Aseprite](docs/TOOLS2D.md)
 * [Changelog](CHANGELOG.md): what changed, commit by commit
 * [Architecture](docs/ARCHITECTURE.md)
 * [Implementation status](docs/STATUS.md)

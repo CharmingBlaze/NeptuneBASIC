@@ -292,6 +292,9 @@ pub struct World {
     pub graded_cameras: std::collections::HashSet<Handle<Node>>,
     /// `CreateTileMap` tile maps.
     pub tilemaps: Vec<Option<crate::tilemap::TileMap>>,
+    /// (ext) `LoadTiledMap` maps and their objects.
+    pub tiled_maps: Vec<Option<crate::tiled::TiledMap>>,
+    pub tiled_objects: Vec<Option<crate::tiled::TiledObject>>,
     /// Length of the latest engine update in seconds (1/60 unless `--uncapped`).
     pub update_dt: f32,
     /// Unused mirror cameras made at start-up (see [`MIRROR_POOL`]).
@@ -360,6 +363,8 @@ impl Default for World {
             failed_meshes: Default::default(),
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
+            tiled_maps: Vec::new(),
+            tiled_objects: Vec::new(),
             update_dt: crate::particles::UPDATE,
             shaders: Vec::new(),
             shader_cache: Default::default(),

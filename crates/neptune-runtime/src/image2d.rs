@@ -34,6 +34,11 @@ pub struct Image2D {
     pub dirty: bool,
     /// File the image was loaded from ("" if made in the program).
     pub path: String,
+    /// (ext) Frame tags and times from `LoadSheetImage`.
+    pub sheet: Option<Box<crate::spritesheet::SheetInfo>>,
+    /// Frames are drawn half a pixel in from their edges: tightly laid out
+    /// frames would otherwise pick up their neighbours when filtered.
+    inset_frames: bool,
 }
 
 fn make_texture(img: &RgbaImage) -> TextureResource {
@@ -87,6 +92,8 @@ impl Image2D {
             mask,
             dirty: false,
             path: String::new(),
+            sheet: None,
+            inset_frames: false,
         })
     }
 
@@ -106,7 +113,16 @@ impl Image2D {
         c.handle = self.handle;
         c.scale = self.scale;
         c.set_mask(self.mask);
+        c.sheet = self.sheet.clone();
+        c.inset_frames = self.inset_frames;
         c
+    }
+
+    /// For art with real transparency, where black must stay black: masks a
+    /// colour no drawing tool's palette is likely to use.
+    pub fn use_alpha_only(&mut self) {
+        self.set_mask([1, 254, 3]);
+        self.inset_frames = true;
     }
 
     pub fn pixels(&self) -> &RgbaImage {
@@ -270,7 +286,8 @@ impl Image2D {
     pub fn uv(&self, frame: u32, sub: Option<Rect<f32>>) -> Result<Rect<f32>, String> {
         let (ox, oy) = self.frame_origin(frame)?;
         let (w, h) = (self.pixels.width() as f32, self.pixels.height() as f32);
-        let r = sub.unwrap_or_else(|| Rect::new(0.0, 0.0, self.frame_w as f32, self.frame_h as f32));
+        let inset = if self.inset_frames { 0.5 } else { 0.0 };
+        let r = sub.unwrap_or_else(|| Rect::new(inset, inset, self.frame_w as f32 - 2.0 * inset, self.frame_h as f32 - 2.0 * inset));
         Ok(Rect::new((ox as f32 + r.x()) / w, (oy as f32 + r.y()) / h, r.w() / w, r.h() / h))
     }
 

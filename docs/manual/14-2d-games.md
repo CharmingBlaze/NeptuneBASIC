@@ -48,6 +48,9 @@ Wend
 
 Testing the ground under the player:
 
+To draw levels in the Tiled editor and animate characters in Aseprite, see
+[2D levels and sprites from other tools](../TOOLS2D.md).
+
 ```basic
 ; px, py is the player's position, relative to the map's corner
 map = CreateTileMap(CreateImage(32, 32, 4), 50, 20)
