@@ -7,9 +7,12 @@ map = LoadTiledMap("examples/media/tiled/meadow.tmx")
 If map = 0 Then RuntimeError "meadow.tmx not found"
 
 === FreeTiledMap
-; between levels: free one before loading the next
-map = LoadTiledMap("examples/media/tiled/meadow.tmx")
-FreeTiledMap map
+; a game with two levels: free each map before loading the next
+For level = 1 To 2
+    map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+    Print "Level " + level + " has " + CountTiledObjects(map, "coin") + " coins"   ; 8 coins
+    FreeTiledMap map                  ; the map, its layers, objects and picture are freed
+Next
 
 === DrawTiledMap
 ; every visible layer, scrolled by the 2D camera
@@ -24,9 +27,12 @@ coin = TiledObject(map, 1, "coin")
 DrawImage TiledMapImage(map), TiledObjectX(coin), TiledObjectY(coin), TiledObjectTile(coin)
 
 === TiledMapProperty
-; a value typed in the map's own properties
+; read the map's own properties, with a fallback for ones the map does not set
 map = LoadTiledMap("examples/media/tiled/meadow.tmx")
-AppTitle TiledMapProperty(map, "title", "Untitled")
+title$ = TiledMapProperty(map, "title", "Untitled")
+music$ = TiledMapProperty(map, "music", "none")
+Print title$                          ; Meadow Run
+Print music$                          ; none
 
 === CountTiledLayers
 ; how many tile layers the map has
@@ -47,9 +53,17 @@ ground = TiledLayer(map, "Ground")
 TileMapBody2D ground
 
 === ShowTiledLayer
-; hide the decoration layer
+; draw a level, and let the player switch the Decor layer off and on with D
+Graphics 960, 480
 map = LoadTiledMap("examples/media/tiled/meadow.tmx")
-ShowTiledLayer map, "Decor", False
+show = True
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_D) Then show = Not show
+    ShowTiledLayer map, "Decor", show
+    Cls
+    DrawTiledMap map
+    Flip
+Wend
 
 === CountTiledObjects
 ; how many coins are in the level
@@ -57,14 +71,20 @@ map = LoadTiledMap("examples/media/tiled/meadow.tmx")
 Print CountTiledObjects(map, "coin")
 
 === TiledObject
-; the first object of the type spawn
+; walk through all the coins of a map and read the value typed on each in Tiled
 map = LoadTiledMap("examples/media/tiled/meadow.tmx")
-start = TiledObject(map, 1, "spawn")
+For i = 1 To CountTiledObjects(map, "coin")
+    coin = TiledObject(map, i, "coin")
+    Print "coin " + i + " is worth " + TiledObjectProperty(coin, "value")
+Next                                  ; the first line is: coin 1 is worth 10
 
 === FindTiledObject
-; an object by the name given to it in Tiled (0 if there is none)
+; find the level's goal by the name given to it in Tiled
 map = LoadTiledMap("examples/media/tiled/meadow.tmx")
 goal = FindTiledObject(map, "Goal")
+If goal = 0 Then RuntimeError "This level has no Goal"
+Print TiledObjectType(goal)           ; goal
+Print TiledObjectWidth(goal) + " x " + TiledObjectHeight(goal)   ; 32.0 x 96.0
 
 === TiledObjectName
 ; the name typed in Tiled
@@ -151,9 +171,11 @@ map = LoadTiledMap("examples/media/tiled/meadow.tmx")
 Print TiledObjectPropertyInt(TiledObject(map, 1, "coin"), "value", 10)
 
 === TiledObjectPropertyFloat
-; a number with a fraction
+; a coin carries a value typed in Tiled; use 1.5 when a property is missing
 map = LoadTiledMap("examples/media/tiled/meadow.tmx")
-speed# = TiledObjectPropertyFloat(TiledObject(map, 1), "speed", 1.5)
+coin = TiledObject(map, 1, "coin")
+Print TiledObjectPropertyFloat(coin, "value", 1.5)    ; 10.0
+Print TiledObjectPropertyFloat(coin, "bounce", 1.5)   ; 1.5
 
 === TiledObjectHasProperty
 ; only some coins have a value of their own
@@ -180,9 +202,12 @@ For i = 1 To CountSheetTags(hero)
 Next
 
 === SheetTagFirst
-; the frames of a tag, for CreateAnim2D
+; play the "run" tag of a sprite sheet: its first and last frame set the animation
 hero = LoadSheetImage("examples/media/tiled/hero.json")
-run = CreateAnim2D(hero, SheetTagFirst(hero, "run"), SheetTagLast(hero, "run"), 12)
+startFrame = SheetTagFirst(hero, "run")
+endFrame = SheetTagLast(hero, "run")
+run = CreateAnim2D(hero, startFrame, endFrame, 12)
+Print "Run uses frames " + startFrame + " to " + endFrame
 
 === SheetTagLast
 ; how long a tag is

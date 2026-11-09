@@ -21,9 +21,13 @@ Flip
 EndGraphics
 
 === AppTitle
-; Set the title shown on the window
+; put the game's name and version in the window title (can be set before Graphics)
+version$ = "0.3"
+AppTitle "Asteroid Miner v" + version$
 Graphics 640, 480
-AppTitle "My First Game"
+Text 10, 10, "Look at the window title bar"
+Flip
+WaitKey
 
 === SetFullscreen
 ; Switch between a window and fullscreen while the program runs
@@ -37,17 +41,31 @@ Graphics 640, 480
 If IsFullscreen() Then Print "Fullscreen" Else Print "In a window"
 
 === GfxMode3D
-; Check that the first graphics mode can be used for 3D
-If GfxMode3D(1) Then Print "Mode 1 supports 3D"
+; pick the first listed screen size of at least 1024 wide that supports 3D
+For mode = 1 To CountGfxModes()
+    If GfxMode3D(mode) And GfxModeWidth(mode) >= 1024 Then Exit
+Next
+Print "Using mode " + mode + ": " + GfxModeWidth(mode) + " x " + GfxModeHeight(mode)   ; Using mode 3: 1024 x 768
+; then open it with: Graphics3D GfxModeWidth(mode), GfxModeHeight(mode)
 
 === GfxDriver3D
-; Check that graphics driver 1 can be used for 3D
-If GfxDriver3D(1) Then Print "Driver 1 supports 3D"
+; list every graphics driver that can do 3D
+For driver = 1 To CountGfxDrivers()
+    If GfxDriver3D(driver) Then Print driver + ": " + GfxDriverName(driver)   ; 1: OpenGL 3.3 (Fyrox)
+Next
+Print "Driver 2 supports 3D: " + GfxDriver3D(2)   ; 0, there is no driver 2
 
 === WBuffer
-; Accepted for compatibility: depth precision is handled for you
+; a typical Blitz3D start-up block; WBuffer is accepted but changes nothing
+WBuffer True
+HWMultiTex True
 Graphics3D 800, 600
-WBuffer 1
+cam = CreateCamera()
+cube = CreateCube()
+MoveEntity cube, 0, 0, 5
+RenderWorld
+Flip
+WaitKey
 
 === ActiveTextures
 ; Count the textures that are in use by entities
@@ -69,60 +87,112 @@ For mode = 1 To CountGfxModes()
 Next
 
 === CountGfxModes3D
-; Count the screen sizes that can be used for 3D
-Print "3D modes: " + CountGfxModes3D()
+; show every screen size you could open a 3D window at
+For mode = 1 To CountGfxModes3D()
+    Print mode + ": " + GfxModeWidth(mode) + " x " + GfxModeHeight(mode)
+Next
+Print "Total: " + CountGfxModes3D()   ; Total: 17
 
 === GfxModeWidth
-; Print the width of the first graphics mode
-Print "Width: " + GfxModeWidth(1)
+; find the widest listed screen size
+widest = 0
+For mode = 1 To CountGfxModes()
+    If GfxModeWidth(mode) > widest Then widest = GfxModeWidth(mode)
+Next
+Print "Widest: " + widest   ; Widest: 3840
+Print "Mode 99 width: " + GfxModeWidth(99)   ; 0, there is no mode 99
 
 === GfxModeHeight
-; Print the height of the first graphics mode
-Print "Height: " + GfxModeHeight(1)
+; find the height that goes with a 1280 wide mode
+For mode = 1 To CountGfxModes()
+    If GfxModeWidth(mode) = 1280 Then Exit
+Next
+Print "A 1280 wide mode is " + GfxModeHeight(mode) + " tall"   ; 720
+Print "Mode 99 height: " + GfxModeHeight(99)   ; 0, there is no mode 99
 
 === GfxModeDepth
-; Print the colour depth of the first graphics mode
-Print "Depth: " + GfxModeDepth(1)
+; check the colour depth of each listed mode (0 means the mode does not exist)
+Print "Mode 1 depth: " + GfxModeDepth(1)   ; 32
+Print "Mode 99 depth: " + GfxModeDepth(99)   ; 0
+If GfxModeDepth(1) = 32 Then Print "True colour is available"
 
 === GfxModeExists
-; Check if a screen size is in the list of modes
-If GfxModeExists(1024, 768) Then Print "1024x768 is listed" Else Print "1024x768 is not listed"
+; choose a screen size, falling back to a standard one if it is not listed
+width = 1000 : height = 700
+If Not GfxModeExists(width, height) Then
+    width = 1024 : height = 768
+EndIf
+Print "Opening at " + width + " x " + height   ; Opening at 1024 x 768
+; Graphics3D width, height
 
 === GfxMode3DExists
-; Check if a screen size is in the list of 3D modes
-If GfxMode3DExists(1280, 720) Then Print "1280x720 works for 3D"
+; choose a 3D screen size, falling back to a standard one if it is not listed
+width = 1280 : height = 720
+If Not GfxMode3DExists(width, height) Then
+    width = 800 : height = 600
+EndIf
+Print "Opening at " + width + " x " + height   ; Opening at 1280 x 720
+; Graphics3D width, height
 
 === CountGfxDrivers
-; Print how many graphics drivers there are
-Print "Drivers: " + CountGfxDrivers()
+; offer a driver menu only if there is a choice (there never is here)
+drivers = CountGfxDrivers()
+If drivers > 1 Then
+    For d = 1 To drivers
+        Print d + ": " + GfxDriverName(d)
+    Next
+Else
+    Print "Only one graphics driver, using it"   ; always printed
+EndIf
 
 === GfxDriverName
-; Print the name of the first graphics driver
-Print GfxDriverName(1)
+; show the driver's name, for a bug report or an "about" screen
+Print "Driver 1: " + GfxDriverName(1)   ; Driver 1: OpenGL 3.3 (Fyrox)
+If GfxDriverName(2) = "" Then Print "There is no driver 2"
 
 === SetGfxDriver
-; Choose graphics driver 1 (the only one)
-SetGfxDriver 1
+; Blitz3D programs chose a driver before opening the window; this keeps them working
+SetGfxDriver CountGfxDrivers()
+Graphics3D 800, 600
+Text 10, 10, "Window open with the only driver"
+Flip
+WaitKey
 
 === Windowed3D
-; Check that 3D can run in a window
-If Windowed3D() Then Print "3D can run in a window"
+; ask for a window only if the driver can do 3D in one (it always can)
+If Windowed3D() Then mode = 2 Else mode = 1   ; 2 = windowed, 1 = fullscreen
+Graphics3D 800, 600, 0, mode
+Text 10, 10, "Mode " + mode
+Flip
+WaitKey
 
 === GfxDriverCaps3D
-; Print the 3D capability level of the graphics driver
-Print "Capability level: " + GfxDriverCaps3D()
+; old programs tested the driver's level before using fancy effects
+level = GfxDriverCaps3D()
+Print "Capability level: " + level   ; 110
+If level >= 110 Then Print "Full feature set available"
 
 === HWTexUnits
-; Print how many texture layers one entity can use at once
-Print "Texture layers: " + HWTexUnits()
+; see whether an entity can blend a base texture and a light map
+layers = HWTexUnits()
+Print "Texture layers per entity: " + layers   ; 4
+If layers >= 2 Then Print "Multi-texturing is available"
 
 === HWMultiTex
-; Accepted for compatibility: does nothing
-HWMultiTex 1
+; old programs switched multi-texturing on or off to suit the card; it is always available
+HWMultiTex False
+Graphics3D 800, 600
+Print "Texture layers: " + HWTexUnits()
+Flip
+WaitKey
 
 === Dither
-; Accepted for compatibility: does nothing
-Dither 1
+; old programs turned dithering on for 16-bit screens; it has no effect here
+Dither True
+Graphics 640, 480
+Text 10, 10, "Dither does nothing, nothing to see"
+Flip
+WaitKey
 
 === TotalVidMem
 ; Print the total video memory in megabytes
@@ -135,13 +205,24 @@ megabytes = AvailVidMem() / 1048576
 Print "Free video memory: " + megabytes + " MB"
 
 === VWait
-; Accepted for compatibility: Flip already waits for the display
+; old programs waited for the screen refresh before drawing; Flip already does that
 Graphics 640, 480
-VWait 1
+While Not KeyHit(1)
+    VWait 1
+    Cls
+    Text 10, 10, "Press Esc to quit"
+    Flip
+Wend
 
 === ScanLine
-; The scan line is always 0
-Print "Scan line: " + ScanLine()
+; old code polled the scan line to time its drawing; here it is always 0, so use Flip
+line = ScanLine()
+Print "Scan line: " + line   ; Scan line: 0
+Graphics 640, 480
+Cls
+Text 10, 10, "Draw, then Flip to sync"
+Flip
+WaitKey
 
 === TrisRendered
 ; Show how many triangles the last RenderWorld drew

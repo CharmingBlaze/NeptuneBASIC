@@ -12,6 +12,7 @@ sounds placed in a 3D world, mixing them, and playing movies. The
 - [Sound in 3D](#sound-in-3d)
 - [Mixing: buses, reverb and filters](#mixing-buses-reverb-and-filters)
 - [Movies](#movies)
+- [Try it yourself](#try-it-yourself)
 
 ## Sound effects
 
@@ -158,5 +159,142 @@ CloseMovie intro
 
 `MovieWidth`, `MovieHeight` and `MoviePlaying` tell you about it; a
 width and height of -1 draw it at its own size.
+
+## Try it yourself
+
+These use the two small sounds in the repository, `examples/media/blip.wav`
+and `examples/media/hum.wav`; run them from the folder that holds `examples`.
+
+1. **Blip piano.** Make the keys A, S, D and F each play the blip at a different
+   pitch (a low note, and notes that are higher), and show the keys on the
+   screen as four coloured boxes. Escape quits.
+   *Hint: `PlaySound` returns the channel, and `ChannelPitch` changes the pitch of that one playing copy; the blip is recorded at 22050.*
+2. **Engine.** Loop the hum as an engine. Holding the up arrow makes the
+   engine speed up (higher pitch and louder), and letting go slows it down
+   again. Draw a bar showing the engine speed.
+   *Hint: keep the speed in a variable from 0 to 1, and set `ChannelPitch` and `ChannelVolume` from it each frame.*
+3. **Cave echo.** Put the blip on its own audio bus called `effects`. Space plays
+   the blip, `C` switches echo on and off, and the up and down arrows change
+   the volume of the bus. Show the state on the screen.
+   *Hint: `BusReverb` with 0 seconds removes the echo.*
+
+### Answers
+
+1.
+
+```basic
+Graphics 800, 600
+blip = LoadSound("examples/media/blip.wav")
+If blip = 0 Then RuntimeError "Could not load blip.wav"
+
+Dim keys(3)
+keys(0) = KEY_A : keys(1) = KEY_S : keys(2) = KEY_D : keys(3) = KEY_F
+Dim pitch(3)
+pitch(0) = 22050        ; the sound as recorded
+pitch(1) = 27775        ; a bit higher
+pitch(2) = 33075        ; higher still
+pitch(3) = 44100        ; double: one octave up
+Dim names$(3)
+names(0) = "A" : names(1) = "S" : names(2) = "D" : names(3) = "F"
+
+While Not KeyHit(KEY_ESCAPE)
+    For i = 0 To 3
+        If KeyHit(keys(i)) Then ChannelPitch PlaySound(blip), pitch(i)
+    Next
+
+    Cls
+    For i = 0 To 3
+        If KeyDown(keys(i)) Then Color 255, 220, 60 Else Color 70, 70, 110
+        Rect 180 + i * 110, 240, 90, 120
+        Color 255, 255, 255
+        Text 225 + i * 110, 295, names(i), True, True
+    Next
+    Text 10, 10, "Play with A S D F. Escape quits."
+    Flip
+Wend
+```
+
+The four keys and four pitches are kept in arrays, so one loop handles all of
+them. `KeyHit` fires once per press, which starts one copy of the sound, and
+`ChannelPitch` changes the speed of that copy only. A playback rate of
+44100 is twice 22050, which is one octave higher. The second loop draws each
+box brighter while its key is held down.
+
+2.
+
+```basic
+Graphics 800, 600
+engine = LoadSound("examples/media/hum.wav")
+If engine = 0 Then RuntimeError "Could not load hum.wav"
+LoopSound engine
+channel = PlaySound(engine)
+
+speed# = 0
+While Not KeyHit(KEY_ESCAPE)
+    If KeyDown(KEY_UP)
+        speed = speed + 0.01
+    Else
+        speed = speed - 0.01
+    EndIf
+    speed = Clamp(speed, 0, 1)
+
+    ChannelPitch channel, 22050 + speed * 22050
+    ChannelVolume channel, 0.3 + speed * 0.7
+
+    Cls
+    Color 255, 255, 255
+    Text 10, 10, "Hold the up arrow to rev the engine. Escape quits."
+    Rect 100, 280, 600, 40, False
+    Color 255, 120, 40
+    Rect 100, 280, 600 * speed, 40
+    Flip
+Wend
+StopChannel channel
+```
+
+The engine is one looping sound whose channel is changed every frame. At
+speed 0 it plays at its normal rate and at 30% volume; at speed 1 it plays
+twice as fast and at full volume. Adding or taking away a little each frame
+makes the speed rise and fall smoothly, and `Clamp` keeps it between 0 and 1.
+`StopChannel` after the loop silences it when the game ends.
+
+3.
+
+```basic
+Graphics 800, 600
+blip = LoadSound("examples/media/blip.wav")
+If blip = 0 Then RuntimeError "Could not load blip.wav"
+
+effects = CreateAudioBus("effects")
+SoundBus blip, effects
+
+volume# = 0.8
+echo = False
+BusVolume effects, volume
+
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_SPACE) Then PlaySound blip
+    If KeyHit(KEY_C)
+        echo = Not echo
+        BusReverb effects, IIf(echo, 2.5, 0), 0.7
+    EndIf
+    If KeyDown(KEY_UP) Then volume = volume + 0.01
+    If KeyDown(KEY_DOWN) Then volume = volume - 0.01
+    volume = Clamp(volume, 0, 1)
+    BusVolume effects, volume
+
+    Cls
+    Color 255, 255, 255
+    Text 10, 10, "Space: blip   C: echo on/off   Up/Down: volume   Escape: quit"
+    Text 10, 40, "Echo: " + IIf(echo, "ON (a big cave)", "off")
+    Text 10, 60, "Volume: " + Int(volume * 100) + "%"
+    Flip
+Wend
+```
+
+`SoundBus` sends the blip into the `effects` bus, so the bus settings change
+how it sounds, whatever else is playing. `Not echo` flips the switch each
+time `C` is pressed, and `IIf` chooses 2.5 seconds of echo or 0 seconds, which
+turns it off. The volume is kept between 0 and 1 with `Clamp`.
 
 [Contents](../MANUAL.md) · Previous: [15. Input](15-input.md) · Next: [17. 3D basics](17-3d-basics.md)

@@ -15,6 +15,7 @@ files.
 - [Characters and codes](#characters-and-codes)
 - [Numbers as text](#numbers-as-text)
 - [Splitting a line into words](#splitting-a-line-into-words)
+- [Try it yourself](#try-it-yourself)
 
 ## Writing strings
 
@@ -269,5 +270,88 @@ Output:
 red
 go
 ```
+
+## Try it yourself
+
+1. **Name tag.** A player typed their name as `"  zELDA  "`. Clean it up so
+   there are no spaces and only the first letter is a capital, then print
+   `Welcome, Zelda!` using the cleaned name.
+   *Hint: `Trim`, then `Upper` on the first letter joined to `Lower` on the rest.*
+2. **Mirror writing.** Write a function `Backwards$(text$)` that returns the
+   text with its letters in reverse order. Print `Backwards("Neptune")`.
+   *Hint: go through the text with a `For` loop and put each new letter in front of what you have so far.*
+3. **Pirate translator.** Take the sentence `"Hello friend, where is the
+   treasure?"`. Replace `Hello` with `Ahoy`, `friend` with `matey` and `the
+   treasure` with `me gold`, then print it. Finally, count how many vowels
+   (a, e, i, o, u) the new sentence has and print `Vowels: ` and the number.
+   *Hint: `Replace` does the swapping, and `Instr("aeiou", letter)` is not 0 for a vowel.*
+
+### Answers
+
+1.
+
+```basic
+typed = "  zELDA  "
+name = Trim(typed)
+name = Upper(Left(name, 1)) + Lower(Mid(name, 2))
+Print "Welcome, " + name + "!"
+```
+
+```output
+Welcome, Zelda!
+```
+
+`Trim` removes the spaces at both ends. `Left(name, 1)` is the first letter,
+which `Upper` makes a capital, and `Mid(name, 2)` is everything from the
+second letter on, which `Lower` makes small. Joining them gives `Zelda`.
+
+2.
+
+```basic
+Function Backwards$(text$)
+    result$ = ""
+    For i = 1 To Len(text)
+        result = Mid(text, i, 1) + result
+    Next
+    Return result
+End Function
+
+Print Backwards("Neptune")
+```
+
+```output
+enutpeN
+```
+
+Each letter is added in front of the result, so the first letter ends up
+last. After seven turns of the loop `result` holds all the letters in the
+opposite order.
+
+3.
+
+```basic
+sentence$ = "Hello friend, where is the treasure?"
+sentence = Replace(sentence, "Hello", "Ahoy")
+sentence = Replace(sentence, "friend", "matey")
+sentence = Replace(sentence, "the treasure", "me gold")
+Print sentence
+
+vowels = 0
+For i = 1 To Len(sentence)
+    letter$ = Lower(Mid(sentence, i, 1))
+    If Instr("aeiou", letter) > 0 Then vowels = vowels + 1
+Next
+Print "Vowels: " + vowels
+```
+
+```output
+Ahoy matey, where is me gold?
+Vowels: 9
+```
+
+Each `Replace` returns a new sentence, which is stored back in `sentence`.
+For the count, the loop looks at one letter at a time. `Instr` searches for
+it in the string of vowels and gives 0 when it is not there, so every
+non-zero answer is a vowel. `Lower` makes capital vowels count too.
 
 [Contents](../MANUAL.md) · Previous: [6. Functions](06-functions.md) · Next: [8. Arrays and data](08-arrays-and-data.md)

@@ -13,6 +13,7 @@ program, and the settings that change how the whole program is read.
 - [Arguments and the environment](#arguments-and-the-environment)
 - [Program-wide settings](#program-wide-settings)
 - [Modern and classic command names](#modern-and-classic-command-names)
+- [Try it yourself](#try-it-yourself)
 
 ## Several files: Include
 
@@ -166,5 +167,108 @@ more plainly what it does. Both work the same:
 
 The [command reference](../COMMANDS.md#modern-names) lists them all. Use
 whichever you prefer, but pick one style for a program.
+
+## Try it yourself
+
+1. **Title screen.** Using `Gosub`, write a program that shows a title banner
+   (`== DRAGON KEEP ==`), then prints `Your adventure begins...`, then shows a
+   second banner (`Thanks for playing!`) and ends. Each banner is its own
+   labelled section that comes back with `Return`.
+   *Hint: put `End` before the labels so the program does not run into them.*
+2. **Tidy gem hunt.** Write a small program laid out as the chapter suggests:
+   a comment at the top, a `Const`, a `Type`, then the main program, then the
+   functions. It makes `GEM_COUNT` (3) gems worth 10, 20 and 30, and a function
+   `TotalValue()` that returns what they are all worth.
+   *Hint: the main program can call a function that is written further down the file.*
+3. **Difficulty from the command line.** Read the words typed after the
+   program's name. If they contain `hard`, print `Hard mode: 3 lives`, if they
+   contain `easy`, print `Easy mode: 9 lives`, and otherwise print `Normal
+   mode: 5 lives`. Run it with `neptune run yourfile.nb hard` to try it.
+   *Hint: `CommandLine()` gives the words as text, and `Instr` finds a word in it.*
+
+### Answers
+
+1.
+
+```basic
+Gosub Banner
+Print "Your adventure begins..."
+Gosub Goodbye
+End
+
+.Banner
+Print "== DRAGON KEEP =="
+Return
+
+.Goodbye
+Print "Thanks for playing!"
+Return
+```
+
+```output
+== DRAGON KEEP ==
+Your adventure begins...
+Thanks for playing!
+```
+
+`Gosub` jumps to the label and `Return` comes back to the line after the
+`Gosub`. The `End` stops the program before it runs into the labelled
+sections a second time.
+
+2.
+
+```basic
+; Gem hunt: makes some gems and adds up their value.
+
+Const GEM_COUNT = 3
+
+Type Gem
+    Field value
+End Type
+
+For i = 1 To GEM_COUNT
+    g.Gem = New Gem
+    g\value = i * 10
+Next
+Print "The gems are worth " + TotalValue()
+
+Function TotalValue()
+    total = 0
+    For Each g In Gem
+        total = total + g\value
+    Next
+    Return total
+End Function
+```
+
+```output
+The gems are worth 60
+```
+
+The file follows the usual order: comment, constant, type, main program,
+function. A function can be written after the line that calls it, so the main
+program can stay at the top where it is easy to find. The gems are worth
+10, 20 and 30.
+
+3.
+
+```basic
+args = CommandLine()
+If Instr(args, "hard")
+    Print "Hard mode: 3 lives"
+ElseIf Instr(args, "easy")
+    Print "Easy mode: 9 lives"
+Else
+    Print "Normal mode: 5 lives"
+EndIf
+```
+
+```output
+Normal mode: 5 lives
+```
+
+`Instr` gives the position of the word, or 0 when it is missing, and a
+non-zero number counts as true. With nothing typed after the program's name
+the text is empty, so the program prints the normal mode, as shown here.
 
 [Contents](../MANUAL.md) · Previous: [10. Errors and debugging](10-errors.md) · Next: [12. The game loop](12-game-loop.md)

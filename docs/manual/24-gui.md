@@ -16,6 +16,7 @@ simpler.)
 - [Dialogs](#dialogs)
 - [Style](#style)
 - [Tools for editors](#tools-for-editors)
+- [Try it yourself](#try-it-yourself)
 
 ## How the GUI works
 
@@ -167,5 +168,140 @@ Y, Z editor), `GuiCurve` (a curve the user can shape, read with
 `GuiCurveValue`), `GuiFileBrowser`, and `GuiDock` with `GuiDockWindow`
 (windows that can be docked side by side). `examples/gui.nb` shows them
 all over a 3D scene.
+
+## Try it yourself
+
+These are all made from `Gui...` widgets, created once before the loop.
+
+1. **Greeter.** Make a window with a text box, a button called `Greet` and a
+   label. When the button is clicked, the label says `Hello, ` and then
+   whatever was typed in the box, with an exclamation mark.
+   *Hint: `GuiClicked` tells you the button was pressed, `GuiText` reads the box and `SetGuiText` changes the label.*
+2. **Options screen.** Make an options window with a volume slider from 0 to
+   100, a `Fullscreen` tick box and a drop-down to choose the difficulty
+   (Easy, Normal or Hard). Under them show a progress bar that follows the
+   slider, and a label that always describes all three settings.
+   *Hint: `GuiChanged` is true when the user has changed a widget, and `SetGuiValue` moves a progress bar (0 to 1).*
+3. **Backpack.** Make a window with a list of items (Sword, Shield, Potion). A
+   `Use` button removes the chosen item from the list, a `Find rope` button adds
+   a Rope, and a label always says how many items there are, or
+   `Your backpack is empty!`
+   *Hint: `GuiSelected` is -1 when nothing is chosen, so check for that before removing.*
+
+### Answers
+
+1.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+
+win = GuiWindow("Greeter", 40, 40, 300, 200)
+box = GuiTextBox("", win)
+greet = GuiButton("Greet", win)
+message = GuiLabel("Type your name above", win)
+
+While Not KeyHit(KEY_ESCAPE)
+    If GuiClicked(greet)
+        SetGuiText message, "Hello, " + GuiText(box) + "!"
+    EndIf
+    RenderWorld
+    Flip
+Wend
+```
+
+The widgets are made once, before the loop, and each one is given the window
+as its parent so it sits inside it. In the loop, the program only asks what
+the user did. `GuiClicked` counts clicks since it was last asked, so one click
+changes the label once.
+
+2.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+
+win = GuiWindow("Options", 40, 40, 320, 300)
+GuiLabel "Volume", win
+volume = GuiSlider(0, 100, 80, win)
+bar = GuiProgress(0.8, win)
+fullscreen = GuiCheckBox("Fullscreen", 0, win)
+GuiLabel "Difficulty", win
+difficulty = GuiDropDown("Easy|Normal|Hard", win)
+SetGuiSelected difficulty, 1
+summary = GuiLabel("", win)
+
+changed = True                      ; describe the settings once at the start
+While Not KeyHit(KEY_ESCAPE)
+    If GuiChanged(volume) Then changed = True
+    If GuiChanged(fullscreen) Then changed = True
+    If GuiChanged(difficulty) Then changed = True
+
+    If changed
+        SetGuiValue bar, GuiValue(volume) / 100
+        text$ = "Volume " + Int(GuiValue(volume)) + ", "
+        text = text + GuiText(difficulty) + ", "
+        text = text + IIf(GuiValue(fullscreen) > 0, "fullscreen", "windowed")
+        SetGuiText summary, text
+        changed = False
+    EndIf
+
+    RenderWorld
+    Flip
+Wend
+```
+
+The program keeps a flag, `changed`, which is set whenever any of the three
+widgets is changed. The label and the bar are only rebuilt when it is set, and
+once at the start so they begin correct. A tick box gives 1 from `GuiValue`
+when ticked, a drop-down gives the chosen item from `GuiText`, and the slider
+(0 to 100) is divided by 100 for the progress bar, which wants 0 to 1.
+
+3.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+
+win = GuiWindow("Backpack", 40, 40, 300, 340)
+bag = GuiList("Sword|Shield|Potion", win)
+use = GuiButton("Use", win)
+find = GuiButton("Find rope", win)
+status = GuiLabel("", win)
+refresh = True
+
+While Not KeyHit(KEY_ESCAPE)
+    If GuiClicked(use)
+        chosen = GuiSelected(bag)
+        If chosen >= 0
+            GuiRemoveItem bag, chosen
+            refresh = True
+        EndIf
+    EndIf
+    If GuiClicked(find)
+        GuiAddItem bag, "Rope"
+        refresh = True
+    EndIf
+
+    If refresh
+        count = GuiCountItems(bag)
+        If count = 0
+            SetGuiText status, "Your backpack is empty!"
+        Else
+            SetGuiText status, "Items: " + count
+        EndIf
+        refresh = False
+    EndIf
+
+    RenderWorld
+    Flip
+Wend
+```
+
+Nothing is drawn by the program: it only reacts. `Use` removes the item that is
+chosen in the list (items count from 0, so the number from `GuiSelected` goes
+straight to `GuiRemoveItem`), but only if something is chosen. `Find rope`
+adds an item. In both cases the status label is recounted from the list
+itself, so it can never disagree with what the list shows.
 
 [Contents](../MANUAL.md) · Previous: [23. Networking](23-networking.md) · Next: [25. Sharing your game](25-sharing.md)

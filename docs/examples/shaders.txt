@@ -22,16 +22,30 @@ ShaderSource s, "//! fragment" + Chr(10) + "void main() { FragColor = vec4(oops)
 If ValidateShader(s) = 0 Then DebugLog "edit rejected: " + ShaderError(s)
 
 === ShaderValidate
-s = LoadShader("shaders/glow.glsl")
-If ShaderValidate(s) Then DebugLog "fine"
+; check a shader file without using it, and show the reason if it is broken
+Graphics3D 800, 600
+rim = LoadShader("examples/media/shaders/rimtoon.glsl")
+If ShaderValidate(rim) = 0 Then DebugLog "Shader problem: " + ShaderError(rim)
 
 === ReloadShader
-s = LoadShader("shaders/glow.glsl")
-If KeyHit(KEY_F5) Then ReloadShader s
+; press F5 while testing to pick up changes you made to the shader file
+Graphics3D 800, 600
+rim = LoadShader("examples/media/shaders/rimtoon.glsl")
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_F5) Then
+        If ReloadShader(rim) = 0 Then DebugLog ShaderError(rim)
+    EndIf
+    RenderWorld
+    Flip
+Wend
 
 === ShaderHotReload
-s = LoadShader("shaders/water.glsl")
-ShaderHotReload s
+; edit the shader file while the game runs and see the change at once
+Graphics3D 800, 600
+rim = LoadShader("examples/media/shaders/rimtoon.glsl")
+ShaderHotReload rim
+ball = CreateSphere(32)
+ShaderApply rim, ball
 
 === ShaderSource
 s = CreateShader()
@@ -70,8 +84,13 @@ ShaderSave s, "toon.glsl"           ; the source
 ShaderSave s, "toon_fyrox.shader"   ; the Fyrox shader
 
 === FreeShader
-s = LoadShader("builtin:hologram")
-FreeShader s
+; drop a hologram effect when the level ends; the ball goes back to normal
+Graphics3D 800, 600
+holo = LoadShader("builtin:hologram")
+ball = CreateSphere(32)
+ShaderApply holo, ball
+FreeShader holo
+holo = 0
 
 === ShaderExists
 s = LoadShader("builtin:fire")
@@ -79,16 +98,23 @@ FreeShader s
 If ShaderExists(s) = 0 Then DebugLog "gone"
 
 === ShaderCompiled
-s = LoadShader("shaders/glow.glsl")
-If Not ShaderCompiled(s) Then DebugLog ShaderError(s)
+; refuse to start with a broken shader
+Graphics3D 800, 600
+rim = LoadShader("examples/media/shaders/rimtoon.glsl")
+If Not ShaderCompiled(rim) Then RuntimeError "Shader failed: " + ShaderError(rim)
 
 === ShaderError
-s = LoadShader("shaders/glow.glsl")
-If ShaderError(s) <> "" Then RuntimeError ShaderError(s)
+; stop with the real message from the compiler
+Graphics3D 800, 600
+rim = LoadShader("examples/media/shaders/rimtoon.glsl")
+If ShaderError(rim) <> "" Then RuntimeError ShaderError(rim)
 
 === ShaderCompileError
-s = LoadShader("shaders/glow.glsl")
-DebugLog ShaderCompileError(s)
+; log the compile problem, if there is one
+Graphics3D 800, 600
+rim = LoadShader("examples/media/shaders/rimtoon.glsl")
+msg$ = ShaderCompileError(rim)
+If msg <> "" Then DebugLog "Shader problem: " + msg
 
 === ShaderLog
 s = LoadShader("shaders/glow.glsl")
@@ -117,48 +143,81 @@ ShaderDisable s
 ShaderEnable s
 
 === ShaderDisable
-xray = LoadShader("shaders/xray.glsl")
-If KeyDown(KEY_X) Then ShaderEnable xray Else ShaderDisable xray
+; hold X to see the scene with the x-ray shader, release it for normal materials
+Graphics3D 800, 600
+xray = LoadShader("builtin:hologram")
+ball = CreateSphere(32)
+ShaderApply xray, ball
+While Not KeyHit(KEY_ESCAPE)
+    If KeyDown(KEY_X) Then ShaderEnable xray Else ShaderDisable xray
+    RenderWorld
+    Flip
+Wend
 
 === ShaderSetFloat
+; Make the hologram effect scroll faster, then read the value back
 s = LoadShader("builtin:hologram")
 ShaderSetFloat s, "speed", 3.5
+Print ShaderGetParameter(s, "speed")   ; 3.5
 
 === ShaderSetInt
-s = LoadShader("shaders/levels.glsl")
-ShaderSetInt s, "steps", 4
+; Switch the toon shader to use its ramp texture (an int parameter, 0 off, 1 on)
+s = LoadShader("builtin:toon")
+ShaderSetInt s, "useRamp", 1
+Print ShaderGetParameter(s, "useRamp")   ; 1
 
 === ShaderSetBool
-s = LoadShader("shaders/door.glsl")
-ShaderSetBool s, "locked", True
+; A shader of your own with a bool parameter: the door shows red while it is locked
+nl$ = Chr(10)
+src$ = "uniform bool locked;" + nl + "//! fragment" + nl
+src$ = src + "void nb_surface(inout NbSurface s) { s.albedo = locked ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0); }"
+door = CreateShader(src)
+ShaderSetBool door, "locked", True
+Print ShaderGetParameter(door, "locked")   ; 1
 
 === ShaderSetVector2
 s = LoadShader("builtin:unlit")
 ShaderSetVector2 s, "uvScale", 4, 4      ; repeat the texture 4 times
 
 === ShaderSetVector3
-s = LoadShader("shaders/explosion.glsl")
-ShaderSetVector3 s, "center", 0, 1, 0
+; Make the toon shader's shadows bluish: shadeColor is three numbers from 0 to 1
+s = LoadShader("builtin:toon")
+ShaderSetVector3 s, "shadeColor", 0.2, 0.2, 0.5
+Print ShaderGetParameter(s, "shadeColor")   ; 0.2,0.2,0.5
 
 === ShaderSetVector4
+; Tint an unlit shader orange: albedo is red, green, blue, alpha, each 0 to 1
 s = LoadShader("builtin:unlit")
 ShaderSetVector4 s, "albedo", 1, 0.5, 0.2, 1
+Print ShaderGetParameter(s, "albedo")   ; 1,0.5,0.2,1
 
 === ShaderSetColor
-s = LoadShader("builtin:forcefield")
-ShaderSetColor s, "color", 80, 255, 120
+; Use ordinary 0-255 colours: the shader receives them as 0-1 (128 becomes 0.5019608)
+s = LoadShader("builtin:unlit")
+ShaderSetColor s, "albedo", 255, 128, 0   ; orange, alpha left at the default 255
+Print ShaderGetParameter(s, "albedo")   ; 1,0.5019608,0,1
 
 === ShaderSetMatrix3
 s = LoadShader("shaders/colormix.glsl")
 ShaderSetMatrix3 s, "mixer", "0.39,0.35,0.27, 0.77,0.69,0.53, 0.19,0.17,0.13"   ; sepia
 
 === ShaderSetMatrix4
-s = LoadShader("shaders/projector.glsl")
+; A mat4 parameter takes 16 numbers in a string: this is the identity matrix (changes nothing)
+nl$ = Chr(10)
+src$ = "uniform mat4 projector;" + nl + "//! fragment" + nl
+src$ = src + "void nb_surface(inout NbSurface s) { s.albedo = vec3(projector[0][0]); }"
+s = CreateShader(src)
 ShaderSetMatrix4 s, "projector", "1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1"
+Print ShaderGetParameter(s, "projector")   ; 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
 
 === ShaderSetBuffer
-s = LoadShader("shaders/blur.glsl")
+; An array parameter takes all its numbers in one string: five blur weights
+nl$ = Chr(10)
+src$ = "uniform float weights[5];" + nl + "//! fragment" + nl
+src$ = src + "void nb_surface(inout NbSurface s) { s.albedo = vec3(weights[2]); }"
+s = CreateShader(src)
 ShaderSetBuffer s, "weights", "0.06, 0.24, 0.4, 0.24, 0.06"
+Print ShaderGetParameter(s, "weights")   ; 0.06,0.24,0.4,0.24,0.06
 
 === ShaderSetParameter
 s = LoadShader("builtin:hologram")
@@ -170,12 +229,20 @@ s = LoadShader("builtin:water")
 DebugLog ShaderGetParameter(s, "waveHeight")     ; "0.25"
 
 === ShaderSetTexture
+; Put a texture on the unlit shader's albedoMap slot
 s = LoadShader("builtin:unlit")
-ShaderSetTexture s, "albedoMap", LoadTexture("examples/media/checker.png")
+tex = LoadTexture("examples/media/checker.png")
+ShaderSetTexture s, "albedoMap", tex
+Print ShaderParameterExists(s, "albedoMap")   ; 1
 
 === ShaderSetCubeMap
+; Give the glass shader something to reflect: a reflection probe photographs its
+; surroundings into a cube map, and the shader's samplerCube parameter takes it
+Graphics3D 640, 480
+cam = CreateCamera()
+probe = CreateReflectionProbe(128)
 s = LoadShader("builtin:glass")
-ShaderSetCubeMap s, "envMap", LoadTexture("sky.png", 128)
+ShaderSetCubeMap s, "envMap", ProbeTexture(probe)
 
 === ShaderSetTextureArray
 grass = LoadTexture("grass.png")
@@ -190,8 +257,11 @@ ShaderSetTime s, 2.5       ; frozen at 2.5 seconds
 ShaderSetTime s            ; running again
 
 === ShaderSetResolution
-s = LoadShader("shaders/pixel.glsl")
+; Shaders that read nb_resolution (pixel effects) see a 320 x 180 screen, whatever the window size
+s = LoadShader("builtin:pixelart")
 ShaderSetResolution s, 320, 180
+; ... later, go back to the real window size
+ShaderSetResolution s, 0, 0
 
 === ShaderSetCamera
 camera = CreateCamera()
@@ -210,12 +280,19 @@ newer = LoadShader("builtin:cel")
 n = ShaderSetMaterial(newer, old)       ; newer is orange too
 
 === ShaderParameterExists
+; Names are case sensitive. Check first: setting a parameter that is not there is an error.
 s = LoadShader("builtin:water")
+Print ShaderParameterExists(s, "foamAmount")   ; 1
+Print ShaderParameterExists(s, "snowAmount")   ; 0
 If ShaderParameterExists(s, "foamAmount") Then ShaderSetFloat s, "foamAmount", 1
 
 === ShaderParameterCount
-s = LoadShader("builtin:toon")
-DebugLog ShaderParameterCount(s)
+; List every parameter of a shader by number (the engine's nb_ ones are included)
+s = LoadShader("builtin:hologram")
+Print ShaderParameterCount(s)   ; 8
+For i = 0 To ShaderParameterCount(s) - 1
+    Print ShaderParameterName(s, i)
+Next
 
 === ShaderParameterName
 s = LoadShader("builtin:toon")
@@ -259,8 +336,13 @@ VertexData surf, v, 0, 2.5
 DebugLog VertexDataValue(surf, v, 0, 0)     ; 2.5
 
 === ShaderDebug
+; When a shader misbehaves, print what the engine knows about it
 s = LoadShader("builtin:water")
-DebugLog ShaderDebug(s)
+If ShaderGetCompilationStatus(s) = SHADER_FAILED Then
+    Print ShaderError(s)
+Else
+    Print ShaderDebug(s)
+EndIf
 
 === ShaderGetUniforms
 s = LoadShader("builtin:rim")
@@ -275,15 +357,24 @@ s = LoadShader("builtin:unlit")
 DebugLog ShaderGetBindings(s)    ; "albedoMap:sampler2D@0,properties:block@0,..."
 
 === ShaderGetResourceInfo
+; How many entities and materials use this shader, and how much was compiled?
 s = LoadShader("builtin:toon")
-DebugLog ShaderGetResourceInfo(s)
+info$ = ShaderGetResourceInfo(s)
+Print Left(info, 30)   ; entities=0,materials=0,passes=1,
 
 === ShaderGetCompilationStatus
-s = LoadShader("shaders/glow.glsl")
-If ShaderGetCompilationStatus(s) = SHADER_FAILED Then DebugLog ShaderError(s)
+; A shader made from source is compiled when first needed: here, on request
+nl$ = Chr(10)
+s = CreateShader("//! fragment" + nl + "void nb_surface(inout NbSurface s) { s.albedo = vec3(1.0); }")
+Print ShaderGetCompilationStatus(s) = SHADER_NOT_COMPILED   ; 1
+CompileShader s
+If ShaderGetCompilationStatus(s) = SHADER_FAILED Then Print ShaderError(s)
 
 === ShaderGetBackend
-DebugLog ShaderGetBackend()     ; "OpenGL 3.3 core / GLES 3.0 (Fyrox); GLSL 330, WGSL via naga"
+; Put the graphics set-up in the log, for bug reports
+DebugLog "Rendering with " + ShaderGetBackend()
+s = LoadShader("builtin:unlit")
+DebugLog ShaderGetBackend(s)   ; the same, ending with (GLSL source)
 
 === CreatePBRMaterial
 steel = CreatePBRMaterial()
@@ -294,16 +385,32 @@ pipe = CreateCylinder(24)
 EntityMaterial pipe, steel
 
 === SetAlbedo
-m = CreatePBRMaterial()
-SetAlbedo m, 200, 30, 30
+; a red plastic material, shared by every enemy marker
+Graphics3D 800, 600
+red = CreatePBRMaterial()
+SetAlbedo red, 200, 30, 30
+marker = CreateSphere(24)
+EntityMaterial marker, red
 
 === SetAlbedoMap
-m = CreatePBRMaterial()
-SetAlbedoMap m, LoadTexture("examples/media/checker.png")
+; a textured floor tile; the albedo colour stays white so the texture is not tinted
+Graphics3D 800, 600
+tile = CreatePBRMaterial()
+SetAlbedo tile, 255, 255, 255
+SetAlbedoMap tile, LoadTexture("examples/media/checker.png")
+floor = CreateCube()
+ScaleEntity floor, 4, 0.1, 4
+EntityMaterial floor, tile
 
 === SetMetallic
-m = CreatePBRMaterial()
-SetMetallic m, 1
+; polished steel for a pipe: fully metal and fairly smooth
+Graphics3D 800, 600
+steel = CreatePBRMaterial()
+SetAlbedo steel, 170, 170, 175
+SetMetallic steel, 1
+SetRoughness steel, 0.3
+pipe = CreateCylinder(24)
+EntityMaterial pipe, steel
 
 === SetMetallicMap
 m = CreatePBRMaterial()
@@ -311,8 +418,13 @@ SetMetallic m, 1
 SetMetallicMap m, LoadTexture("armour_metal.png")
 
 === SetRoughness
-m = CreatePBRMaterial()
-SetRoughness m, 0.2
+; a wet stone: not metal, but smooth enough to catch the light
+Graphics3D 800, 600
+wet = CreatePBRMaterial()
+SetAlbedo wet, 90, 90, 100
+SetRoughness wet, 0.2
+rock = CreateSphere(16)
+EntityMaterial rock, wet
 
 === SetRoughnessMap
 m = CreatePBRMaterial()
@@ -320,12 +432,22 @@ SetRoughness m, 1
 SetRoughnessMap m, LoadTexture("floor_rough.png")
 
 === SetNormalMap
-m = CreatePBRMaterial()
-SetNormalMap m, LoadTexture("brick_normal.png"), 1.5
+; brick with deeper bumps; strength 1.5 exaggerates them (the checker image stands in for a real normal map)
+Graphics3D 800, 600
+brick = CreatePBRMaterial()
+SetAlbedo brick, 170, 80, 60
+SetNormalMap brick, LoadTexture("examples/media/checker.png"), 1.5
+wall = CreateCube()
+EntityMaterial wall, brick
 
 === SetAOMap
-m = CreatePBRMaterial()
-SetAOMap m, LoadTexture("brick_ao.png")
+; darken the crevices of a wall (the checker image stands in for a real occlusion map)
+Graphics3D 800, 600
+wallmat = CreatePBRMaterial()
+SetAlbedo wallmat, 170, 80, 60
+SetAOMap wallmat, LoadTexture("examples/media/checker.png")
+wall = CreateCube()
+EntityMaterial wall, wallmat
 
 === SetEmissive
 screen = CreatePBRMaterial()
@@ -369,36 +491,117 @@ SetEnvironmentMap m, LoadTexture("sky.png", 128)
 SetReflectionIntensity m, 0.4
 
 === SetFresnel
-m = CreatePBRMaterial()
-SetFresnel m, 0.5
+; glass-like edges: reflections are weak face on and strong at the rim of the ball
+Graphics3D 800, 600
+glass = CreatePBRMaterial()
+SetEnvironmentMap glass, LoadTexture("examples/media/checker.png", 128)
+SetFresnel glass, 1
+ball = CreateSphere(32)
+EntityMaterial ball, glass
 
 === SetMaterialWorkflow
-m = CreatePBRMaterial()
-SetMaterialWorkflow m, WORKFLOW_SPECULAR, 40, 40, 40
+; a glossy ceramic cup that uses a grey specular colour instead of the metallic setting
+Graphics3D 800, 600
+ceramic = CreatePBRMaterial()
+SetAlbedo ceramic, 240, 240, 235
+SetMaterialWorkflow ceramic, WORKFLOW_SPECULAR, 40, 40, 40
+cup = CreateCylinder(24)
+EntityMaterial cup, ceramic
 
 === CreateToonMaterial
-hero = CreateToonMaterial(SHADING_CEL)
-SetAlbedo hero, 90, 200, 255
+; a cel-shaded ball: make the material, colour it, then put it on an entity
+Graphics3D 800, 600
+cam = CreateCamera()
+sun = CreateLight()
+hero = CreateSphere()
+PositionEntity hero, 0, 0, 4
+mat = CreateToonMaterial(SHADING_CEL)
+SetAlbedo mat, 90, 200, 255
+EntityMaterial hero, mat
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === SetShadingMode
-m = CreateToonMaterial()
-SetShadingMode m, SHADING_PS1
+; press Space to change the same ball between toon, cel and flat shading
+Graphics3D 800, 600
+cam = CreateCamera()
+sun = CreateLight()
+ball = CreateSphere()
+PositionEntity ball, 0, 0, 4
+mat = CreateToonMaterial(SHADING_TOON)
+EntityMaterial ball, mat
+mode = SHADING_TOON
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_SPACE) Then mode = (mode + 1) Mod 3 : SetShadingMode mat, mode
+    RenderWorld
+    Flip
+Wend
 
 === SetToonSteps
-m = CreateToonMaterial()
-SetToonSteps m, 4
+; press Space to cycle the ball through 1 to 5 bands of light and watch the shading change
+Graphics3D 800, 600
+cam = CreateCamera()
+sun = CreateLight()
+ball = CreateSphere()
+PositionEntity ball, 0, 0, 4
+mat = CreateToonMaterial()
+EntityMaterial ball, mat
+steps = 3
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_SPACE) Then steps = steps Mod 5 + 1
+    SetToonSteps mat, steps
+    RenderWorld
+    Flip
+Wend
 
 === SetToonRamp
-m = CreateToonMaterial()
-SetToonRamp m, LoadTexture("ramp_warm.png")
+; light a ball through a ramp texture: a gradient from deep blue to warm orange
+Graphics3D 800, 600
+ramp = CreateTexture(64, 4)
+SetBuffer TextureBuffer(ramp)
+For x = 0 To 63
+    Color 40 + x * 3, 40 + x, 120 - x
+    Line x, 0, x, 3
+Next
+SetBuffer BackBuffer()
+mat = CreateToonMaterial()
+SetToonRamp mat, ramp
+ball = CreateSphere()
+EntityMaterial ball, mat
 
 === SetLightingRamp
-m = CreateToonMaterial(SHADING_CEL)
-SetLightingRamp m, LoadTexture("ramp_anime.png")
+; a hard two-colour ramp for an anime look: a dark half and a bright half
+Graphics3D 800, 600
+ramp = CreateTexture(8, 1)
+SetBuffer TextureBuffer(ramp)
+Color 70, 50, 120
+Rect 0, 0, 4, 1
+Color 255, 230, 200
+Rect 4, 0, 4, 1
+SetBuffer BackBuffer()
+mat = CreateToonMaterial(SHADING_CEL)
+SetLightingRamp mat, ramp
+ball = CreateSphere()
+EntityMaterial ball, mat
 
 === SetToonOutline
-m = CreateToonMaterial()
-SetToonOutline m, True, 0.05
+; a black outline 0.05 units thick around a toon ball; press O to remove or restore it
+Graphics3D 800, 600
+cam = CreateCamera()
+sun = CreateLight()
+ball = CreateSphere()
+PositionEntity ball, 0, 0, 4
+mat = CreateToonMaterial()
+EntityMaterial ball, mat
+SetToonOutline mat, True, 0.05
+on = True
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_O) Then on = Not on : SetToonOutline mat, on, 0.05
+    RenderWorld
+    Flip
+Wend
 
 === SetOutlineColor
 m = CreateToonMaterial()
@@ -411,8 +614,20 @@ SetToonOutline m, True
 SetOutlineWidth m, 0.08
 
 === SetRimLighting
-m = CreateToonMaterial()
-SetRimLighting m, True, 0.8
+; a blue glow along the edges of a ball, as if backlit
+Graphics3D 800, 600
+cam = CreateCamera()
+sun = CreateLight()
+ball = CreateSphere()
+PositionEntity ball, 0, 0, 4
+mat = CreateToonMaterial()
+SetRimLighting mat, True, 0.8
+SetRimColor mat, 120, 200, 255
+EntityMaterial ball, mat
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === SetRimColor
 m = CreateToonMaterial()
@@ -425,12 +640,34 @@ SetRimLighting m, True
 SetRimPower m, 6
 
 === SetVertexLighting
-m = CreateToonMaterial()
-SetVertexLighting m, True
+; an old-console look: light worked out at the corners of a rough ball
+Graphics3D 800, 600
+cam = CreateCamera()
+sun = CreateLight()
+ball = CreateSphere(8)                ; few segments, so the vertex lighting shows
+PositionEntity ball, 0, 0, 4
+mat = CreateToonMaterial()
+SetVertexLighting mat, True
+EntityMaterial ball, mat
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === SetFlatShading
-m = CreateToonMaterial()
-SetFlatShading m, True
+; a low-poly look: every triangle of the ball gets one flat colour
+Graphics3D 800, 600
+cam = CreateCamera()
+sun = CreateLight()
+ball = CreateSphere(8)
+PositionEntity ball, 0, 0, 4
+mat = CreateToonMaterial()
+SetFlatShading mat, True
+EntityMaterial ball, mat
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === SetPixelShading
 m = CreateToonMaterial()
@@ -447,10 +684,13 @@ sea = CreateWaterMaterial()
 SetWaterWaves sea, 0.5, 10, 1, 0.2      ; a big, slow swell
 
 === SetWaterSpeed
-sea = CreateWaterMaterial()
-SetWaterSpeed sea, 0.5
+; A calm lake: slow waves (the default speed is 1)
+lake = CreateWaterMaterial()
+SetWaterSpeed lake, 0.3
+Print ShaderGetParameter(lake, "waveSpeed")   ; 0.3
 
 === SetWaterColor
+; A swamp: murky green-brown shallows (first three numbers), nearly black deeps (last three)
 swamp = CreateWaterMaterial()
 SetWaterColor swamp, 90, 110, 40, 20, 30, 10
 
@@ -459,16 +699,25 @@ sea = CreateWaterMaterial()
 SetWaterDepth sea, 10       ; clear water
 
 === SetWaterFoam
+; Plenty of off-white foam along the shore and on the wave crests
 sea = CreateWaterMaterial()
-SetWaterFoam sea, 0.8
+SetWaterFoam sea, 0.8, 240, 235, 220
+Print ShaderGetParameter(sea, "foamAmount")   ; 0.8
 
 === SetWaterReflection
+; A sea that mirrors its surroundings: reflection 0.8, using a probe's cube map
+Graphics3D 640, 480
+cam = CreateCamera()
+probe = CreateReflectionProbe(128)
 sea = CreateWaterMaterial()
-SetWaterReflection sea, 0.8, LoadTexture("sky.png", 128)
+SetWaterReflection sea, 0.8, ProbeTexture(probe)
+DebugLog ShaderGetParameter(sea, "reflection")   ; 0.8
 
 === SetWaterRefraction
-sea = CreateWaterMaterial()
-SetWaterRefraction sea, 1
+; Clear shallow water shows the sea bed (high); murky water hides it (low)
+pool = CreateWaterMaterial()
+SetWaterRefraction pool, 1
+Print ShaderGetParameter(pool, "refraction")   ; 1
 
 === CreateFoliageMaterial
 grass = CreateFoliageMaterial()
@@ -481,10 +730,21 @@ reeds = CreateFoliageMaterial()
 SetFoliageWind reeds, 0.6, 2.5, 0.5     ; strong, fast, floppy
 
 === SetWindDirection
+; A storm blowing mostly toward -x: the foliage sways that way
+leaves = CreateFoliageMaterial()
 SetWindDirection -1, 0.5
+Print ShaderGetParameter(leaves, "windDirection")   ; -1,0.5
 
 === SetWindStrength
-SetWindStrength 0.2 + Sin(MilliSecs() / 20.0) * 0.1
+; Gusts: vary the wind a little every frame around the default of 0.2
+Graphics3D 640, 480
+cam = CreateCamera()
+leaves = CreateFoliageMaterial()
+While Not KeyHit(KEY_ESCAPE)
+    SetWindStrength 0.2 + Sin(MilliSecs() / 10.0) * 0.15
+    RenderWorld
+    Flip
+Wend
 
 === CreateProceduralShader
 sky = CreateProceduralShader(0)
@@ -492,8 +752,14 @@ clouds = CreateProceduralShader(1)
 tiles = CreateProceduralShader(2)
 
 === SetGradient
-m = CreateProceduralShader(0)
-SetGradient m, GRADIENT_RADIAL
+; a sky that fades out from a bright centre
+Graphics3D 800, 600
+sky = CreateProceduralShader(0)
+SetGradientColor sky, 0, 255, 240, 200
+SetGradientColor sky, 1, 40, 60, 140
+SetGradient sky, GRADIENT_RADIAL
+dome = CreateSphere(16)
+EntityMaterial dome, sky
 
 === SetGradientColor
 m = CreateProceduralShader(0)
@@ -501,40 +767,81 @@ SetGradientColor m, 0, 255, 120, 40     ; orange
 SetGradientColor m, 1, 40, 30, 120      ; to deep blue
 
 === SetGradientDirection
-m = CreateProceduralShader(0)
-SetGradientDirection m, 45
+; a sky that fades from bottom to top at 45 degrees
+Graphics3D 800, 600
+sky = CreateProceduralShader(0)
+SetGradientColor sky, 0, 255, 160, 80
+SetGradientColor sky, 1, 30, 40, 120
+SetGradientDirection sky, 45
+dome = CreateSphere(16)
+EntityMaterial dome, sky
 
 === SetNoiseType
-m = CreateProceduralShader(1)
-SetNoiseType m, NOISE_VORONOI
+; cell-like noise for a cracked-earth look
+Graphics3D 800, 600
+earth = CreateProceduralShader(1)
+SetNoiseType earth, NOISE_VORONOI
+ground = CreateCube()
+EntityMaterial ground, earth
 
 === SetNoiseScale
-m = CreateProceduralShader(1)
-SetNoiseScale m, 12
+; small cloud puffs: a high scale makes small features
+Graphics3D 800, 600
+clouds = CreateProceduralShader(1)
+SetNoiseScale clouds, 12
+dome = CreateSphere(16)
+EntityMaterial dome, clouds
 
 === SetNoiseOctaves
-m = CreateProceduralShader(1)
-SetNoiseOctaves m, 7
+; more octaves add finer detail to the clouds but cost more to draw
+Graphics3D 800, 600
+clouds = CreateProceduralShader(1)
+SetNoiseOctaves clouds, 7
+dome = CreateSphere(16)
+EntityMaterial dome, clouds
 
 === SetNoisePersistence
-m = CreateProceduralShader(1)
-SetNoisePersistence m, 0.65
+; keep the fine detail strong (0.65) for a rougher, more broken-up look than the usual 0.5
+Graphics3D 800, 600
+rock = CreateProceduralShader(1)
+SetNoiseOctaves rock, 6
+SetNoisePersistence rock, 0.65
+boulder = CreateSphere(16)
+EntityMaterial boulder, rock
 
 === SetNoiseLacunarity
-m = CreateProceduralShader(1)
-SetNoiseLacunarity m, 2.5
+; each layer 2.5 times finer than the one before, for a tighter grain than the usual 2
+Graphics3D 800, 600
+rock = CreateProceduralShader(1)
+SetNoiseOctaves rock, 6
+SetNoiseLacunarity rock, 2.5
+boulder = CreateSphere(16)
+EntityMaterial boulder, rock
 
 === SetNoiseSpeed
-m = CreateProceduralShader(1)
-SetNoiseSpeed m, 0.3
+; clouds that drift slowly; 0 would hold them still
+Graphics3D 800, 600
+clouds = CreateProceduralShader(1)
+SetNoiseSpeed clouds, 0.3
+dome = CreateSphere(16)
+EntityMaterial dome, clouds
 
 === SetNoiseStrength
-m = CreateProceduralShader(0)
-SetNoiseStrength m, 0.3
+; let noise break up a plain gradient so it looks like uneven haze
+Graphics3D 800, 600
+haze = CreateProceduralShader(0)
+SetNoiseStrength haze, 0.3
+dome = CreateSphere(16)
+EntityMaterial dome, haze
 
 === SetDistortion
-m = CreateProceduralShader(2)
-SetDistortion m, 0.2
+; wobbly stripes: noise bends the pattern by 0.2
+Graphics3D 800, 600
+flag = CreateProceduralShader(2)
+SetPattern flag, PATTERN_STRIPES
+SetDistortion flag, 0.2
+cloth = CreateCube()
+EntityMaterial cloth, flag
 
 === SetProceduralSeed
 rockA = CreateProceduralShader(1)
@@ -542,16 +849,31 @@ rockB = ShaderClone(rockA)
 SetProceduralSeed rockB, 17
 
 === SetPattern
-m = CreateProceduralShader(2)
-SetPattern m, PATTERN_STRIPES
+; a striped awning
+Graphics3D 800, 600
+awning = CreateProceduralShader(2)
+SetPattern awning, PATTERN_STRIPES
+SetPatternColor awning, 200, 30, 30
+panel = CreateCube()
+EntityMaterial panel, awning
 
 === SetPatternScale
-m = CreateProceduralShader(2)
-SetPatternScale m, 16
+; a fine 16 by 16 chessboard
+Graphics3D 800, 600
+board = CreateProceduralShader(2)
+SetPattern board, PATTERN_CHECKER
+SetPatternScale board, 16
+tile = CreateCube()
+EntityMaterial tile, board
 
 === SetPatternColor
-m = CreateProceduralShader(2)
-SetPatternColor m, 20, 20, 20, 180
+; dark, half see-through lines drawn over the gradient (alpha 180 of 255)
+Graphics3D 800, 600
+tiles = CreateProceduralShader(2)
+SetPattern tiles, PATTERN_GRID
+SetPatternColor tiles, 20, 20, 20, 180
+floor = CreateCube()
+EntityMaterial floor, tiles
 
 === SetPatternRotation
 m = CreateProceduralShader(2)
@@ -565,8 +887,14 @@ rock = CreatePBRMaterial()
 SetNormalMap rock, BakeProceduralTexture(bumps, 512, 512, True)
 
 === LoadPostProcess
+; load a built-in effect and one from a file; 0 means it failed
+Graphics3D 800, 600
+camera = CreateCamera()
 bloom = LoadPostProcess("builtin:bloom")
-mine = LoadPostProcess("shaders/scanlines.glsl")
+scan = LoadPostProcess("examples/media/shaders/scanlines_post.glsl")
+If scan = 0 Then RuntimeError "could not load the scanline effect"
+AddPostProcess bloom, camera
+AddPostProcess scan, camera
 
 === CreatePostProcess
 src$ = "//! fragment" + Chr(10)
@@ -574,8 +902,11 @@ src$ = src$ + "vec4 nb_post(vec2 uv) { return vec4(1.0) - texture(nb_screenTextu
 negative = CreatePostProcess(src$)
 
 === AddPostProcess
+; give the main camera a vignette; 0 as the camera would use every camera
+Graphics3D 800, 600
 camera = CreateCamera()
-AddPostProcess LoadPostProcess("builtin:vignette"), camera
+vignette = LoadPostProcess("builtin:vignette")
+AddPostProcess vignette, camera
 
 === RemovePostProcess
 camera = CreateCamera()
@@ -589,8 +920,13 @@ SetPostProcess camera, LoadPostProcess("builtin:pixelate")
 SetPostProcess camera, 0
 
 === FreePostProcess
-fx = LoadPostProcess("builtin:grain")
-FreePostProcess fx
+; remove the damage flash once it is no longer needed
+Graphics3D 800, 600
+camera = CreateCamera()
+flash = LoadPostProcess("builtin:vignette")
+AddPostProcess flash, camera
+FreePostProcess flash
+flash = 0
 
 === SetPostProcessParameter
 fog = LoadPostProcess("builtin:fog")
@@ -598,8 +934,13 @@ SetPostProcessParameter fog, "density", "0.05"
 SetPostProcessParameter fog, "color", "0.8, 0.7, 0.6"
 
 === SetPostProcessEnabled
+; switch bloom off, for example in a menu with a quality option, but keep it ready
+Graphics3D 800, 600
+camera = CreateCamera()
 bloom = LoadPostProcess("builtin:bloom")
+AddPostProcess bloom, camera
 SetPostProcessEnabled bloom, False
+SetPostProcessEnabled bloom, True
 
 === SetPostProcessOrder
 grain = LoadPostProcess("builtin:grain")
@@ -611,11 +952,19 @@ hurt = LoadPostProcess("builtin:vignette")
 PostProcessCamera hurt, player1
 
 === PostProcessPriority
+; run exposure on the bright HDR picture, before tone mapping
+Graphics3D 800, 600
+camera = CreateCamera()
 fx = LoadPostProcess("builtin:exposure")
+AddPostProcess fx, camera
 PostProcessPriority fx, -1
 
 === PostProcessInput
+; blur the original picture, not the result of the effects before it
+Graphics3D 800, 600
+camera = CreateCamera()
 fx = LoadPostProcess("builtin:blur")
+AddPostProcess fx, camera
 PostProcessInput fx, POST_ORIGINAL
 
 === PostProcessOutput
@@ -624,59 +973,182 @@ fx = LoadPostProcess("builtin:crt")
 PostProcessOutput fx, monitor
 
 === PostProcessResolution
+; a cheap glow: blur at half the screen size
+Graphics3D 800, 600
+camera = CreateCamera()
 fx = LoadPostProcess("builtin:gaussian")
+AddPostProcess fx, camera
 PostProcessResolution fx, 0.5
 
 === PostProcessShader
+; make the vignette red by setting a value of its shader
+Graphics3D 800, 600
+camera = CreateCamera()
 vig = LoadPostProcess("builtin:vignette")
+AddPostProcess vig, camera
 ShaderSetColor PostProcessShader(vig), "color", 60, 0, 0
 
 === SetRainEffect
+; a rainy level: a steady rain over the camera
+Graphics3D 800, 600
 camera = CreateCamera()
 SetRainEffect camera, 0.6
+; SetRainEffect camera, 0 would stop it
 
 === SetSnowEffect
+; gentle snow that falls slowly
+Graphics3D 800, 600
 camera = CreateCamera()
 SetSnowEffect camera, 0.5, 0.2
+; SetSnowEffect camera, 0 would stop it
 
 === SetAtmosphericFog
+; a hazy desert: pale sand coloured fog
+Graphics3D 800, 600
 camera = CreateCamera()
 SetAtmosphericFog camera, 0.03, 200, 190, 170
+; SetAtmosphericFog camera, 0 would turn it off
 
 === SetUnderwaterEffect
+; the camera is under the surface when it is below y = 2.5
+Graphics3D 800, 600
 camera = CreateCamera()
-SetUnderwaterEffect camera, True, 2.5
+SetUnderwaterEffect camera, True, 2.5, 20, 80, 120
+PositionEntity camera, 0, 1, 0
 
 === SetShadowMode
+; soft shadows from a sun onto a floor
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
 SetShadowMode SHADOW_SOFT
+While Not KeyHit(1)
+    RenderWorld : Flip
+Wend
 
 === EnableShadows
-EnableShadows
+; switch shadows on with Space, off with Enter (see DisableShadows)
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
+While Not KeyHit(1)
+    If KeyHit(57) Then EnableShadows
+    If KeyHit(28) Then DisableShadows
+    RenderWorld : Flip
+Wend
 
 === DisableShadows
-DisableShadows
+; let the player turn shadows off to speed up a slow computer (F1 toggles)
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
+shadowsOn = True
+While Not KeyHit(1)
+    If KeyHit(59) Then
+        shadowsOn = Not shadowsOn
+        If shadowsOn Then EnableShadows Else DisableShadows
+    EndIf
+    RenderWorld : Flip
+Wend
 
 === SetShadowQuality
+; sharper shadows on a good graphics card (3 is the largest, slowest map)
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
 SetShadowQuality 3
+While Not KeyHit(1)
+    RenderWorld : Flip
+Wend
 
 === SetShadowResolution
+; a 3072 pixel shadow map for the sun, between the quality 2 and 3 sizes
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
 SetShadowResolution 3072
+While Not KeyHit(1)
+    RenderWorld : Flip
+Wend
 
 === SetShadowDistance
+; only draw shadows within 40 units of the camera, to save speed in a big level
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
 SetShadowDistance 40
+While Not KeyHit(1)
+    RenderWorld : Flip
+Wend
 
 === SetShadowCascadeCount
+; split the sun's shadow into 2 zones: a sharp near one and a coarser far one
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
 SetShadowCascadeCount 2
+While Not KeyHit(1)
+    RenderWorld : Flip
+Wend
 
 === SetShadowBias
+; raise the bias a little if the floor shows speckled "shadow acne"
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
 SetShadowBias 0.0005
+While Not KeyHit(1)
+    RenderWorld : Flip
+Wend
 
 === SetShadowSoftness
+; smooth the shadow edges (any value above 0), or pass 0 for hard edges
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -8
+sun = CreateLight(1) : RotateEntity sun, 50, 30, 0
+floor = CreatePlane()
+crate = CreateCube() : PositionEntity crate, 0, 1, 0
 SetShadowSoftness 1
+While Not KeyHit(1)
+    RenderWorld : Flip
+Wend
 
 === LightShadows
+; the sun casts shadows, but the cheap fill light does not
+Graphics3D 800, 600
+cam = CreateCamera()
+PositionEntity cam, 0, 3, -8
+RotateEntity cam, 15, 0, 0
+crate = CreateCube()
+PositionEntity crate, 0, 1, 2
+floor = CreateCube()
+ScaleEntity floor, 10, 0.1, 10
+sun = CreateLight()
+RotateEntity sun, 50, 20, 0
 fill = CreateLight(LIGHT_POINT)
+PositionEntity fill, -3, 3, -3
+LightShadows sun, True
 LightShadows fill, False
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === LightIntensity
 ; a lamp three times brighter than white, for a dazzling room
@@ -706,8 +1178,19 @@ LightCookie moon, bars
 
 === LightShadowBias
 ; the floor shows stripes of shadow in the sun: push the shadow back a little
+Graphics3D 800, 600
+cam = CreateCamera()
+PositionEntity cam, 0, 3, -8
+RotateEntity cam, 15, 0, 0
+floor = CreateCube()
+ScaleEntity floor, 10, 0.1, 10
 sun = CreateLight()
-LightShadowBias sun, 0.002
+RotateEntity sun, 50, 20, 0
+LightShadowBias sun, 0.002            ; too high and shadows come loose from their objects
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === ShaderGeometrySource
 ; always an error: the renderer has no geometry stage

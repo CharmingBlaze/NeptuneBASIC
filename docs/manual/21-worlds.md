@@ -13,6 +13,7 @@ several scenes at once, and the effects that make a world look finished
 - [Several scenes](#several-scenes)
 - [Changing art while the game runs](#changing-art-while-the-game-runs)
 - [Rendering effects](#rendering-effects)
+- [Try it yourself](#try-it-yourself)
 
 ## Prefabs: one model, many copies
 
@@ -197,5 +198,198 @@ around it, so shiny surfaces reflect the room they are in;
 `EnvironmentLighting 1` lights and reflects from the sky box or probe.
 For materials, screen effects and shadows, see [the shader
 manual](../SHADERS.md).
+
+## Try it yourself
+
+These use shapes made by the program, and the picture `examples/media/ring.png`
+that comes with the repository (run them from the folder that holds `examples`).
+
+1. **Forest.** Build one tree in code (a brown trunk and a green cone of
+   leaves), make it a prefab, and plant 150 copies of it at random places on
+   a green floor, each a different size. Walk through the forest with the arrow
+   keys.
+   *Hint: `CreatePrefab` hides the original and keeps it for `InstancePrefab` to copy.*
+2. **Campfire.** Make a campfire out of two crossed logs, a particle emitter
+   for the flames, and an orange light that makes the ground glow. Space puts
+   the fire out and lights it again.
+   *Hint: `EmitterEnable` starts and stops the flames, and `HideEntity` and `ShowEntity` work on the light.*
+3. **HUD scene.** Spin a ring of eight cubes in the main scene. In a second
+   scene, which has its own camera and light, show a spinning gold cone in the
+   corner of the screen. Pressing P hides the whole main scene (leaving only
+   the cone) and pressing P again brings it back.
+   *Hint: build the second scene with `CreateScene` and `SetScene`, then go back with `SetScene 1`; the second scene needs its own light.*
+
+### Answers
+
+1.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 1.7, -20
+CameraClsColor camera, 150, 190, 230
+CameraFogMode camera, 1
+CameraFogColor camera, 150, 190, 230
+CameraFogRange camera, 20, 90
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 50, 30, 0
+AmbientLight 80, 80, 90
+
+floor = CreatePlane()
+EntityColor floor, 70, 140, 70
+
+; one tree, built in code
+tree = CreatePivot()
+trunk = CreateCylinder(8, 1, tree)
+ScaleEntity trunk, 0.3, 1.5, 0.3
+PositionEntity trunk, 0, 1.5, 0
+EntityColor trunk, 110, 70, 40
+leaves = CreateCone(12, 1, tree)
+ScaleEntity leaves, 1.5, 2, 1.5
+PositionEntity leaves, 0, 4.5, 0
+EntityColor leaves, 40, 130, 50
+prefab = CreatePrefab(tree)
+
+SeedRnd 5
+For i = 1 To 150
+    t = InstancePrefab(prefab)
+    PositionEntity t, Rnd(-60, 60), 0, Rnd(-60, 60)
+    size# = Rnd(0.6, 1.6)
+    ScaleEntity t, size, size, size
+    TurnEntity t, 0, Rnd(360), 0
+Next
+
+While Not KeyHit(KEY_ESCAPE)
+    If KeyDown(KEY_LEFT) Then TurnEntity camera, 0, 2, 0
+    If KeyDown(KEY_RIGHT) Then TurnEntity camera, 0, -2, 0
+    If KeyDown(KEY_UP) Then MoveEntity camera, 0, 0, 0.2
+    If KeyDown(KEY_DOWN) Then MoveEntity camera, 0, 0, -0.2
+    RenderWorld
+    Flip
+Wend
+```
+
+The tree is built once from a pivot with two children, and `CreatePrefab` makes
+it into the original that is copied (and hides it, so it does not stand in the
+middle of the world). Each `InstancePrefab` is a new copy that can be placed,
+scaled and turned on its own, while the copies share the tree's meshes, so 150
+of them cost little. Fog hides the far edge of the forest.
+
+2.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 3, -8
+CameraLookAt camera, 0, 1, 0
+CameraClsColor camera, 5, 8, 25
+AmbientLight 25, 25, 40
+
+ground = CreatePlane()
+EntityColor ground, 50, 60, 50
+
+log1 = CreateCylinder(8)
+ScaleEntity log1, 0.2, 1.2, 0.2
+RotateEntity log1, 0, 0, 80
+PositionEntity log1, 0, 0.25, 0
+EntityColor log1, 90, 55, 30
+log2 = CreateCylinder(8)
+ScaleEntity log2, 0.2, 1.2, 0.2
+RotateEntity log2, 80, 0, 0
+PositionEntity log2, 0, 0.45, 0
+EntityColor log2, 80, 50, 25
+
+fire = CreateEmitter(LoadTexture("examples/media/ring.png", 2))
+PositionEntity fire, 0, 0.6, 0
+EmitterRate fire, 60
+EmitterLife fire, 0.6, 1.2
+EmitterVelocity fire, 0, 2, 0, 0.4
+EmitterSize fire, 0.5, 0
+EmitterColor fire, 255, 170, 40, 220
+EmitterFadeColor fire, 255, 40, 0, 0
+
+glow = CreateLight(LIGHT_POINT)
+PositionEntity glow, 0, 1.5, 0
+LightColor glow, 255, 140, 50
+LightRange glow, 12
+
+burning = True
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_SPACE)
+        burning = Not burning
+        EmitterEnable fire, burning
+        If burning Then ShowEntity glow Else HideEntity glow
+    EndIf
+    UpdateWorld
+    RenderWorld
+    Text 10, 10, "Space puts the fire out or lights it again"
+    Flip
+Wend
+```
+
+The flames are particles: each lives for under a second, rises, and fades
+from orange to red and then to see-through. Particles are created and moved
+during `UpdateWorld`, so it is called every frame. `Not burning` flips the
+switch each time Space is pressed; the emitter stops making new flames (the
+ones alive fade away), and the light is hidden so the ground goes dark.
+
+3.
+
+```basic
+Graphics3D 1280, 720
+
+; scene 1: the main scene
+camera = CreateCamera()
+PositionEntity camera, 0, 6, -12
+CameraLookAt camera, 0, 0, 0
+CameraClsColor camera, 20, 30, 60
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 50, 30, 0
+
+ring = CreatePivot()
+For i = 0 To 7
+    cube = CreateCube(ring)
+    ScaleEntity cube, 0.6, 0.6, 0.6
+    PositionEntity cube, Cos(i * 45) * 5, 0, Sin(i * 45) * 5
+    EntityColor cube, 60 + i * 25, 200 - i * 20, 255
+Next
+
+; scene 2: the HUD, with its own camera and light
+hud = CreateScene()
+SetScene hud
+hudCamera = CreateCamera()
+hudLight = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity hudLight, 30, 30, 0
+coin = CreateCone(16)
+EntityColor coin, 255, 210, 40
+PositionEntity coin, 3, 2, 6
+SetScene 1
+
+hidden = False
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_P)
+        hidden = Not hidden
+        If hidden Then HideScene 1 Else ShowScene 1
+    EndIf
+    If Not hidden Then TurnEntity ring, 0, 1, 0
+
+    SetScene hud
+    TurnEntity coin, 0, 3, 0
+    SetScene 1
+
+    UpdateWorld
+    RenderWorld
+    Text 10, 10, "P hides and shows the main scene"
+    Flip
+Wend
+```
+
+Each scene has its own entities, lights and cameras, so the HUD scene gets
+its own camera and light. `SetScene` chooses the scene that new entities go
+into and that commands work on; the program switches to the HUD scene to turn
+the cone, and goes back to scene 1 afterwards. The HUD scene is drawn over
+the main one with a see-through background. `HideScene 1` stops scene 1 being
+drawn or updated, and `ShowScene 1` brings it back exactly as it was. The ring
+is only turned while the scene is showing, since it is unchanged while hidden.
 
 [Contents](../MANUAL.md) · Previous: [20. AI and pathfinding](20-ai.md) · Next: [22. Files and data](22-files.md)

@@ -23,6 +23,10 @@ fn prop(size: f32) -> FontId {
     FontId::proportional(size)
 }
 
+fn rect_height(ui: &Ui) -> f32 {
+    ui.available_rect_before_wrap().height()
+}
+
 fn header(ui: &mut Ui, th: &Theme, title: &str, add: impl FnOnce(&mut Ui)) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::hover());
     let mut c = ui.new_child(UiBuilder::new().max_rect(r.shrink2(Vec2::new(8.0, 0.0))).layout(Layout::left_to_right(Align::Center)));
@@ -363,7 +367,7 @@ impl App {
         if !q.is_empty() {
             found.sort();
         }
-        let detail_h = if self.ref_selected.is_some() { 180.0 } else { 0.0 };
+        let detail_h = if self.ref_selected.is_some() { (rect_height(ui) * 0.55).clamp(180.0, 420.0) } else { 0.0 };
         let rect = ui.available_rect_before_wrap();
         let list_rect = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.bottom() - detail_h));
         let mut list = ui.new_child(UiBuilder::new().max_rect(list_rect).id_salt("ref-list"));
@@ -398,6 +402,7 @@ impl App {
             let mut d = ui.new_child(UiBuilder::new().max_rect(area.shrink(10.0)).id_salt("ref-detail"));
             let h = &self.known.help[i];
             let mut insert = None;
+            let mut run_example = None;
             egui::ScrollArea::vertical().id_salt("ref-text").auto_shrink([false, false]).show(&mut d, |ui| {
                 ui.spacing_mut().item_spacing.y = 6.0;
                 ui.horizontal(|ui| {
@@ -419,7 +424,27 @@ impl App {
                         ui.ctx().copy_text(h.name.clone());
                     }
                 });
+                if !h.example.is_empty() {
+                    ui.add_space(4.0);
+                    panel_title(ui, th, "Example");
+                    egui::Frame::new().fill(th.bg).stroke(Stroke::new(1.0, th.line)).inner_margin(Margin::same(8)).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.add(egui::Label::new(crate::manual::code_job(&h.example, &self.known, th, 12.5)).selectable(true));
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Open as New Program").clicked() {
+                            run_example = Some(h.example.clone());
+                        }
+                        if ui.button("Copy Example").clicked() {
+                            ui.ctx().copy_text(h.example.clone());
+                        }
+                    });
+                }
             });
+            if let Some(code) = run_example {
+                self.new_file();
+                self.with_doc(|d| d.buf.insert(&code, crate::buffer::EditKind::Other));
+            }
             if let Some(n) = insert {
                 self.with_doc(|d| d.buf.insert(&n, crate::buffer::EditKind::Other));
                 self.focus_editor = true;

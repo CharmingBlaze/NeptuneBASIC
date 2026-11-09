@@ -44,6 +44,8 @@ pub struct HelpEntry {
     pub ext: bool,
     /// `PositionEntity(entity%, x#, ...)`, once the language server has said.
     pub signature: String,
+    /// A short program showing the command in use.
+    pub example: String,
 }
 
 /// Every name with a fixed spelling, looked up in lower case.
@@ -73,13 +75,20 @@ impl Known {
                         None => (false, text),
                     };
                     k.help_index.insert(name.to_ascii_lowercase(), k.help.len());
-                    k.help.push(HelpEntry { name: name.to_string(), category: category.clone(), text: text.to_string(), ext, signature: String::new() });
+                    k.help.push(HelpEntry { name: name.to_string(), category: category.clone(), text: text.to_string(), ext, signature: String::new(), example: String::new() });
                     k.words.insert(name.to_ascii_lowercase(), (name.to_string(), Tk::Command));
                 }
             }
         }
         for w in KEYWORDS {
             k.words.insert(w.to_ascii_lowercase(), (w.to_string(), Tk::Keyword));
+        }
+        for file in crate::manual::EXAMPLE_FILES {
+            for (name, code) in parse_examples(file) {
+                if let Some(&i) = k.help_index.get(&name.to_ascii_lowercase()) {
+                    k.help[i].example = code;
+                }
+            }
         }
         k
     }
@@ -105,6 +114,23 @@ impl Known {
     pub fn canonical(&self, word: &str) -> Option<&str> {
         self.words.get(&word.to_ascii_lowercase()).map(|(s, _)| s.as_str())
     }
+}
+
+/// Reads `=== Name` sections from a `docs/examples` file.
+pub fn parse_examples(text: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for line in text.lines() {
+        if let Some(name) = line.strip_prefix("=== ") {
+            out.push((name.trim().to_string(), String::new()));
+        } else if let Some((_, code)) = out.last_mut() {
+            code.push_str(line.trim_end());
+            code.push('\n');
+        }
+    }
+    for (_, code) in &mut out {
+        *code = code.trim().to_string();
+    }
+    out
 }
 
 /// Splits one line into tokens. Everything in NeptuneBASIC that spans several
@@ -598,7 +624,14 @@ mod tests {
         assert!(k.help.len() > 500);
         assert_eq!(k.canonical("positionentity"), Some("PositionEntity"));
         assert_eq!(k.canonical("WEND"), Some("Wend"));
+        assert!(k.help.iter().all(|h| !h.example.is_empty()), "a command has no example");
         assert!(k.help_for("min").unwrap().ext);
+    }
+
+    #[test]
+    fn reads_example_files() {
+        let e = parse_examples("; header\n\n=== A\n; one\nx = 1\n\n=== B\ny = 2\n");
+        assert_eq!(e, vec![("A".to_string(), "; one\nx = 1".to_string()), ("B".to_string(), "y = 2".to_string())]);
     }
 
     #[test]

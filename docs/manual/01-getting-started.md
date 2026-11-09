@@ -68,12 +68,17 @@ The `neptune` program has a few other commands:
 
 ## An editor
 
-Programs are plain text, so any text editor works. Visual Studio Code is
-best: the NeptuneBASIC extension in `editors/vscode` colours your code,
-shows mistakes as you type, completes command names, shows what each
-command does when you point at it, and runs your program with **F5**.
-Its `README.md` explains how to install it. Other editors that support
-the Language Server Protocol can use `neptune lsp` the same way.
+The easiest place to write programs is **Neptune IDE**, which comes with
+NeptuneBASIC. Start it with `target/release/neptune-ide`, type a program,
+and press **F5** to run it. It colours your code, shows mistakes as you
+type, suggests command names, and has this manual and every command's
+explanation and example built in: put the caret on a command and press
+**F1**. The [IDE guide](../IDE.md) has the rest.
+
+Programs are plain text, so any text editor works too. For Visual Studio
+Code, the extension in `editors/vscode` does much the same as the IDE, and
+its `README.md` explains how to install it. Other editors that support the
+Language Server Protocol can use `neptune lsp`.
 
 ## Your first program
 

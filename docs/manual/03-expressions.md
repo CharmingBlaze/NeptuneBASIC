@@ -15,6 +15,7 @@ that combine values, and the maths commands.
 - [Maths commands](#maths-commands)
 - [Random numbers](#random-numbers)
 - [Bits](#bits)
+- [Try it yourself](#try-it-yourself)
 
 ## Arithmetic
 
@@ -213,7 +214,7 @@ Angles are in **degrees** (a full turn is 360).
 | `Exp(x)`, `Log(x)`, `Log10(x)` | e to the power x, natural log, base-10 log |
 | `Floor(x)`, `Ceil(x)` | rounded down, rounded up |
 | `Int(x)` | rounded to the nearest whole number |
-| `Min(a, b)`, `Max(a, b)` | the smaller, the larger |
+| `Min(a, b)`, `Max(a, b)` | the smaller, the larger (always a float: `Print Min(3, 5)` shows `3.0`) |
 | `Clamp(x, low, high)` | x kept between low and high |
 | `Lerp(a, b, t)` | the value a fraction t of the way from a to b |
 | `Pi` | 3.141593 |
@@ -312,5 +313,81 @@ not frozen
 
 Numbers can be written in hexadecimal with `$` (`$FF` is 255) and in
 binary with `%` (`%101` is 5).
+
+## Try it yourself
+
+1. **Race clock.** Your best lap took 3725 seconds in a very long race. Print
+   it as hours, minutes and seconds, like `1 h 2 m 5 s`.
+   *Hint: `/` on two ints drops the fraction, and `Mod` gives what is left over.*
+2. **Treasure radar.** The player is at (1, 1) and the treasure is at (7, 9).
+   Print the distance between them, and then `Treasure is close!` if the
+   distance is 12 or less, or `Treasure is far away.` if it is more.
+   *Hint: use `Sqr` for the distance and `IIf` to choose between the two messages.*
+3. **Inventory flags.** Use one number to remember which items you carry:
+   `SWORD` is 1, `SHIELD` is 2 and `KEY` is 4. Start with the sword and the
+   key, print whether you have the shield, pick up the shield, drop the
+   sword, and print the number that holds your items now.
+   *Hint: `Or` switches a flag on, and `And ~flag` switches it off.*
+
+### Answers
+
+1.
+
+```basic
+total = 3725
+hours = total / 3600
+minutes = total Mod 3600 / 60
+seconds = total Mod 60
+Print hours + " h " + minutes + " m " + seconds + " s"
+```
+
+```output
+1 h 2 m 5 s
+```
+
+Dividing two ints gives a whole number, so `3725 / 3600` is 1 hour.
+`Mod` finds what is left over: 125 seconds after the hour, which is 2
+minutes with 5 seconds remaining. (`Mod` and `/` have the same priority, so
+`total Mod 3600 / 60` takes the remainder first, then divides.)
+
+2.
+
+```basic
+dx = 7 - 1
+dy = 9 - 1
+distance# = Sqr(dx ^ 2 + dy ^ 2)
+Print "Distance: " + distance
+Print IIf(distance <= 12, "Treasure is close!", "Treasure is far away.")
+```
+
+```output
+Distance: 10.0
+Treasure is close!
+```
+
+The two sides of the triangle are 6 and 8, so the distance is 10. The
+condition is true, so `IIf` gives the first message.
+
+3.
+
+```basic
+Const SWORD = 1, SHIELD = 2, KEY = 4
+items = SWORD Or KEY
+Print "Has shield: " + ((items And SHIELD) <> 0)
+items = items Or SHIELD
+items = items And ~SWORD
+Print "Has shield: " + ((items And SHIELD) <> 0)
+Print "Items number: " + items
+```
+
+```output
+Has shield: 0
+Has shield: 1
+Items number: 6
+```
+
+Each item is its own bit, so `Or` can switch one on without touching the
+others. `~SWORD` has every bit set except the sword's, so `And ~SWORD`
+switches only the sword off. That leaves the shield (2) and the key (4), 6.
 
 [Contents](../MANUAL.md) · Previous: [2. Values and variables](02-values-and-variables.md) · Next: [4. Making decisions](04-decisions.md)

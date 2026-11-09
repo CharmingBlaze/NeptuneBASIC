@@ -15,6 +15,7 @@ keep programs short, and let you think about one job at a time:
 - [Functions that call themselves](#functions-that-call-themselves)
 - [Objects as parameters](#objects-as-parameters)
 - [Designing with functions](#designing-with-functions)
+- [Try it yourself](#try-it-yourself)
 
 ## Writing a function
 
@@ -334,5 +335,99 @@ While Not KeyHit(KEY_ESCAPE)
     Flip
 Wend
 ```
+
+## Try it yourself
+
+1. **Healing potion.** Write a function `Heal(hp, amount, maxHp)` that returns
+   the health after healing, but never above `maxHp`. Use it to print the
+   health of a hero with 40 of 100 hp drinking a potion of 30, then another of
+   50.
+   *Hint: work out the new health in a variable, and use `If` to cap it before you return it.*
+2. **Report card.** Write a function `Grade$(score)` that returns `"A"` for 90
+   or more, `"B"` for 70 or more, `"C"` for 50 or more and `"Fail"` otherwise.
+   Print the grade for the scores 95, 72, 50 and 12, each on a line like
+   `95 = A`.
+   *Hint: a function can have several `Return` lines, and the first one reached ends it.*
+3. **Rabbit breeding.** Each number in the Fibonacci sequence (1, 1, 2, 3, 5,
+   8, ...) is the sum of the two before it. Write a recursive function
+   `Fibonacci(n)` and print the first ten numbers on one line, separated by spaces.
+   *Hint: `Fibonacci(1)` and `Fibonacci(2)` are both 1, and every other `Fibonacci(n)` calls `Fibonacci(n - 1)` and `Fibonacci(n - 2)`.*
+
+### Answers
+
+1.
+
+```basic
+Function Heal(hp, amount, maxHp)
+    hp = hp + amount
+    If hp > maxHp Then hp = maxHp
+    Return hp
+End Function
+
+hp = 40
+hp = Heal(hp, 30, 100)
+Print "After the first potion: " + hp
+hp = Heal(hp, 50, 100)
+Print "After the second potion: " + hp
+```
+
+```output
+After the first potion: 70
+After the second potion: 100
+```
+
+The function adds the amount to its own copy of `hp`, and the `If` stops it going above `maxHp`.
+The first potion gives 70; the second would give 120, but is capped at 100.
+The result is stored back in `hp`, because parameters are copies.
+
+2.
+
+```basic
+Function Grade$(score)
+    If score >= 90 Then Return "A"
+    If score >= 70 Then Return "B"
+    If score >= 50 Then Return "C"
+    Return "Fail"
+End Function
+
+Print "95 = " + Grade(95)
+Print "72 = " + Grade(72)
+Print "50 = " + Grade(50)
+Print "12 = " + Grade(12)
+```
+
+```output
+95 = A
+72 = B
+50 = C
+12 = Fail
+```
+
+`Return` ends the function at once, so each later test is only reached when
+the earlier ones were false. The `$` on the name says the function returns
+text. Score 12 passes none of the tests and reaches the last `Return`.
+
+3.
+
+```basic
+Function Fibonacci(n)
+    If n <= 2 Then Return 1
+    Return Fibonacci(n - 1) + Fibonacci(n - 2)
+End Function
+
+line$ = ""
+For i = 1 To 10
+    line = line + Fibonacci(i) + " "
+Next
+Print line
+```
+
+```output
+1 1 2 3 5 8 13 21 34 55 
+```
+
+`Fibonacci(1)` and `Fibonacci(2)` do not call themselves, which stops the recursion.
+Every other call splits into two smaller ones until it reaches those. The
+loop collects each answer into one line of text.
 
 [Contents](../MANUAL.md) · Previous: [5. Loops](05-loops.md) · Next: [7. Text](07-text.md)

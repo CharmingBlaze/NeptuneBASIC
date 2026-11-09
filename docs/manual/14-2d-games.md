@@ -13,6 +13,7 @@ animations, physics, and simple buttons and sliders.
 - [Animation](#animation)
 - [2D physics](#2d-physics)
 - [Simple buttons and sliders](#simple-buttons-and-sliders)
+- [Try it yourself](#try-it-yourself)
 
 ## Tile maps
 
@@ -48,15 +49,15 @@ Wend
 
 Testing the ground under the player:
 
-To draw levels in the Tiled editor and animate characters in Aseprite, see
-[2D levels and sprites from other tools](../TOOLS2D.md).
-
 ```basic
 ; px, py is the player's position, relative to the map's corner
 map = CreateTileMap(CreateImage(32, 32, 4), 50, 20)
 px = 100 : py = 300
 If TileAt(map, px, py + 17) >= 0 Then Print "standing on something"
 ```
+
+To draw levels in the Tiled editor and animate characters in Aseprite, see
+[2D levels and sprites from other tools](../TOOLS2D.md).
 
 ## Autotiling
 
@@ -241,5 +242,166 @@ Each control returns its new value: assign it back to the variable.
 `UIButton` is true in the frame it is clicked. `UIHover()` is true when
 the mouse is over a control, so the game can ignore that click.
 `UITheme r, g, b` sets the accent colour.
+
+## Try it yourself
+
+These use no picture files: the programs draw their own tile pictures.
+
+1. **Stone and grass.** Make a tile picture with two frames, a grey stone brick
+   and a green grass top, using `CreateImage(32, 32, 2)` and drawing into each
+   frame. Build a map 25 tiles wide and 19 tall with grass along row 16, stone
+   on rows 17 and 18 below it, and a few floating stone blocks above. Draw it
+   until Escape.
+   *Hint: `SetBuffer ImageBuffer(tiles, 0)` draws into frame 0, and `ImageBuffer(tiles, 1)` into frame 1.*
+2. **Long walk.** Make a world 80 tiles wide. Let a player (a circle) walk
+   along the ground with the left and right arrows while the camera follows,
+   without ever showing anything past the ends of the map. Show how far the
+   player has walked in the corner of the screen.
+   *Hint: `Clamp` the camera position, and draw the text after `Camera2DEnable False`.*
+3. **Bowling.** With 2D physics, build a pyramid of crates (four at the
+   bottom, then three, two and one) and a ball at the left. Space kicks the
+   ball along the floor to knock the pyramid over.
+   *Hint: each row is one crate shorter than the one below it, and starts half a crate further along.*
+
+### Answers
+
+1.
+
+```basic
+Graphics 800, 600
+
+; frame 0 is stone, frame 1 is grass
+tiles = CreateImage(32, 32, 2)
+SetBuffer ImageBuffer(tiles, 0)
+Color 120, 120, 130 : Rect 0, 0, 32, 32
+Color 80, 80, 90 : Rect 0, 0, 32, 32, False
+Color 80, 80, 90 : Line 0, 16, 32, 16
+SetBuffer ImageBuffer(tiles, 1)
+Color 110, 80, 50 : Rect 0, 0, 32, 32
+Color 60, 180, 60 : Rect 0, 0, 32, 10
+SetBuffer BackBuffer()
+
+map = CreateTileMap(tiles, 25, 19)
+For x = 0 To 24
+    SetTile map, x, 16, 1       ; grass
+    SetTile map, x, 17, 0       ; stone
+    SetTile map, x, 18, 0
+Next
+For x = 4 To 7
+    SetTile map, x, 12, 0
+Next
+SetTile map, 12, 9, 0
+For x = 16 To 20
+    SetTile map, x, 11, 0
+Next
+
+ClsColor 120, 190, 255
+While Not KeyHit(KEY_ESCAPE)
+    Cls
+    DrawTileMap map, 0, 0
+    Flip
+Wend
+```
+
+Each frame of `tiles` is drawn once by pointing `SetBuffer` at it, then
+`SetBuffer BackBuffer()` sends drawing back to the screen. The map starts
+empty, so only the cells that are set with `SetTile` are drawn, and the sky
+colour shows through everywhere else. Tile 0 is the first frame (stone) and
+tile 1 the second (grass).
+
+2.
+
+```basic
+Graphics 800, 600
+
+tiles = CreateImage(32, 32, 2)
+SetBuffer ImageBuffer(tiles, 0)
+Color 120, 120, 130 : Rect 0, 0, 32, 32
+Color 80, 80, 90 : Rect 0, 0, 32, 32, False
+SetBuffer ImageBuffer(tiles, 1)
+Color 110, 80, 50 : Rect 0, 0, 32, 32
+Color 60, 180, 60 : Rect 0, 0, 32, 10
+SetBuffer BackBuffer()
+
+Const MAP_WIDTH = 80
+map = CreateTileMap(tiles, MAP_WIDTH, 19)
+For x = 0 To MAP_WIDTH - 1
+    SetTile map, x, 17, 1
+    SetTile map, x, 18, 0
+Next
+For x = 5 To MAP_WIDTH - 1 Step 10          ; a pillar every ten tiles
+    SetTile map, x, 16, 0
+    SetTile map, x, 15, 0
+Next
+
+playerX# = 100
+ClsColor 120, 190, 255
+While Not KeyHit(KEY_ESCAPE)
+    If KeyDown(KEY_RIGHT) Then playerX = playerX + 5
+    If KeyDown(KEY_LEFT) Then playerX = playerX - 5
+    playerX = Clamp(playerX, 16, MAP_WIDTH * 32 - 16)
+
+    Cls
+    ; the screen is 800 wide, so keep the camera 400 from each end of the map
+    Camera2D Clamp(playerX, 400, MAP_WIDTH * 32 - 400), 300
+    DrawTileMap map, 0, 0
+    Color 255, 200, 40
+    Oval playerX - 16, 17 * 32 - 32, 32, 32
+    Camera2DEnable False
+    Color 0, 0, 0
+    Text 10, 10, "Distance: " + Int(playerX / 32) + " tiles"
+    Flip
+Wend
+```
+
+`Camera2D` puts the point it is given in the middle of the screen. The
+screen is 800 pixels wide, so a camera that stays between 400 and the end of
+the map minus 400 never shows past either edge, while the player can still
+walk right up to the ends. The score text is drawn after `Camera2DEnable
+False`, so it stays in the corner in screen pixels instead of scrolling away.
+
+3.
+
+```basic
+Graphics 800, 600
+Physics2DGravity 0, 900
+
+floor = CreateBody2D(1, 400, 580)          ; static
+Body2DBox floor, 800, 40
+Body2DFriction floor, 0.8
+
+; the pyramid: 4 crates, then 3, 2, 1
+For row = 0 To 3
+    For col = 0 To 3 - row
+        crate = CreateBody2D(0, 500 + col * 32 + row * 16, 545 - row * 30)
+        Body2DBox crate, 30, 30
+        Body2DFriction crate, 0.6
+    Next
+Next
+
+ball = CreateBody2D(0, 80, 540)
+Body2DCircle ball, 20
+Body2DBounce ball, 0.2
+
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_SPACE) Then SetVelocity2D ball, 900, -40
+    If KeyHit(KEY_R)
+        PositionBody2D ball, 80, 540
+        SetVelocity2D ball, 0, 0
+    EndIf
+    Cls
+    Color 255, 255, 255
+    DrawBodies2D
+    Text 10, 10, "Space kicks the ball, R puts it back, Escape quits"
+    Flip
+Wend
+```
+
+The floor is a static body, so it never moves; everything else is dynamic and
+falls under gravity. In the pyramid, row 0 has four crates, row 1 has three
+and so on (`3 - row` more after the first), and adding `row * 16` shifts each
+higher row half a crate along so it sits between the crates below. Space gives
+the ball a speed to the right, and the physics engine does the rest as the
+frames go round.
 
 [Contents](../MANUAL.md) · Previous: [13. 2D graphics](13-2d-graphics.md) · Next: [15. Input](15-input.md)

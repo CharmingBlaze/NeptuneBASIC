@@ -12,6 +12,7 @@ for each frame of a game, until the player quits.
 - [Leaving a loop early](#leaving-a-loop-early)
 - [Loops inside loops](#loops-inside-loops)
 - [Which loop?](#which-loop)
+- [Try it yourself](#try-it-yourself)
 
 ## For: counting
 
@@ -236,5 +237,104 @@ Output:
 A loop that never ends freezes the program. In a game loop, make sure
 something (a key, the window closing) can end it, and that each time
 round calls `Flip`, which also gives the window a chance to respond.
+
+## Try it yourself
+
+1. **Rocket launch.** Print a countdown from 5 down to 1, one number per line,
+   and then `Liftoff!`.
+   *Hint: a `For` loop with a negative `Step` counts down.*
+2. **Pyramid.** Build a pyramid of stars, five rows tall: one star on the first
+   row, two on the second, and so on up to five.
+   *Hint: put a loop inside a loop, and use the outer counter as the length of the inner one.*
+3. **Fizz Buzz.** Count from 1 to 15. Print `Fizz` instead of the number when
+   it divides by 3, `Buzz` when it divides by 5, and `Fizz Buzz` when it
+   divides by both. Otherwise print the number.
+   *Hint: `n Mod 3 = 0` tests for a multiple of 3, and the "both" case has to be tested first.*
+
+### Answers
+
+1.
+
+```basic
+For n = 5 To 1 Step -1
+    Print n
+Next
+Print "Liftoff!"
+```
+
+```output
+5
+4
+3
+2
+1
+Liftoff!
+```
+
+The counter starts at 5 and `Step -1` takes one off each time round, stopping
+after it reaches 1. `Liftoff!` is after `Next`, so it is printed once, when
+the loop is finished.
+
+2.
+
+```basic
+For row = 1 To 5
+    line$ = ""
+    For star = 1 To row
+        line = line + "*"
+    Next
+    Print line
+Next
+```
+
+```output
+*
+**
+***
+****
+*****
+```
+
+Each time round the outer loop starts a fresh empty line. The inner loop adds
+`row` stars to it, so row 1 gets one star and row 5 gets five. The line is
+printed after the inner loop ends.
+
+3.
+
+```basic
+For n = 1 To 15
+    If n Mod 3 = 0 And n Mod 5 = 0
+        Print "Fizz Buzz"
+    ElseIf n Mod 3 = 0
+        Print "Fizz"
+    ElseIf n Mod 5 = 0
+        Print "Buzz"
+    Else
+        Print n
+    EndIf
+Next
+```
+
+```output
+1
+2
+Fizz
+4
+Buzz
+Fizz
+7
+8
+Fizz
+Buzz
+11
+Fizz
+13
+14
+Fizz Buzz
+```
+
+The `If` chain is checked in order and only the first true part runs. 15 is a
+multiple of both 3 and 5, so the "both" test has to come first, or 15 would
+print only `Fizz`.
 
 [Contents](../MANUAL.md) · Previous: [4. Making decisions](04-decisions.md) · Next: [6. Functions](06-functions.md)

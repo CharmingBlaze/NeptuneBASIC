@@ -4,6 +4,22 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Better tutorials, explanations and examples
+
+* **Two projects that build a whole game, step by step** – Star Catcher in 2D
+  and Crystal Hunt in 3D, running the program after every step. See
+  [Build a whole game](docs/MANUAL.md#build-a-whole-game).
+* **Practice in every chapter** – chapters 2 to 25 end with exercises, hints
+  and worked answers.
+* **Clearer command explanations** – 262 short descriptions were rewritten from
+  what each command really does: units, ranges, what it returns when it fails,
+  and what is easy to get wrong.
+* **Examples that teach** – about 200 bare examples now show the command doing
+  a job and what to expect.
+* **In the IDE** – the Command Reference shows each command's example, which
+  opens as a new program with one click, and the manual has Previous and Next
+  buttons.
+
 ## Neptune IDE
 
 * **An IDE made for NeptuneBASIC** – the new `neptune-ide` program. It

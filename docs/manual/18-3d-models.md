@@ -18,6 +18,7 @@ skies.
 - [Baked lighting](#baked-lighting)
 - [Sky and mirrors](#sky-and-mirrors)
 - [Animating anything](#animating-anything)
+- [Try it yourself](#try-it-yourself)
 
 ## Loading models
 
@@ -318,5 +319,154 @@ TrackKey glow, 0, 255, 120, 0            ; at frame 0: orange
 TrackKey glow, 60, 0, 120, 255           ; at frame 60: blue
 PlayTrack glow, 2                        ; mode 2: back and forth
 ```
+
+## Try it yourself
+
+These use the files that come with the repository (`examples/media/Fox.glb`
+and `examples/media/checker.png`), or shapes built by the program. Run them
+from the folder that holds `examples`.
+
+1. **Fox show.** Load the fox, shrink it so it fits the view, and let it turn
+   slowly. Pressing 1, 2 or 3 changes the animation it plays, and the screen
+   says which one is playing.
+   *Hint: `Animate fox, 1, 1, sequence, 10` starts a looping sequence with a smooth blend, and `UpdateWorld` makes animations move.*
+2. **Material test.** Make a floor with the checker texture that slowly slides
+   along, a shiny metal ball, and a see-through blue cube, all lit by one light.
+   *Hint: `PositionTexture` moves a texture, so call it every frame with a growing number; `EntityMetallic` and `EntityAlpha` do the other two.*
+3. **Cut gem.** Build a gem as a mesh in code: an eight-sided shape (two
+   pyramids joined at their bases), with six corners and eight triangles. Let it
+   spin in front of the camera.
+   *Hint: a triangle is drawn only when its corners go round clockwise as seen from outside; the pyramid example shows the order.*
+
+### Answers
+
+1.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 1.5, -5
+CameraClsColor camera, 40, 60, 90
+light = CreateLight()
+TurnEntity light, 40, 30, 0
+
+fox = LoadAnimMesh("examples/media/Fox.glb")
+If fox = 0 Then RuntimeError "Fox.glb is missing"
+ScaleEntity fox, 0.02, 0.02, 0.02
+Animate fox, 1, 1, 0
+current = 1
+
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_1) Then Animate fox, 1, 1, 0, 10 : current = 1
+    If KeyHit(KEY_2) Then Animate fox, 1, 1, 1, 10 : current = 2
+    If KeyHit(KEY_3) Then Animate fox, 1, 1, 2, 10 : current = 3
+    TurnEntity fox, 0, 0.5, 0
+    UpdateWorld
+    RenderWorld
+    Text 10, 10, "Playing animation " + current + "  (keys 1, 2, 3)"
+    Flip
+Wend
+```
+
+The sequences are numbered from 0, so key 1 plays sequence 0, key 2 plays
+sequence 1 and key 3 plays sequence 2. The last number in `Animate` is the
+blend: the fox moves smoothly from its old pose to the new animation over 10
+frames. After a `Then`, the `:` joins two statements that both happen only
+when the key is pressed. The text is 2D, so it is drawn after `RenderWorld`.
+
+2.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 4, -10
+CameraLookAt camera, 0, 0, 0
+CameraClsColor camera, 30, 35, 60
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 50, 30, 0
+
+floor = CreatePlane()
+checker = LoadTexture("examples/media/checker.png")
+If checker = 0 Then RuntimeError "checker.png is missing"
+ScaleTexture checker, 0.25, 0.25
+EntityTexture floor, checker
+
+ball = CreateSphere(32)
+PositionEntity ball, -2.5, 1, 2
+EntityColor ball, 200, 200, 210
+EntityMetallic ball, 1
+EntityRoughness ball, 0.15
+
+glass = CreateCube()
+PositionEntity glass, 2.5, 1, 2
+EntityColor glass, 60, 120, 255
+EntityAlpha glass, 0.5
+
+slide# = 0
+While Not KeyHit(KEY_ESCAPE)
+    slide = slide + 0.005
+    PositionTexture checker, slide, 0
+    TurnEntity glass, 0, 1, 0
+    RenderWorld
+    Flip
+Wend
+```
+
+`LoadTexture` loads the picture once. `ScaleTexture` with a number below 1
+makes the squares bigger, and `PositionTexture` shifts the picture along the
+surface; calling it with a number that grows a little each frame makes the
+floor appear to move. The ball is fully metallic with a low roughness, so it
+reflects light sharply, and `EntityAlpha 0.5` makes the cube half see-through.
+
+3.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 0, -4
+CameraClsColor camera, 15, 15, 40
+light = CreateLight()
+TurnEntity light, 30, 40, 0
+
+gem = CreateMesh()
+surf = CreateSurface(gem)
+top = AddVertex(surf, 0, 1, 0)
+bottom = AddVertex(surf, 0, -1, 0)
+n = AddVertex(surf, 0, 0, 1)
+e = AddVertex(surf, 1, 0, 0)
+s = AddVertex(surf, 0, 0, -1)
+w = AddVertex(surf, -1, 0, 0)
+
+; the upper pyramid
+AddTriangle surf, top, e, s
+AddTriangle surf, top, n, e
+AddTriangle surf, top, w, n
+AddTriangle surf, top, s, w
+; the lower pyramid, with the corners the other way round
+AddTriangle surf, bottom, s, e
+AddTriangle surf, bottom, e, n
+AddTriangle surf, bottom, n, w
+AddTriangle surf, bottom, w, s
+UpdateNormals gem
+
+EntityColor gem, 80, 220, 255
+EntityFX gem, 4                ; flat shading: every face one even shade
+
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity gem, 0.5, 1.5, 0
+    RenderWorld
+    Flip
+Wend
+```
+
+The gem has six corners (top, bottom, and four around the middle) and
+eight triangles: four from the top down to the middle ring, and four from
+the bottom up. Each triangle must be written clockwise as seen from outside,
+so the lower four are written in the opposite order from the upper four.
+
+`UpdateNormals` works out how light falls on the mesh, and it smooths: corners
+at the same place get one averaged direction, so on its own the gem would
+look soft and rounded. `EntityFX gem, 4` turns on flat shading, which gives
+every triangle one even colour, and that is what makes it look cut.
 
 [Contents](../MANUAL.md) · Previous: [17. 3D basics](17-3d-basics.md) · Next: [19. Collisions and physics](19-collisions-physics.md)

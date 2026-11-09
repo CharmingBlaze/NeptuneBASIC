@@ -822,9 +822,16 @@ EntityType crate, 2
 EntityBox crate, -1, -1, -1, 2, 2, 2
 
 === Collisions
-; Players (1) hit walls (2) using ellipsoid-polygon (2) and slide (2)
+; set the rules once: players (type 1) hit walls (type 2) and slide along them
 Graphics3D 800, 600
-Collisions 1, 2, 2, 2
+Const TYPE_PLAYER = 1, TYPE_WALL = 2
+Collisions TYPE_PLAYER, TYPE_WALL, 2, 2
+player = CreateSphere()
+EntityType player, TYPE_PLAYER
+EntityRadius player, 1
+wall = CreateCube()
+EntityType wall, TYPE_WALL, 1
+PositionEntity wall, 5, 0, 0
 
 === ClearCollisions
 Graphics3D 800, 600
@@ -1042,13 +1049,14 @@ EntityPickMode wall, 2
 If LinePick(0, 0, 0, 0, 0, 100) Then Print "Triangle " + PickedTriangle()
 
 === PickedSurface
+; PickedSurface says whether the last pick hit a triangle
 Graphics3D 800, 600
 wall = CreateCube()
 PositionEntity wall, 0, 0, 10
 EntityPickMode wall, 2
 If LinePick(0, 0, 0, 0, 0, 100) Then
-    surf = PickedSurface()
-    Print "Surface " + surf + " has " + CountTriangles(surf) + " triangles"
+    Print "Triangle hit: " + PickedSurface()   ; 1
+    Print "Which triangle: " + PickedTriangle()
 EndIf
 
 === CameraProject

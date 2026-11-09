@@ -147,8 +147,9 @@ EnableDirectInput 0
 If DirectInputEnabled() = 0 Then Print "DirectInput is off"
 
 === JoyType
-; 0 = no controller, 2 = gamepad
-If JoyType(0) = 0 Then Print "No controller on port 0" Else Print "Gamepad found"
+; choose the control scheme when the game starts
+If JoyType(0) = 0 Then control$ = "keyboard" Else control$ = "gamepad"
+Print "Controls: " + control$   ; keyboard, when no gamepad is connected
 
 === CountJoys
 pads = CountJoys()         ; how many controllers are connected

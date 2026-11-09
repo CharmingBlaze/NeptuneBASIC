@@ -864,13 +864,26 @@ impl App {
         }
         let mut right = ui.new_child(UiBuilder::new().max_rect(page).id_salt("manual-page"));
         let mut open = None;
+        let mut turn = None;
         egui::ScrollArea::vertical().id_salt(("page", self.manual_page)).auto_shrink([false, false]).show(&mut right, |ui| {
             egui::Frame::new().inner_margin(Margin::symmetric(32, 20)).show(ui, |ui| {
                 if let Some((_, blocks)) = &self.manual_cache {
                     open = manual::show(ui, blocks, &self.known, th);
                 }
+                ui.add_space(20.0);
+                ui.horizontal(|ui| {
+                    if self.manual_page > 0 && ui.button(format!("Previous: {}", manual::chapter_title(manual::CHAPTERS[self.manual_page - 1].1))).clicked() {
+                        turn = Some(self.manual_page - 1);
+                    }
+                    if self.manual_page + 1 < manual::CHAPTERS.len() && ui_util::primary_button(ui, th, &format!("Next: {}", manual::chapter_title(manual::CHAPTERS[self.manual_page + 1].1))).clicked() {
+                        turn = Some(self.manual_page + 1);
+                    }
+                });
             });
         });
+        if let Some(page) = turn {
+            self.manual_page = page;
+        }
         if let Some(code) = open {
             self.new_file();
             self.with_doc(|d| {

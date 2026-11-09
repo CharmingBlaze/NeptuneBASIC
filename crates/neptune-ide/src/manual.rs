@@ -15,7 +15,8 @@ pub enum Block {
     Heading(u8, String),
     Para(String),
     Item(String),
-    Code(String),
+    /// The code, and whether it is a BASIC program.
+    Code(String, bool),
     Table(Vec<Vec<String>>),
     Rule,
 }
@@ -31,8 +32,12 @@ pub fn parse(md: &str) -> Vec<Block> {
     };
     while let Some(l) = lines.next() {
         let t = l.trim_end();
-        if t.starts_with("```") {
+        if t.starts_with("<!--") {
+            continue;
+        }
+        if let Some(lang) = t.strip_prefix("```") {
             flush(&mut para, &mut out);
+            let basic = lang.is_empty() || lang == "basic";
             let mut code = String::new();
             for c in lines.by_ref() {
                 if c.trim_end().starts_with("```") {
@@ -41,7 +46,7 @@ pub fn parse(md: &str) -> Vec<Block> {
                 code.push_str(c);
                 code.push('\n');
             }
-            out.push(Block::Code(code.trim_end().to_string()));
+            out.push(Block::Code(code.trim_end().to_string(), basic && lang == "basic"));
         } else if t.is_empty() {
             flush(&mut para, &mut out);
         } else if let Some(h) = t.strip_prefix("### ") {
@@ -181,20 +186,26 @@ pub fn show(ui: &mut Ui, blocks: &[Block], known: &Known, th: &Theme) -> Option<
                     ui.label(inline(t, 14.5, th, width - 24.0));
                 });
             }
-            Block::Code(c) => {
+            Block::Code(c, basic) => {
                 egui::Frame::new().fill(th.bg).stroke(Stroke::new(1.0, th.line)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
                     ui.set_width(width - 24.0);
                     ui.horizontal(|ui| {
-                        ui.add(egui::Label::new(code_job(c, known, th, 13.0)).selectable(true));
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.small_button("Copy").clicked() {
-                            ui.ctx().copy_text(c.clone());
-                        }
-                        if ui.small_button("Open as new program").clicked() {
-                            open = Some(c.clone());
+                        if *basic {
+                            ui.add(egui::Label::new(code_job(c, known, th, 13.0)).selectable(true));
+                        } else {
+                            ui.add(egui::Label::new(RichText::new(c).font(FontId::monospace(13.0)).color(th.dim)).selectable(true));
                         }
                     });
+                    if *basic {
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Copy").clicked() {
+                                ui.ctx().copy_text(c.clone());
+                            }
+                            if ui.small_button("Open as new program").clicked() {
+                                open = Some(c.clone());
+                            }
+                        });
+                    }
                 });
                 ui.add_space(8.0);
             }
@@ -238,7 +249,7 @@ mod tests {
         let b = parse("# T\n\nsome\ntext\n\n```\ncode\n```\n- item\n| a | b |\n|---|---|\n| 1 | 2 |\n");
         assert!(matches!(&b[0], Block::Heading(1, t) if t == "T"));
         assert!(matches!(&b[1], Block::Para(t) if t == "some text"));
-        assert!(matches!(&b[2], Block::Code(t) if t == "code"));
+        assert!(matches!(&b[2], Block::Code(t, false) if t == "code"));
         assert!(matches!(&b[3], Block::Item(t) if t == "item"));
         assert!(matches!(&b[4], Block::Table(r) if r.len() == 2 && r[1][1] == "2"));
     }

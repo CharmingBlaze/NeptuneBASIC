@@ -10,8 +10,14 @@ PositionEntity crate, 0, 5, 0
 EntityPhysics crate, 1, 1, 2.5       ; dynamic, box shape, 2.5 kg
 
 === PhysicsGravity
-; Moon gravity: weaker than the default pull downwards
+; moon gravity: a ball falls slowly
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -12
+ball = CreateSphere() : PositionEntity ball, 0, 8, 0 : EntityPhysics ball, 1, 2, 1
 PhysicsGravity 0, -1.6, 0
+While Not KeyHit(1)
+    UpdateWorld : RenderWorld : Flip
+Wend
 
 === EntityMass
 ball = CreateSphere()
@@ -493,8 +499,13 @@ path = FindPath(navmesh, -10, 0, -10, 10, 0, 10)
 FreePath path                        ; done with it
 
 === CreatePathGrid
-; A 20 x 15 map for a strategy game
-grid = CreatePathGrid(20, 15)
+; a 5 x 5 map with a wall across column 2, then a route around it
+grid = CreatePathGrid(5, 5)
+For row = 0 To 3
+    SetPathCost grid, 2, row, 0              ; 0 = wall
+Next
+path = FindGridPath(grid, 0, 0, 4, 0, 0)     ; no diagonal steps
+Print "Steps: " + (PathPoints(path) - 1)     ; 12, down to row 4, across, and back up
 
 === SetPathCost
 grid = CreatePathGrid(20, 15)
@@ -524,8 +535,12 @@ grid = TileMapPathGrid(map)
 Print "Cost of the wall cell: " + PathCost(grid, 5, 5)
 
 === FreePathGrid
-grid = CreatePathGrid(20, 15)
-FreePathGrid grid
+; plan a route, then free the grid and keep the route
+grid = CreatePathGrid(8, 8)
+path = FindGridPath(grid, 0, 0, 7, 0)
+FreePathGrid grid                  ; the grid is gone, the path is not
+Print "Route has " + PathPoints(path) + " points"   ; 8
+FreePath path
 
 === CreateAgent
 ; A guard that walks over the navigation mesh by itself
@@ -785,8 +800,19 @@ env = ProbeTexture(probe)
 ShaderTexture cube, "envMap", env
 
 === EnvironmentLighting
-; Light the scene from the surroundings, a little dimmer than normal
-EnvironmentLighting 1, 0.8           ; mode 1 = sky or reflection probe, brightness 0.8
+; light a shiny ball from its surroundings (a reflection probe) instead of the flat ambient colour
+Graphics3D 800, 600
+cam = CreateCamera()
+ball = CreateSphere(32)
+PositionEntity ball, 0, 0, 4
+EntityShininess ball, 1
+probe = CreateReflectionProbe()
+PositionEntity probe, 0, 1, 4
+EnvironmentLighting 1, 0.8            ; 1 = sky and probes, a little dimmer than normal
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === CreateEmitter
 spark = LoadTexture("examples/media/coin.png")
@@ -806,9 +832,18 @@ emitter = CreateEmitter()
 EmitterLife emitter, 1, 3            ; each particle lives 1 to 3 seconds
 
 === EmitterVelocity
-; Fountain: shoot particles up, with a little random sideways spread
-emitter = CreateEmitter()
-EmitterVelocity emitter, 0, 6, 0, 1
+; a fountain: particles shoot up at 6 units a second with a little sideways spread, then gravity pulls them down
+Graphics3D 800, 600
+cam = CreateCamera()
+PositionEntity cam, 0, 2, -8
+fountain = CreateEmitter()
+EmitterVelocity fountain, 0, 6, 0, 1
+EmitterGravity fountain, 0, -9, 0
+While Not KeyHit(KEY_ESCAPE)
+    UpdateWorld
+    RenderWorld
+    Flip
+Wend
 
 === EmitterSize
 emitter = CreateEmitter()
@@ -844,9 +879,17 @@ EmitterSoftness emitter, 0.5         ; particles fade out where they touch the g
 EmitterSoftness emitter, 0           ; 0 turns it off
 
 === EmitterLocal
-; A torch that is carried around: the flames move with it
-emitter = CreateEmitter()
-EmitterLocal emitter, 1
+; a carried torch: with local particles the flames move along with it instead of leaving a trail
+Graphics3D 800, 600
+cam = CreateCamera()
+torch = CreateEmitter()
+EmitterLocal torch, True              ; try False to see the trail
+While Not KeyHit(KEY_ESCAPE)
+    PositionEntity torch, Sin(MilliSecs() / 10.0) * 3, 0, 6
+    UpdateWorld
+    RenderWorld
+    Flip
+Wend
 
 === EmitterEnable
 emitter = CreateEmitter()
@@ -893,18 +936,35 @@ TFormPoint 0, 0, 20, player, 0
 DebugLine EntityX(player), EntityY(player), EntityZ(player), TFormedX(), TFormedY(), TFormedZ(), 255, 0, 0
 
 === DebugBox
-; mark the area a trigger covers, in green
-DebugBox 0, 1, 10, 4, 2, 4, 0, 255, 0
+; show the area a trigger covers, in green, every frame
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -12
+While Not KeyHit(1)
+    DebugBox 0, 1, 0, 4, 2, 4, 0, 255, 0
+    RenderWorld : Flip
+Wend
 
 === DebugSphere
-; show how far an enemy can hear: a sphere of radius 15 around it
+; show how far an enemy can hear: an orange sphere of radius 15 that follows it
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 5, -40
 enemy = CreateCube()
-DebugSphere EntityX(enemy), EntityY(enemy), EntityZ(enemy), 15, 255, 160, 0
+While Not KeyHit(1)
+    TurnEntity enemy, 0, 1, 0 : MoveEntity enemy, 0, 0, 0.1
+    DebugSphere EntityX(enemy), EntityY(enemy), EntityZ(enemy), 15, 255, 160, 0
+    RenderWorld : Flip
+Wend
 
 === DebugEntity
-; outline the crate the player is looking at
-crate = CreateCube()
-DebugEntity crate
+; outline the crate in yellow while it spins, to see its bounding box
+Graphics3D 800, 600
+cam = CreateCamera()
+crate = CreateCube() : MoveEntity crate, 0, 0, 5
+While Not KeyHit(1)
+    TurnEntity crate, 0, 1, 0
+    DebugEntity crate
+    RenderWorld : Flip
+Wend
 
 === DebugAxes
 ; see which way a turned ship faces (blue is forward)
@@ -920,9 +980,23 @@ navmesh = CreateNavMesh(floor)
 DebugNavMesh navmesh
 
 === DebugPhysics
-; show every physics collider while testing, until turned off
+; show the colliders of a falling ball and the floor, until turned off
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -10
+floor = CreateCube() : ScaleEntity floor, 8, 0.5, 8 : EntityPhysics floor, 2, 1
+ball = CreateSphere() : PositionEntity ball, 0, 5, 0 : EntityPhysics ball, 1, 2, 1
 DebugPhysics True
+While Not KeyHit(1)
+    UpdateWorld : RenderWorld : Flip
+Wend
 
 === DebugCollisions
-; show the collision spheres and boxes of everything with EntityType
+; show the collision sphere of the player and the box of a wall, until turned off
+Graphics3D 800, 600
+cam = CreateCamera() : PositionEntity cam, 0, 3, -10
+player = CreateSphere() : EntityType player, 1 : EntityRadius player, 1
+wall = CreateCube() : MoveEntity wall, 4, 0, 0 : EntityType wall, 2 : EntityBox wall, -1, -1, -1, 2, 2, 2
 DebugCollisions True
+While Not KeyHit(1)
+    RenderWorld : Flip
+Wend

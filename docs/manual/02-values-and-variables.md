@@ -16,6 +16,7 @@ and change it.
 - [True and false](#true-and-false)
 - [Variants](#variants)
 - [Strict mode](#strict-mode)
+- [Try it yourself](#try-it-yourself)
 
 ## Kinds of value
 
@@ -339,5 +340,82 @@ Output:
 Without the `Local`, `score = score + 10` would be an error: "variable
 'score' is not declared (Strict mode)". Strict mode is a good habit in
 bigger programs.
+
+## Try it yourself
+
+1. **Shopkeeper.** You have 50 gold coins. A potion costs 12 gold. Make the
+   price a constant, work out how many gold you have left after buying one
+   potion, and print a line such as `Gold left: 38`.
+   *Hint: store the new amount back in the same variable, like `lives = lives - 1`.*
+2. **Damage roll.** A sword does 7 damage and a critical hit multiplies it by
+   1.5. Print the damage as a float, then rounded to a whole number, then as
+   text joined into the sentence `You hit for 10 damage!` (using the rounded
+   number).
+   *Hint: `Int(...)` rounds, and a number joined to text with `+` becomes text.*
+3. **Coin counter.** In `Strict` mode, make a global variable `coins`, a
+   function `Collect(amount)` that adds to it, and a local `bonus` in the main
+   program. Collect 5 coins and then 10 more, and print the total.
+   *Hint: a function can change a `Global` variable, and in `Strict` mode every variable needs `Local` or `Global` first.*
+
+### Answers
+
+1.
+
+```basic
+Const PRICE = 12
+Local gold = 50
+gold = gold - PRICE
+Print "Gold left: " + gold
+```
+
+```output
+Gold left: 38
+```
+
+The constant gives the price a name, the right-hand side `gold - PRICE` is
+worked out first with the old value, and the result is stored back in `gold`.
+
+2.
+
+```basic
+sword = 7
+critical# = sword * 1.5
+Print critical
+rounded = Int(critical)
+Print "You hit for " + rounded + " damage!"
+```
+
+```output
+10.5
+You hit for 10 damage!
+```
+
+`sword * 1.5` has a float in it, so the answer is a float (10.5). `Int`
+rounds half way cases to the nearest even number, so 10.5 becomes 10, and
+joining the int to the text turns it into text.
+
+3.
+
+```basic
+Strict
+Global coins = 0
+
+Function Collect(amount)
+    coins = coins + amount
+End Function
+
+Local bonus = 10
+Collect(5)
+Collect(bonus)
+Print "Coins: " + coins
+```
+
+```output
+Coins: 15
+```
+
+`coins` is declared `Global`, so `Collect` changes the same variable the
+main program prints, while `bonus` is a local of the main program that is
+simply passed in as the amount.
 
 [Contents](../MANUAL.md) · Previous: [1. Getting started](01-getting-started.md) · Next: [3. Expressions and operators](03-expressions.md)

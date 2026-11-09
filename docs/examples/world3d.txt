@@ -29,14 +29,19 @@ PositionEntity door, 1, 0, 0
 TurnEntity hinge, 0, 90, 0     ; the door swings around the hinge
 
 === CreateCube
-; Make a cube and move it up
-box = CreateCube()
-PositionEntity box, 0, 1, 5
+; a crate on the floor: the cube is 2 units wide, so lift it 1 unit to sit on y = 0
+Graphics3D 800, 600
+floor = CreatePlane()
+crate = CreateCube()
+PositionEntity crate, 0, 1, 0
 
 === CreateSphere
-; A smoother ball: more segments means more detail
-ball = CreateSphere(16)
-PositionEntity ball, 0, 1, 5
+; a marble: 24 segments for a smooth surface, scaled down from radius 1
+Graphics3D 800, 600
+marble = CreateSphere(24)
+ScaleEntity marble, 0.2, 0.2, 0.2
+PositionEntity marble, 0, 0.2, 3
+EntityColor marble, 60, 120, 255
 
 === CreateCylinder
 ; A pillar with 12 sides, and a pipe with open ends
@@ -52,9 +57,12 @@ PositionEntity treetop, 0, 2, 6
 ScaleEntity treetop, 1, 1.5, 1
 
 === CreatePlane
-; A flat floor that goes on forever
-floor = CreatePlane()
-EntityColor floor, 80, 160, 80
+; an endless green field with a ball resting on it
+Graphics3D 800, 600
+meadow = CreatePlane()
+EntityColor meadow, 80, 160, 80
+ball = CreateSphere(16)
+PositionEntity ball, 0, 1, 5
 
 === EntityScaleX
 ; Read back the width of a stretched box
@@ -147,9 +155,12 @@ NameEntity door, "front_door"
 Print "This is the " + EntityName(door)
 
 === HideEntity
-; Hide an enemy while it is dead
+; hide an enemy while it is dead, and bring it back at its spawn point
+Graphics3D 800, 600
 enemy = CreateCube()
 HideEntity enemy
+Print EntityHidden(enemy)        ; 1
+ShowEntity enemy
 
 === ShowEntity
 ; Bring a hidden enemy back
@@ -164,9 +175,15 @@ HideEntity enemy
 If EntityHidden(enemy) = 1 Then Print "The enemy is hidden"
 
 === PositionEntity
-; Place a ball 5 units up and 10 units in front of the origin
-ball = CreateSphere()
-PositionEntity ball, 0, 5, 10
+; A child is positioned relative to its parent, unless global is True
+Graphics3D 640, 480
+tower = CreateCube()
+ball = CreateSphere(8, tower)
+PositionEntity tower, 10, 0, 0
+PositionEntity ball, 0, 5, 0        ; 5 above the tower
+DebugLog EntityX(ball, True)        ; 10.0 (where it is in the world)
+PositionEntity ball, 0, 5, 0, True  ; now 5 above the world origin instead
+DebugLog EntityX(ball, True)        ; 0.0
 
 === MoveEntity
 ; Fly a ship forward the way it faces
@@ -186,14 +203,20 @@ statue = CreateCone()
 RotateEntity statue, 0, 90, 0     ; pitch, yaw, roll
 
 === TurnEntity
-; Spin a coin a little each frame
+; Turning adds to the rotation every time: two turns of 10 degrees make 20
+Graphics3D 640, 480
 coin = CreateCylinder()
-TurnEntity coin, 0, 3, 0
+TurnEntity coin, 0, 10, 0
+TurnEntity coin, 0, 10, 0
+DebugLog EntityYaw(coin)   ; about 20 (floats are approximate)
 
 === ScaleEntity
-; Make a flat wide platform
+; Scale sets the size (it does not add): a flat wide platform
+Graphics3D 640, 480
 platform = CreateCube()
 ScaleEntity platform, 4, 0.25, 4
+ScaleEntity platform, 4, 0.5, 4
+DebugLog EntityScaleY(platform)   ; 0.5 (the second call replaced the first)
 
 === PointEntity
 ; Make a turret track the player
@@ -299,12 +322,16 @@ TFormPoint 0, 0, 0, ship, 0
 Print TFormedZ()          ; 9.0
 
 === VectorYaw
-; Which way (in degrees) is the direction 1, 0, 1 turned?
-Print VectorYaw(1, 0, 1)
+; turn an enemy to face the direction it is walking
+dx# = 1 : dz# = 1
+Print "Heading: " + VectorYaw(dx#, 0, dz#)   ; -45.0, to the right of straight ahead (+Z)
+Print "Straight ahead: " + VectorYaw(0, 0, 1)   ; 0.0
 
 === VectorPitch
-; How steeply does the direction 0, -1, 1 slope?
-Print VectorPitch(0, -1, 1)
+; how far a ramp tilts: a direction going down 1 for each 1 forward
+slope# = VectorPitch(0, -1, 1)
+Print "Ramp pitch: " + slope#   ; 45.0, positive means looking down
+Print "Level ground: " + VectorPitch(0, 0, 1)   ; 0.0
 
 === DeltaYaw
 ; How far must a guard turn to face the player?
@@ -349,17 +376,21 @@ CameraViewport minimap, 10, 10, 200, 200
 CameraClsMode minimap, 0, 1       ; keep the colours, clear only depth
 
 === CreateCamera
-; A camera 5 units back from the origin
+; the player's camera, 5 units back and 2 up, looking a little down at the origin
+Graphics3D 800, 600
 camera = CreateCamera()
 PositionEntity camera, 0, 2, -5
+PointEntity camera, CreatePivot()
 
 === CameraClsColor
-; A dark blue night sky behind everything
+; a dark blue night sky behind everything
+Graphics3D 800, 600
 camera = CreateCamera()
 CameraClsColor camera, 10, 10, 60
 
 === CameraRange
-; See from 0.5 units out to 500 units away
+; a small, close-up scene: see from 0.5 units out to 500 units away
+Graphics3D 800, 600
 camera = CreateCamera()
 CameraRange camera, 0.5, 500
 
@@ -379,9 +410,12 @@ camera = CreateCamera()
 CameraProjMode camera, 2       ; 0 off, 1 perspective, 2 orthographic
 
 === CameraFogMode
-; Turn fog on for a misty scene
+; a misty scene: turn fog on, grey, from 10 to 60 units away
+Graphics3D 800, 600
 camera = CreateCamera()
 CameraFogMode camera, 1
+CameraFogColor camera, 180, 180, 190
+CameraFogRange camera, 10, 60
 
 === CameraFogColor
 ; Grey fog
@@ -396,8 +430,18 @@ CameraFogMode camera, 1
 CameraFogRange camera, 10, 60
 
 === AmbientLight
-; A dim blue-ish ambient light that lights everything a little
-AmbientLight 40, 40, 70
+; a dark room: a lamp does the main lighting and the ambient light keeps the far side from being pitch black
+Graphics3D 800, 600
+cam = CreateCamera()
+crate = CreateCube()
+PositionEntity crate, 0, 0, 4
+lamp = CreateLight(LIGHT_POINT)
+PositionEntity lamp, 3, 2, 1
+AmbientLight 30, 30, 50               ; red, green, blue 0-255: a dim blue
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === CreateLight
 ; A sun, a lamp and a torch
@@ -407,34 +451,92 @@ torch = CreateLight(3)       ; type 3 spot
 PositionEntity lamp, 0, 5, 0
 
 === LightMesh
-; Light a wall with a red point light at 0, 2, 0 that reaches 10 units
-wall = CreateCube()
-LightMesh wall, 255, 0, 0, 10, 0, 2, 0
+; bake a torch glow into a rock: vertices near the point 1, 1, -1 take on orange colour, up to 4 units away
+Graphics3D 800, 600
+cam = CreateCamera()
+sun = CreateLight()
+rock = CreateSphere(24)
+PositionEntity rock, 0, 0, 4
+LightMesh rock, 255, 120, 40, 4, 1, 1, -1
+EntityFX rock, 2                      ; 2 = show the vertex colours
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === LightColor
-; An orange campfire light
-fire = CreateLight(2)
+; an orange campfire next to a rock
+Graphics3D 800, 600
+cam = CreateCamera()
+rock = CreateSphere()
+PositionEntity rock, 0, 0, 4
+fire = CreateLight(LIGHT_POINT)
+PositionEntity fire, 1.5, 1, 2
+LightRange fire, 10
 LightColor fire, 255, 140, 40
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === LightRange
-; The lamp reaches 15 units
-lamp = CreateLight(2)
-LightRange lamp, 15
+; a flickering torch: the reach of the light wobbles around 8 units
+Graphics3D 800, 600
+cam = CreateCamera()
+wall = CreateCube()
+PositionEntity wall, 0, 0, 5
+torch = CreateLight(LIGHT_POINT)
+PositionEntity torch, 2, 1, 2
+While Not KeyHit(KEY_ESCAPE)
+    LightRange torch, 8 + Sin(MilliSecs() / 3.0) * 1.5
+    RenderWorld
+    Flip
+Wend
 
 === LightConeAngles
-; A torch with a bright centre of 20 degrees and a soft edge out to 45
-torch = CreateLight(3)
+; a torch beam shining down on the floor: bright centre of 20 degrees, soft edge out to 45
+Graphics3D 800, 600
+cam = CreateCamera()
+PositionEntity cam, 0, 4, -8
+RotateEntity cam, 25, 0, 0
+floor = CreateCube()
+ScaleEntity floor, 10, 0.1, 10
+torch = CreateLight(LIGHT_SPOT)
+PositionEntity torch, 0, 5, 0
+RotateEntity torch, 90, 0, 0          ; pitch 90 points straight down
+LightRange torch, 12
 LightConeAngles torch, 20, 45
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === SetLightDirection
-; Make the sun shine from above and to one side
+; the sun shines from above and from the left, so shadows fall to the right
+Graphics3D 800, 600
+cam = CreateCamera()
+ball = CreateSphere()
+PositionEntity ball, 0, 0, 4
 sun = CreateLight()
-SetLightDirection sun, 1, -1, 0.5
+SetLightDirection sun, 1, -1, 0.5     ; the light travels towards +x, down and a little forward
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === SetEntityDirection
-; Make a ship face along the world X axis
-ship = CreateCube()
-SetEntityDirection ship, 1, 0, 0
+; a turret that always faces the ball moving around it
+Graphics3D 800, 600
+cam = CreateCamera()
+turret = CreateCone()
+PositionEntity turret, -3, 0, 6
+ball = CreateSphere()
+While Not KeyHit(KEY_ESCAPE)
+    PositionEntity ball, Sin(MilliSecs() / 10.0) * 3, 2, 6 + Cos(MilliSecs() / 10.0) * 3
+    SetEntityDirection turret, EntityX(ball) - EntityX(turret), EntityY(ball) - EntityY(turret), EntityZ(ball) - EntityZ(turret)
+    RenderWorld
+    Flip
+Wend
 
 === LoadAnimTexture
 ; A sprite sheet of 4 frames, each 32 by 32 pixels
@@ -442,24 +544,50 @@ explosion = LoadAnimTexture("explosion.png", 1 + 2, 32, 32, 0, 4)
 If explosion = 0 Then Print "Could not load the sheet"
 
 === TextureFilter
-; Every texture loaded later with "grass" in its name is mipmapped
-TextureFilter "grass", 1 + 8
-grass = LoadTexture("grass_01.png")
+; Give every texture with "checker" in its file name mipmaps (flag 8) automatically.
+; Set the rule BEFORE loading: textures that are already loaded keep their flags.
+TextureFilter "checker", 1 + 8
+floor = LoadTexture("examples/media/checker.png")   ; matches, so it gets 1 + 8
+coin = LoadTexture("examples/media/coin.png")       ; no match, so only the default flag
+Print TextureName(floor)   ; examples/media/checker.png
 
 === ClearTextureFilters
-; Stop applying the automatic flags
-TextureFilter "grass", 1 + 8
+; Only the ground textures should be mipmapped: add the rule, load them, then clear it
+TextureFilter "checker", 1 + 8
+ground = LoadTexture("examples/media/checker.png")   ; mipmapped by the rule
 ClearTextureFilters
+sign = LoadTexture("examples/media/checker.png")     ; the rule is gone: plain flags
+Print TextureName(sign)   ; examples/media/checker.png
 
 === EntityColor
-; Paint a cube red
+; Tint a spinning cube red: red, green and blue each run from 0 to 255
+Graphics3D 640, 480
+cam = CreateCamera()
+PositionEntity cam, 0, 0, -4
+CreateLight()
 box = CreateCube()
-EntityColor box, 255, 0, 0
+EntityColor box, 255, 60, 60
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity box, 0, 1, 0
+    RenderWorld
+    Flip
+Wend
 
 === EntityAlpha
-; Make a window half see-through
-window = CreateCube()
-EntityAlpha window, 0.5
+; A pane of glass in front of a ball: fade the pane between clear (0) and solid (1)
+Graphics3D 640, 480
+cam = CreateCamera()
+PositionEntity cam, 0, 0, -5
+CreateLight()
+ball = CreateSphere(16)
+pane = CreateCube()
+ScaleEntity pane, 1.5, 1.5, 0.05
+PositionEntity pane, 0, 0, -1.5
+While Not KeyHit(KEY_ESCAPE)
+    EntityAlpha pane, 0.5 + Sin(MilliSecs() / 10.0) * 0.5
+    RenderWorld
+    Flip
+Wend
 
 === LoadTextureAsync
 ; Start loading a texture without freezing the game
@@ -486,9 +614,18 @@ tex = CreateTexture(256, 256)
 Print TextureWidth(tex)
 
 === FreeTexture
-; Free a texture you no longer need
-tex = LoadTexture("checker.png")
-FreeTexture tex
+; Once the cube has its texture the handle can be freed; the cube keeps showing it
+Graphics3D 640, 480
+cam = CreateCamera()
+PositionEntity cam, 0, 0, -4
+CreateLight()
+box = CreateCube()
+tex = LoadTexture("examples/media/checker.png")
+EntityTexture box, tex
+FreeTexture tex   ; using tex from now on is an error ("Texture does not exist")
+RenderWorld
+Flip
+WaitKey
 
 === TextureWidth
 ; Print the size of a texture
@@ -501,9 +638,19 @@ cube = CreateTexture(128, 128, 1 + 128)    ; flag 128 = cube map
 SetCubeFace cube, 1
 
 === SetCubeMode
-; Use a cube map for reflections (1), diffuse (2) or specular (3) light
-cube = CreateTexture(128, 128, 1 + 128)
-SetCubeMode cube, 1
+; A ball that reflects its surroundings: paint a tiny sky cube map and use it in mode 1
+Graphics3D 640, 480
+sky = CreateTexture(32, 32, 1 + 128)
+For face = 0 To 5
+    SetCubeFace sky, face
+    SetBuffer TextureBuffer(sky)
+    Color 80, 140 + face * 20, 255
+    Rect 0, 0, 32, 32
+Next
+SetBuffer BackBuffer()
+SetCubeMode sky, 1   ; 1 reflection (default), 2 looked up by the surface normal, 3 refraction
+ball = CreateSphere(16)
+EntityTexture ball, sky
 
 === TextureHeight
 ; Print the height of a texture
@@ -523,14 +670,37 @@ floor = CreatePlane()
 EntityTexture floor, tex
 
 === PositionTexture
-; Slide a texture along, for example moving water
-tex = LoadTexture("checker.png")
-PositionTexture tex, 0.25, 0
+; Scroll a texture across a floor, like a conveyor belt. The offset is SET each time
+; (not added), so give it a value that grows: 1.0 is one whole repeat.
+Graphics3D 640, 480
+cam = CreateCamera()
+PositionEntity cam, 0, 2, -4
+RotateEntity cam, 25, 0, 0
+belt = CreateCube()
+ScaleEntity belt, 2, 0.1, 4
+tex = LoadTexture("examples/media/checker.png")
+EntityTexture belt, tex
+While Not KeyHit(KEY_ESCAPE)
+    PositionTexture tex, 0, MilliSecs() / 4000.0   ; one repeat every 4 seconds
+    RenderWorld
+    Flip
+Wend
 
 === RotateTexture
-; Turn a texture by 45 degrees
-tex = LoadTexture("checker.png")
-RotateTexture tex, 45
+; Spin the pattern on a cube face. The angle is SET each time (not added), in degrees,
+; so keep a running angle yourself.
+Graphics3D 640, 480
+cam = CreateCamera()
+PositionEntity cam, 0, 0, -4
+box = CreateCube()
+tex = LoadTexture("examples/media/checker.png")
+EntityTexture box, tex
+While Not KeyHit(KEY_ESCAPE)
+    angle# = angle# + 0.5
+    RotateTexture tex, angle
+    RenderWorld
+    Flip
+Wend
 
 === TextureBlend
 ; Add a glow texture on top of the layer below it
@@ -538,9 +708,15 @@ glow = LoadTexture("ring.png", 1 + 2)
 TextureBlend glow, 3      ; 3 = add
 
 === TextureCoords
-; Use the second UV set of the mesh (for example for lightmaps)
-tex = LoadTexture("checker.png")
-TextureCoords tex, 1
+; A lightmap is baked for the mesh's second UV set, so the base texture keeps the first
+Graphics3D 640, 480
+base = LoadTexture("examples/media/checker.png")
+lightmap = LoadTexture("examples/media/ring.png")
+TextureCoords lightmap, 1   ; read this texture with UV set 1
+TextureBlend lightmap, 2    ; multiply it over the base
+room = CreateCube()
+EntityTexture room, base, 0, 0
+EntityTexture room, lightmap, 0, 1
 
 === EntityTexture
 ; Put a texture on a cube, and a second one on layer 1
@@ -558,9 +734,21 @@ EntityNormalMap box, bumps
 EntityNormalMap box, 0        ; remove it again
 
 === EntityShininess
-; Make a ball shiny
-ball = CreateSphere(16)
-EntityShininess ball, 0.8
+; Hold UP or DOWN to change a ball's shininess and watch the highlight sharpen
+Graphics3D 640, 480
+cam = CreateCamera()
+PositionEntity cam, 0, 0, -3
+light = CreateLight()
+TurnEntity light, 40, 40, 0
+ball = CreateSphere(24)
+EntityColor ball, 200, 60, 60
+While Not KeyHit(KEY_ESCAPE)
+    If KeyDown(KEY_UP) Then shine# = Min(1, shine + 0.01)
+    If KeyDown(KEY_DOWN) Then shine# = Max(0, shine - 0.01)
+    EntityShininess ball, shine
+    RenderWorld
+    Flip
+Wend
 
 === EntityBlend
 ; Make a glowing beam that adds light to what is behind it
@@ -568,24 +756,54 @@ beam = CreateCylinder()
 EntityBlend beam, 3         ; 1 alpha, 2 multiply, 3 add
 
 === EntityFX
-; A full-bright cube that ignores lighting and is drawn on both sides
-box = CreateCube()
-EntityFX box, 1 + 16
+; A glowing bulb ignores lighting (1); a flat card is visible from both sides (16)
+Graphics3D 640, 480
+cam = CreateCamera()
+PositionEntity cam, 0, 0, -5
+CreateLight()
+bulb = CreateSphere(12)
+EntityFX bulb, 1
+card = CreateCube()
+ScaleEntity card, 1, 1, 0.02
+PositionEntity card, 2.5, 0, 0
+EntityFX card, 16
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity card, 0, 1, 0   ; you can see it as it turns away, too
+    RenderWorld
+    Flip
+Wend
 
 === EntityOrder
-; Draw a gun in front of everything else
-gun = CreateCube()
+; A first-person gun stays on top, even when it pokes into the wall
+Graphics3D 640, 480
+cam = CreateCamera()
+CreateLight()
+wall = CreateCube()
+ScaleEntity wall, 5, 5, 0.5
+PositionEntity wall, 0, 0, 1.2
+gun = CreateCube(cam)
+ScaleEntity gun, 0.1, 0.1, 0.6
+PositionEntity gun, 0.3, -0.3, 1.5   ; the tip is inside the wall
 EntityOrder gun, -1
+RenderWorld
+Flip
+WaitKey
 
 === EntityMetallic
-; A fully metal ball
-ball = CreateSphere(16)
-EntityMetallic ball, 1
+; a gold coin: fully metal, with a rough enough surface for soft highlights
+Graphics3D 800, 600
+coin = CreateCylinder(32)
+EntityColor coin, 240, 190, 60
+EntityMetallic coin, 1
+EntityRoughness coin, 0.35
 
 === EntityRoughness
-; A smooth, glossy ball
-ball = CreateSphere(16)
-EntityRoughness ball, 0.1
+; polished plastic for a toy ball: not metal, but very smooth so highlights are sharp
+Graphics3D 800, 600
+toy = CreateSphere(32)
+EntityColor toy, 220, 40, 40
+EntityMetallic toy, 0
+EntityRoughness toy, 0.1
 
 === EntityEmissive
 ; A lamp that glows orange
@@ -670,19 +888,28 @@ PaintEntity box, brush
 FreeBrush brush
 
 === BrushColor
-; Change the colour of a brush
+; an orange brush, then paint a crate with it
+Graphics3D 800, 600
 brush = CreateBrush()
 BrushColor brush, 255, 128, 0
+crate = CreateCube()
+PaintEntity crate, brush
 
 === BrushAlpha
-; A half transparent brush
-brush = CreateBrush()
-BrushAlpha brush, 0.5
+; a half see-through brush for a ghost
+Graphics3D 800, 600
+ghostly = CreateBrush()
+BrushAlpha ghostly, 0.5
+ghost = CreateSphere(16)
+PaintEntity ghost, ghostly
 
 === BrushShininess
-; A shiny brush
-brush = CreateBrush()
-BrushShininess brush, 0.7
+; a shiny brush for a polished red ball
+Graphics3D 800, 600
+shiny = CreateBrush(200, 30, 30)
+BrushShininess shiny, 0.7
+ball = CreateSphere(24)
+PaintEntity ball, shiny
 
 === BrushTexture
 ; Put a texture on a brush
@@ -691,14 +918,20 @@ tex = LoadTexture("checker.png")
 BrushTexture brush, tex            ; frame 0, layer 0
 
 === BrushBlend
-; A brush that adds its colour to the background
-brush = CreateBrush()
-BrushBlend brush, 3
+; add the brush colour to what is behind it, for a glowing beam
+Graphics3D 800, 600
+glow = CreateBrush(80, 160, 255)
+BrushBlend glow, 3
+beam = CreateCube()
+PaintEntity beam, glow
 
 === BrushFX
-; A brush for full-bright, two-sided surfaces
-brush = CreateBrush()
-BrushFX brush, 1 + 16
+; full-bright (1) plus no back-face culling (16) for a sign visible from both sides
+Graphics3D 800, 600
+sign = CreateBrush(255, 255, 255)
+BrushFX sign, 1 + 16
+board = CreateCube()
+PaintEntity board, sign
 
 === PaintSurface
 ; Paint just one surface of a mesh

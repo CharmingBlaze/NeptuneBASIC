@@ -11,6 +11,7 @@ dealing with things that go wrong while a program runs.
 - [Raising your own errors](#raising-your-own-errors)
 - [Finding bugs](#finding-bugs)
 - [Common mistakes](#common-mistakes)
+- [Try it yourself](#try-it-yourself)
 
 ## Mistakes found before the program runs
 
@@ -182,5 +183,112 @@ function; start there and work back to where the bad value came from.
 | "array index out of bounds" | a position below 0 or past the size given to `Dim` |
 | "function ... conflicts with a built-in command" | your function has the same name as a command: rename it |
 | "variable ... is Int, but used with a Float type tag" | one variable used for two types: give the second use its own name |
+
+## Try it yourself
+
+1. **Treasure split.** Four pirates share 100 gold coins by dividing the pile
+   by the number of pirates. Write the sum so that if the number of pirates is
+   0 the program does not stop, but prints `Nobody to share with!` instead.
+   Try it with 4 pirates and with 0.
+   *Hint: put the division inside `Try`, and print the message in the `Catch` part.*
+2. **Shop keeper.** Write a function `Buy(gold, price)` that raises an error
+   with `Throw` when `price` is more than `gold`, and otherwise prints
+   `Bought for ` and the price. Call it with 50 gold for a 30 gold sword, and
+   then with 50 gold for a 75 gold shield, and print any problem as
+   `Shop says: ` and the message.
+   *Hint: `Throw` takes a text message, and the `Catch` variable receives it.*
+3. **Bug hunt.** This program should print an average of 3.5, but prints 3.
+   Find out why, and fix it.
+
+   ```basic
+   Dim hits(3)
+   hits(0) = 3 : hits(1) = 4 : hits(2) = 3 : hits(3) = 4
+   total = 0
+   For i = 0 To 3
+       total = total + hits(i)
+   Next
+   average = total / 4
+   Print "Average hit: " + average
+   ```
+
+   *Hint: see the "Common mistakes" table; print `total` to check that the sum itself is right.*
+
+### Answers
+
+1.
+
+```basic
+pirates = 4
+Try
+    Print "Each pirate gets " + 100 / pirates
+Catch problem$
+    Print "Nobody to share with!"
+End Try
+
+pirates = 0
+Try
+    Print "Each pirate gets " + 100 / pirates
+Catch problem$
+    Print "Nobody to share with!"
+End Try
+```
+
+```output
+Each pirate gets 25
+Nobody to share with!
+```
+
+With 4 pirates nothing goes wrong, so the `Catch` part is skipped. With 0,
+the division causes a runtime error, the program jumps to `Catch` instead of
+stopping, and it carries on to the end.
+
+2.
+
+```basic
+Function Buy(gold, price)
+    If price > gold Then Throw "not enough gold (you have " + gold + ", it costs " + price + ")"
+    Print "Bought for " + price
+End Function
+
+Try
+    Buy(50, 30)
+    Buy(50, 75)
+Catch problem$
+    Print "Shop says: " + problem
+End Try
+```
+
+```output
+Bought for 30
+Shop says: not enough gold (you have 50, it costs 75)
+```
+
+The first call works and prints. In the second, `Throw` raises an error from
+inside the function; the program leaves `Buy` at once and lands in `Catch`
+with the message in `problem`.
+
+3.
+
+```basic
+Dim hits(3)
+hits(0) = 3 : hits(1) = 4 : hits(2) = 3 : hits(3) = 4
+total = 0
+For i = 0 To 3
+    total = total + hits(i)
+Next
+Print "Total: " + total
+average# = total / 4.0
+Print "Average hit: " + average
+```
+
+```output
+Total: 14
+Average hit: 3.5
+```
+
+The total (14) was right: printing it shows that. The mistake was in the
+division. `total / 4` has an int on both sides, so the fraction is dropped,
+and `average` without a `#` is an int anyway. Making the divisor `4.0` and
+the variable `average#` keeps the 0.5.
 
 [Contents](../MANUAL.md) · Previous: [9. Types and objects](09-types.md) · Next: [11. Organising programs](11-organising.md)
