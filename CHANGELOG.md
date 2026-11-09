@@ -4,6 +4,26 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Neptune IDE
+
+* **An IDE made for NeptuneBASIC** – the new `neptune-ide` program. It
+  works like the Blitz3D IDE (F5 runs, F1 explains the command at the caret,
+  tabs for files, a list of functions, types and labels), with square-cornered
+  looks and four colour themes, one of them Blitz's own blue.
+* **Editing** – undo and redo, copy and paste, multiple carets, folding,
+  minimap, moving and duplicating lines, Blitz-style automatic capitals,
+  indenting by block, and a command that tidies a whole file.
+* **Help while you type** – errors as you type, suggestions with parameters
+  and descriptions, hover help, go to definition, a searchable command
+  reference, and the whole manual inside the IDE.
+* **Finding your way** – a file tree, an outline, find and replace, find in
+  all files, and a palette that searches files, symbols and every command.
+* **Running and debugging** – run, stop, check and build from the toolbar;
+  a failed program takes you to its error. Breakpoints, stepping, the call
+  stack, variables and watches.
+* Closing the IDE never loses work: unsaved text comes back next time.
+* See the guide, [docs/IDE.md](docs/IDE.md).
+
 ## 2D levels and sprites from other tools
 
 * **Maps from Tiled** – `LoadTiledMap` loads a level drawn in the free Tiled

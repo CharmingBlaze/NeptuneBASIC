@@ -1,0 +1,14 @@
+[package]
+name = "neptune-ide"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "neptune-ide"
+path = "src/main.rs"
+
+# The IDE talks to the `neptune` program (language server, debugger, run and
+# build), so it never links the engine: it builds fast and starts instantly.
+[dependencies]
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "clipboard", "x11", "wayland"] }

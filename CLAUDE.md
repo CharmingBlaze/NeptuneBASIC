@@ -27,6 +27,7 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | Debugger | VM side `crates/neptune-vm/src/debug.rs`; protocol (`neptune dap`) `crates/neptune-cli/src/dap.rs` |
 | Primitive shapes | `crates/neptune-runtime/src/primitive.rs` |
 | VS Code extension | `editors/vscode` (regenerate grammar with `python tools/gen_grammar.py`) |
+| IDE (egui, talks to `neptune lsp`/`dap`, never links Fyrox) | `crates/neptune-ide/src`: `editor.rs` (widget), `buffer.rs` (text, carets, undo), `lang.rs` (tokens, blocks), `app.rs` (state, actions), `view.rs`/`panels.rs`/`dialogs.rs` (drawing), `actions.rs` (menu and key table); guide `docs/IDE.md` |
 | Language tests | `crates/neptune-vm/tests/language.rs` |
 | What's done / to do | `docs/STATUS.md` |
 | Command reference (generated) | `docs/COMMANDS.md` from `docs/commands.txt` (`tools/gen_reference.py`) |

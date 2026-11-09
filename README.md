@@ -90,6 +90,10 @@ Other commands:
   completion, hover, signature help, outline, go to definition).
 * `neptune check <file>`, `neptune disasm <file>`, `neptune commands`.
 
+NeptuneBASIC has its own IDE, in the spirit of the Blitz3D one: build it with
+`cargo build --release`, start `target/release/neptune-ide`, and see
+[docs/IDE.md](docs/IDE.md).
+
 Editor support for VS Code (highlighting, the language server, F5 to run) is in
 [`editors/vscode`](editors/vscode/README.md).
 

@@ -158,6 +158,7 @@ for older integrated GPUs; `ultra` turns everything up.
 | `tools/make_sample_2d.py`: writes the example Tiled map, tileset and sprite sheet | done |
 | `tools/blender`: Blender add-on (mark solid objects, set level properties, export) and `make_sample_level.py`, which builds the example level | done |
 | VS Code extension: highlighting, language server, debug (F5), run (Ctrl+F5), build | done (`editors/vscode`) |
+| Neptune IDE (`crates/neptune-ide`, guide in [IDE.md](IDE.md)): tabs, split view, multiple carets, folding, minimap, Blitz-style capitals and block indenting, live errors, completion, signature help and hover, outline, file tree, find in files, command palette, command reference, built-in manual, run, build, and the debugger. Uses `neptune lsp` and `neptune dap`, so it never links Fyrox. Not yet: word wrap, regular expressions in Find, replacing across files, changing variables while stopped | done |
 | Documentation: [the manual](MANUAL.md) (25 chapters teaching the language and game making from the beginning), the [shader manual](SHADERS.md), a [language summary](LANGUAGE.md), and the [command reference](COMMANDS.md) with an example for every command (`docs/examples/*.txt`, put in by `tools/gen_reference.py`) | done |
 | `tools/check_doc_examples.py`: checks every BASIC example in the docs with `neptune check`, runs the ones with an output box and compares what they print; `--gpu` compiles every documented shader | done |
 
