@@ -18,6 +18,7 @@ struct Loop {
 struct FnGen<'a> {
     code: Vec<Op>,
     lines: Vec<(u32, Span)>,
+    stmts: Vec<u32>,
     strings: &'a mut Vec<Rc<str>>,
     string_map: &'a mut HashMap<Rc<str>, u32>,
     loops: Vec<Loop>,
@@ -39,6 +40,7 @@ pub fn generate(p: &HProgram, natives: &[CommandSig], sources: SourceMap) -> Pro
         let mut g = FnGen {
             code: Vec::new(),
             lines: Vec::new(),
+            stmts: Vec::new(),
             strings: &mut strings,
             string_map: &mut string_map,
             loops: Vec::new(),
@@ -66,8 +68,10 @@ pub fn generate(p: &HProgram, natives: &[CommandSig], sources: SourceMap) -> Pro
             name: f.name.clone(),
             n_params: f.n_params,
             locals: g.local_kinds,
+            local_names: f.locals.iter().map(|(n, _)| n.clone()).collect(),
             code: g.code,
             lines: g.lines,
+            stmts: g.stmts,
             span: f.span,
         });
     }
@@ -150,6 +154,10 @@ impl<'a> FnGen<'a> {
 
     fn stmt(&mut self, s: &HStmt) {
         self.mark(s.span);
+        let pc = self.here();
+        if self.stmts.last() != Some(&pc) {
+            self.stmts.push(pc);
+        }
         match &s.kind {
             HStmtKind::Expr(e, pop) => {
                 self.expr(e);

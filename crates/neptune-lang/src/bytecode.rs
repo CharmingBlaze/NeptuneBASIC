@@ -152,9 +152,14 @@ pub struct Function {
     pub n_params: u32,
     /// Kinds of all local slots, parameters first.
     pub locals: Vec<ValKind>,
+    /// Names of the local slots, parameters first (the debugger shows them).
+    /// Compiler temporaries start with `\0`.
+    pub local_names: Vec<String>,
     pub code: Vec<Op>,
     /// `(first pc, source span)` pairs, sorted by pc.
     pub lines: Vec<(u32, Span)>,
+    /// First instruction of each statement, ascending: where the debugger can stop.
+    pub stmts: Vec<u32>,
     pub span: Span,
 }
 

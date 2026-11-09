@@ -94,6 +94,7 @@ use fyrox::{
     window::WindowAttributes,
 };
 use neptune_lang::{compile, commands::parse_sig, Env, SourceLoader};
+use neptune_vm::debug::{Control, DebugClient};
 use neptune_vm::{base_env, Status, Vm};
 
 use crate::input::Input;
@@ -159,7 +160,11 @@ pub fn compile_source(name: &str, src: &str, loader: &mut dyn SourceLoader) -> R
 /// Runs a compiled program: console mode first, then a Fyrox window once
 /// the program calls `Graphics3D`.
 pub fn run_program(program: neptune_lang::Program) -> Result<(), RunError> {
-    let mut vm = Vm::new(program);
+    run_vm(Vm::new(program), None)
+}
+
+/// Runs a VM, under a debugger if there is a client (see `neptune_vm::debug`).
+pub fn run_vm(mut vm: Vm, mut debug: Option<Box<dyn DebugClient>>) -> Result<(), RunError> {
     let mut world = World::default();
     let mut input = Input::default();
     // console phase
@@ -169,6 +174,17 @@ pub fn run_program(program: neptune_lang::Program) -> Result<(), RunError> {
             Ok(Status::Finished) => return Ok(()),
             Ok(Status::Yielded) if world.graphics_requested => break,
             Ok(Status::Yielded) => continue,
+            Ok(Status::Paused) => {
+                let Some(client) = debug.as_mut() else { continue };
+                // no window to keep alive yet, so the client may wait
+                loop {
+                    match client.service(&mut vm, true) {
+                        Control::Run => break,
+                        Control::Hold => continue,
+                        Control::Quit => return Ok(()),
+                    }
+                }
+            }
             Err(e) => return Err(RunError::Runtime(e.to_string())),
         }
     }
@@ -205,7 +221,7 @@ pub fn run_program(program: neptune_lang::Program) -> Result<(), RunError> {
         executor.set_throttle_threshold(0.0);
         executor.set_throttle_frame_interval(0);
     }
-    let state = PluginState { vm: Some(vm), world, input, scene: Handle::NONE, error: None, overlay: Default::default(), scale: 1.0 };
+    let state = PluginState { vm: Some(vm), world, input, scene: Handle::NONE, error: None, overlay: Default::default(), scale: 1.0, debug, held: false };
     let state = std::rc::Rc::new(std::cell::RefCell::new(state));
     executor.add_plugin(NeptunePlugin { state: state.clone() });
     executor.run();
@@ -225,6 +241,9 @@ struct PluginState {
     overlay: draw2d::Overlay,
     /// Window DPI scale factor (physical pixels per logical pixel).
     scale: f32,
+    debug: Option<Box<dyn DebugClient>>,
+    /// Stopped in the debugger: the window stays alive but the world is still.
+    held: bool,
 }
 
 /// Fyrox plugin that owns the VM and executes it frame by frame.
@@ -325,6 +344,21 @@ impl Plugin for NeptunePlugin {
                 st.world.postfx.registered = true;
             }
         }
+        let control = st.debug.as_mut().map_or(Control::Run, |c| c.service(vm, false));
+        if control == Control::Quit {
+            st.vm = None;
+            context.loop_controller.exit();
+            return Ok(());
+        }
+        let hold = control == Control::Hold;
+        if hold != st.held {
+            st.held = hold;
+            // Fyrox steps physics by itself; bodies must not fall while stopped
+            for scene in context.scenes.iter_mut() {
+                scene.graph.physics.enabled.set_value_silent(!hold);
+                scene.graph.physics2d.enabled.set_value_silent(!hold);
+            }
+        }
         let result = {
             let scale = st.scale;
             let ui = context.user_interfaces.first_mut();
@@ -341,7 +375,7 @@ impl Plugin for NeptunePlugin {
             if let Err(e) = host.update_shaders() {
                 eprintln!("{e}");
             }
-            let r = vm.run(&mut host);
+            let r = if hold { Ok(Status::Paused) } else { vm.run(&mut host) };
             if let Err(e) = host.update_postfx() {
                 eprintln!("{e}");
             }
@@ -389,7 +423,7 @@ impl Plugin for NeptunePlugin {
             }
         }
         match result {
-            Ok(Status::Yielded) => {}
+            Ok(Status::Yielded | Status::Paused) => {}
             Ok(Status::Finished) => {
                 st.vm = None;
                 context.loop_controller.exit();

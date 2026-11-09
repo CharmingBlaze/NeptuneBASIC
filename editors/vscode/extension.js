@@ -3,7 +3,8 @@
 // Talks to `neptune lsp` (the NeptuneBASIC language server) for errors as you
 // type, completion, hover, signature help, outline and go-to-definition. A
 // tiny built-in LSP client keeps the extension free of npm dependencies.
-// Also adds run (F5), run at low quality and build commands.
+// Also adds the debugger (F5, through `neptune dap`), run (Ctrl+F5), run at
+// low quality and build commands.
 const vscode = require("vscode");
 const { spawn, execFile } = require("child_process");
 const path = require("path");
@@ -257,7 +258,96 @@ function runInTerminal(args) {
   });
 }
 
+/** Starts `neptune dap` for a debug session and connects VS Code to the port it prints. */
+class DebugAdapterFactory {
+  constructor() {
+    this.running = new Map();
+  }
+
+  createDebugAdapterDescriptor(session) {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(exe(), ["dap", "--port", "0"], {
+        cwd: session.configuration.cwd || undefined,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      this.running.set(session.id, proc);
+      const show = (chunk) => vscode.debug.activeDebugConsole.append(chunk.toString());
+      let first = "";
+      let connected = false;
+      proc.stdout.on("data", (chunk) => {
+        if (connected) return show(chunk);
+        // the first line is the port; the rest is what the program prints
+        first += chunk.toString();
+        const end = first.indexOf("\n");
+        if (end < 0) return;
+        connected = true;
+        resolve(new vscode.DebugAdapterServer(Number(first.slice(0, end).trim()), "127.0.0.1"));
+        if (end + 1 < first.length) show(first.slice(end + 1));
+      });
+      proc.stderr.on("data", show);
+      proc.on("error", (e) => reject(new Error(`cannot start ${exe()}: ${e.message}; set neptunebasic.executable`)));
+      proc.on("exit", () => {
+        this.running.delete(session.id);
+        if (!connected) reject(new Error(`${exe()} dap exited; does this neptune build have a debugger?`));
+      });
+    });
+  }
+
+  /** Normally the program has already ended; a program stuck in a command is stopped here. */
+  ended(session) {
+    const proc = this.running.get(session.id);
+    if (proc) setTimeout(() => proc.kill(), 3000);
+  }
+}
+
+/** The configuration for the active file. */
+function debugConfigFor(doc) {
+  return { type: "neptunebasic", request: "launch", name: "Debug NeptuneBASIC program", program: doc.fileName, cwd: cwdFor(doc) };
+}
+
+function registerDebugger(context) {
+  const factory = new DebugAdapterFactory();
+  context.subscriptions.push(
+    vscode.debug.registerDebugAdapterDescriptorFactory("neptunebasic", factory),
+    vscode.debug.onDidTerminateDebugSession((s) => factory.ended(s)),
+    vscode.debug.registerDebugConfigurationProvider("neptunebasic", {
+      // F5 with no launch.json debugs the file in the editor
+      resolveDebugConfiguration(folder, config) {
+        const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
+        if (!config.type && !config.request && !config.name && doc && doc.languageId === "neptunebasic") {
+          return debugConfigFor(doc);
+        }
+        if (!config.program) {
+          vscode.window.showInformationMessage("NeptuneBASIC: open a .nb file to debug it.");
+          return undefined;
+        }
+        return config;
+      },
+    }),
+    vscode.languages.registerEvaluatableExpressionProvider(
+      { language: "neptunebasic" },
+      {
+        // hovering over `b` in `a\b\c` shows `a\b`
+        provideEvaluatableExpression(doc, pos) {
+          const range = doc.getWordRangeAtPosition(pos, /[A-Za-z_][A-Za-z0-9_]*[%#$]?(\\[A-Za-z_][A-Za-z0-9_]*[%#$]?)*/);
+          if (!range) return undefined;
+          const text = doc.getText(range);
+          const next = text.indexOf("\\", pos.character - range.start.character);
+          const shown = next < 0 ? text : text.slice(0, next);
+          return new vscode.EvaluatableExpression(new vscode.Range(range.start, range.start.translate(0, shown.length)), shown);
+        },
+      }
+    ),
+    vscode.commands.registerCommand("neptunebasic.debug", () => {
+      const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
+      if (!doc || doc.languageId !== "neptunebasic") return;
+      doc.save().then(() => vscode.debug.startDebugging(vscode.workspace.getWorkspaceFolder(doc.uri), debugConfigFor(doc)));
+    })
+  );
+}
+
 function activate(context) {
+  registerDebugger(context);
   const collection = vscode.languages.createDiagnosticCollection("neptunebasic");
   context.subscriptions.push(collection);
   context.subscriptions.push(

@@ -4,6 +4,20 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Debugger
+
+* **Debug in VS Code** – press F5 on a `.nb` file. Click in the margin to set
+  breakpoints, step into, over and out of functions, and pause a running
+  game, even one stuck in an endless loop.
+* **See what the program is doing** – the call stack, local and global
+  variables, `Dim` arrays and objects you can open field by field; hover over
+  a variable or add a watch such as `player\pos\x` or `grid(1, i)`.
+* **Stops where things go wrong** – a runtime error nothing catches stops the
+  program at that line with its variables still there. `Stop` pauses the
+  program too, as it did in Blitz3D's debugger.
+* Run without debugging is now Ctrl+F5 (F5 before). Other editors can use
+  `neptune dap`.
+
 ## Cloth and ropes
 
 * **Cloth** – `CreateCloth` makes a sheet that hangs, falls, flaps in the

@@ -1,14 +1,14 @@
 {
   "name": "neptunebasic",
   "displayName": "NeptuneBASIC",
-  "description": "NeptuneBASIC (.nb): highlighting, errors as you type, completion, hover, signature help and run/build commands",
+  "description": "NeptuneBASIC (.nb): highlighting, errors as you type, completion, hover, signature help, a debugger and run/build commands",
   "version": "0.1.0",
   "publisher": "neptunebasic",
   "license": "Zlib",
   "engines": { "vscode": "^1.75.0" },
-  "categories": ["Programming Languages"],
+  "categories": ["Programming Languages", "Debuggers"],
   "main": "./extension.js",
-  "activationEvents": [],
+  "activationEvents": ["onDebugResolve:neptunebasic", "onDebugInitialConfigurations"],
   "contributes": {
     "languages": [
       {
@@ -22,19 +22,52 @@
       { "language": "neptunebasic", "scopeName": "source.neptune", "path": "./syntaxes/neptune.tmLanguage.json" }
     ],
     "commands": [
+      { "command": "neptunebasic.debug", "title": "NeptuneBASIC: Debug Program", "icon": "$(debug-alt)" },
       { "command": "neptunebasic.run", "title": "NeptuneBASIC: Run Program", "icon": "$(play)" },
       { "command": "neptunebasic.runLow", "title": "NeptuneBASIC: Run Program (Low Quality)" },
       { "command": "neptunebasic.build", "title": "NeptuneBASIC: Build Stand-alone Game" },
       { "command": "neptunebasic.check", "title": "NeptuneBASIC: Check Program" }
     ],
     "keybindings": [
-      { "command": "neptunebasic.run", "key": "f5", "when": "editorLangId == neptunebasic" }
+      { "command": "neptunebasic.debug", "key": "f5", "when": "editorLangId == neptunebasic && !inDebugMode" },
+      { "command": "neptunebasic.run", "key": "ctrl+f5", "mac": "cmd+f5", "when": "editorLangId == neptunebasic && !inDebugMode" }
     ],
     "menus": {
       "editor/title": [
+        { "command": "neptunebasic.debug", "when": "editorLangId == neptunebasic", "group": "navigation" },
         { "command": "neptunebasic.run", "when": "editorLangId == neptunebasic", "group": "navigation" }
       ]
     },
+    "breakpoints": [{ "language": "neptunebasic" }],
+    "debuggers": [
+      {
+        "type": "neptunebasic",
+        "label": "NeptuneBASIC",
+        "languages": ["neptunebasic"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": { "type": "string", "description": "The .nb file to debug.", "default": "${file}" },
+              "cwd": { "type": "string", "description": "Folder the program runs in; media paths start here.", "default": "${workspaceFolder}" },
+              "args": { "type": "array", "items": { "type": "string" }, "description": "Words passed to the program (CommandLine).", "default": [] },
+              "stopOnEntry": { "type": "boolean", "description": "Stop at the first statement.", "default": false },
+              "quality": { "type": "string", "enum": ["low", "medium", "high", "ultra"], "description": "Starting graphics quality." }
+            }
+          }
+        },
+        "initialConfigurations": [
+          { "type": "neptunebasic", "request": "launch", "name": "Debug NeptuneBASIC program", "program": "${file}", "cwd": "${workspaceFolder}" }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "NeptuneBASIC: Debug",
+            "description": "Debug a NeptuneBASIC program",
+            "body": { "type": "neptunebasic", "request": "launch", "name": "Debug NeptuneBASIC program", "program": "^\"\\${file}\"", "cwd": "^\"\\${workspaceFolder}\"" }
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "NeptuneBASIC",
       "properties": {

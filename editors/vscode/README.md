@@ -9,7 +9,13 @@
     your own functions, types, globals and labels,
   * hover help and signature help while typing arguments,
   * outline (document symbols) and go to definition.
-* **F5** (or the ▶ button) runs the current program in a terminal.
+* **F5** (or the debug button) debugs the current program: breakpoints,
+  stepping into, over and out of functions, pause, the call stack, locals,
+  globals, `Dim` arrays and objects you can open, watches and values on hover.
+  It also stops on a runtime error, at the line where it happened, and at a
+  `Stop` statement. The output of `Print` (before `Graphics`) and `DebugLog`
+  appears in the Debug Console.
+* **Ctrl+F5** (or the ▶ button) runs the current program in a terminal.
   *NeptuneBASIC: Run Program (Low Quality)* runs it with `--quality low`;
   *NeptuneBASIC: Build Stand-alone Game* runs `neptune build`.
 

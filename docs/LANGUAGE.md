@@ -192,7 +192,7 @@ exist, ...) report the file, line and column, and can be caught with
 <!-- nocheck -->
 ```basic
 Goto label / Gosub label / Return    ; labels are written .label
-End                                  ; stop the program (Stop does the same)
+End                                  ; stop the program (Stop does the same, but pauses under the debugger)
 ```
 
 `CommandLine()` gives the words after the program's name.

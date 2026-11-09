@@ -9,6 +9,7 @@
 //! assert_eq!(out, "3.0\n");
 //! ```
 
+pub mod debug;
 pub mod dynlib;
 pub mod ease;
 pub mod net;
@@ -36,7 +37,7 @@ pub fn run_source_captured(src: &str) -> Result<String, String> {
     loop {
         match vm.run(&mut NoHost) {
             Ok(Status::Finished) => return Ok(vm.core.take_output()),
-            Ok(Status::Yielded) => continue,
+            Ok(Status::Yielded | Status::Paused) => continue,
             Err(e) => return Err(format!("{}{e}", vm.core.take_output())),
         }
     }

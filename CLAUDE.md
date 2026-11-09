@@ -22,6 +22,7 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | CI (Windows, Linux, macOS) | `.github/workflows/ci.yml` |
 | Packaging (`neptune build`) | `crates/neptune-cli/src/package.rs` |
 | Language server (`neptune lsp`) | `crates/neptune-cli/src/lsp.rs` (+ `json.rs`) |
+| Debugger | VM side `crates/neptune-vm/src/debug.rs`; protocol (`neptune dap`) `crates/neptune-cli/src/dap.rs` |
 | Primitive shapes | `crates/neptune-runtime/src/primitive.rs` |
 | VS Code extension | `editors/vscode` (regenerate grammar with `python tools/gen_grammar.py`) |
 | Language tests | `crates/neptune-vm/tests/language.rs` |

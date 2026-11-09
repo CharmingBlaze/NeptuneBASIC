@@ -14,12 +14,14 @@
 //!     --only <name>                     run one benchmark
 //!     --runs <n>                        run n times, report medians
 //! neptune lsp                 language server on stdin/stdout (for editors)
+//! neptune dap [--port n]      debug adapter on a local TCP port (for editors)
 //! neptune plugins             list loaded plugins and where they are looked for
 //! neptune commands            list every available command
 //! neptune <file.nb>           same as `run`
 //! ```
 
 mod bench;
+mod dap;
 mod json;
 mod lsp;
 mod package;
@@ -44,6 +46,7 @@ usage:
                           (-o <file>, --only <name>, --runs <n>;
                           use a release build)
   neptune lsp             language server for editors (stdin/stdout)
+  neptune dap             debugger for editors (--port <n>; prints the port)
   neptune plugins         list loaded plugins and their commands
   neptune commands        list available commands",
         env!("CARGO_PKG_VERSION")
@@ -177,6 +180,9 @@ fn main() -> ExitCode {
     if args.first().is_some_and(|a| a == "lsp") {
         lsp::run();
         return ExitCode::SUCCESS;
+    }
+    if args.first().is_some_and(|a| a == "dap") {
+        return dap::run(&args[1..]);
     }
     if args.first().is_some_and(|a| a == "build") {
         let Some(file) = args.get(1) else { return usage() };

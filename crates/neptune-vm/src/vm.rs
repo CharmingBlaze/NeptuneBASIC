@@ -10,6 +10,7 @@ use std::rc::Rc;
 use neptune_lang::bytecode::{Cmp, Op, Program, ValKind, VarOp};
 use neptune_lang::sema::{float_to_int, format_float, str_to_float, str_to_int};
 
+use crate::debug::{DebugState, StopReason};
 use crate::stdlib::{self, Core};
 use crate::value::{Heap, ObjRef, Value, NO_OBJECT};
 
@@ -62,6 +63,9 @@ pub enum Status {
     Yielded,
     /// The program has ended.
     Finished,
+    /// The debugger wants attention (see [`crate::debug`]); never returned
+    /// unless the debugger is on. Call `run` again to continue.
+    Paused,
 }
 
 /// A runtime error with its source location.
@@ -82,10 +86,10 @@ impl std::fmt::Display for RuntimeError {
 
 impl std::error::Error for RuntimeError {}
 
-struct Frame {
-    func: u32,
-    pc: u32,
-    base: u32,
+pub(crate) struct Frame {
+    pub(crate) func: u32,
+    pub(crate) pc: u32,
+    pub(crate) base: u32,
     gosub: Vec<u32>,
 }
 
@@ -95,20 +99,20 @@ struct Handler {
     pc: u32,
 }
 
-struct DimArray {
-    dims: Vec<usize>,
-    data: Vec<Value>,
+pub(crate) struct DimArray {
+    pub(crate) dims: Vec<usize>,
+    pub(crate) data: Vec<Value>,
 }
 
 const MAX_FRAMES: usize = 100_000;
 const MAX_ARRAY: usize = 1 << 28;
 
 pub struct Vm {
-    prog: Rc<Program>,
-    stack: Vec<Value>,
-    frames: Vec<Frame>,
-    globals: Vec<Value>,
-    arrays: Vec<DimArray>,
+    pub(crate) prog: Rc<Program>,
+    pub(crate) stack: Vec<Value>,
+    pub(crate) frames: Vec<Frame>,
+    pub(crate) globals: Vec<Value>,
+    pub(crate) arrays: Vec<DimArray>,
     pub heap: Heap,
     handlers: Vec<Handler>,
     data_ptr: usize,
@@ -116,6 +120,7 @@ pub struct Vm {
     n_core: u32,
     pub core: Core,
     finished: bool,
+    pub(crate) debug: Option<Box<DebugState>>,
 }
 
 impl Vm {
@@ -143,6 +148,7 @@ impl Vm {
             n_core,
             core: Core::new(),
             finished: false,
+            debug: None,
             prog,
         };
         let main = vm.prog.main;
@@ -173,8 +179,15 @@ impl Vm {
             return Ok(Status::Finished);
         }
         let prog = self.prog.clone();
+        // the error the debugger stopped on: the program ends now
+        if let Some(msg) = self.debug.as_mut().and_then(|d| d.error.take()) {
+            return Err(self.fatal(msg, &prog));
+        }
         loop {
-            match self.exec(host, &prog) {
+            // two copies of the interpreter, so that programs not being
+            // debugged pay nothing for the checks
+            let result = if self.debug.is_some() { self.exec::<true>(host, &prog) } else { self.exec::<false>(host, &prog) };
+            match result {
                 Ok(s) => {
                     if s == Status::Finished {
                         self.finished = true;
@@ -189,18 +202,25 @@ impl Vm {
                         self.frames[h.frame].pc = h.pc;
                         continue;
                     }
-                    self.finished = true;
-                    let fr = self.frames.last().expect("frame");
-                    let func = &prog.functions[fr.func as usize];
-                    let span = func.span_at(fr.pc);
-                    return Err(RuntimeError {
-                        message: msg,
-                        location: prog.sources.location(span),
-                        function: func.name.clone(),
-                    });
+                    // under the debugger, stop where it went wrong first
+                    if let Some(d) = self.debug.as_mut() {
+                        d.stop = Some(StopReason::Error(msg.clone()));
+                        d.error = Some(msg);
+                        return Ok(Status::Paused);
+                    }
+                    return Err(self.fatal(msg, &prog));
                 }
             }
         }
+    }
+
+    /// Ends the program with an error at the current location.
+    fn fatal(&mut self, message: String, prog: &Program) -> RuntimeError {
+        self.finished = true;
+        let fr = self.frames.last().expect("frame");
+        let func = &prog.functions[fr.func as usize];
+        let span = func.span_at(fr.pc);
+        RuntimeError { message, location: prog.sources.location(span), function: func.name.clone() }
     }
 
     #[inline]
@@ -275,7 +295,7 @@ impl Vm {
         }
     }
 
-    fn exec(&mut self, host: &mut dyn Host, prog: &Program) -> Result<Status, String> {
+    fn exec<const DEBUG: bool>(&mut self, host: &mut dyn Host, prog: &Program) -> Result<Status, String> {
         let mut fi = self.frames.len() - 1;
         let mut code: &[Op] = &prog.functions[self.frames[fi].func as usize].code;
         let mut pc = self.frames[fi].pc as usize;
@@ -319,6 +339,13 @@ impl Vm {
         }
 
         loop {
+            if DEBUG {
+                let func = self.frames[fi].func;
+                if self.debug.as_mut().expect("debugger").check(func, fi + 1, pc as u32) {
+                    self.frames[fi].pc = pc as u32;
+                    return Ok(Status::Paused);
+                }
+            }
             let op = code[pc];
             pc += 1;
             match op {
@@ -654,6 +681,9 @@ impl Vm {
                     if ctx.retry_requested {
                         // leave the arguments on the stack and run this call again
                         self.frames[fi].pc = (pc - 1) as u32;
+                        if DEBUG {
+                            self.debug.as_mut().expect("debugger").skip = Some((fi + 1, (pc - 1) as u32));
+                        }
                         return Ok(Status::Yielded);
                     }
                     let v = tri!(r);
@@ -748,6 +778,11 @@ impl Vm {
                 Op::Throw => {
                     let m = self.pop_s();
                     fail!(m.to_string());
+                }
+                Op::Stop if DEBUG => {
+                    self.frames[fi].pc = pc as u32;
+                    self.debug.as_mut().expect("debugger").stop = Some(StopReason::Stop);
+                    return Ok(Status::Paused);
                 }
                 Op::End | Op::Stop => {
                     self.frames[fi].pc = (pc - 1) as u32;
