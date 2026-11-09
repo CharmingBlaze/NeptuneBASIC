@@ -11,6 +11,9 @@ neptune-vm.workspace = true
 fyrox.workspace = true
 # same version and features Fyrox already builds, so no extra compile cost
 image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "tga", "tiff", "bmp"] }
+# the crate Fyrox already builds: without this feature it refuses every glTF
+# file with lights, which Blender marks as a required extension (see level.rs)
+gltf = { version = "1.4", default-features = false, features = ["KHR_lights_punctual"] }
 gilrs = "0.11.2"
 glow = "0.17"
 # WGSL shaders: parsed, validated and translated to GLSL for Fyrox's OpenGL renderer

@@ -1,0 +1,125 @@
+; A level made in Blender. Everything you walk through comes from one file,
+; examples/media/courtyard.glb (open courtyard.blend to change it): the walls
+; and floor, the lights, the crates that fall, the fox, where you start and the
+; gems. This program only says what the gems and the exit do.
+; See docs/BLENDER.md.
+;
+; Mouse and W A S D to walk, Space to jump, C for the level's own camera,
+; Esc to quit. Collect the gems, then reach the blue gate.
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "A level from Blender"
+AmbientLight 40, 42, 52
+
+; col_ objects (named in Blender) become solid, lights and crates are set up
+level = LoadLevelFile("examples/media/courtyard.glb")
+If level = 0 Then RuntimeError "could not load courtyard.glb"
+
+; an empty in Blender marks where the player starts
+start = LevelObject(level, 1, "spawn")
+
+player = CreateCylinder()
+ScaleEntity player, 0.4, 0.9, 0.4
+PositionEntity player, EntityX(start, True), EntityY(start, True), EntityZ(start, True)
+EntityPhysics player, 1, 3, 70
+LockRotation player, 1, 1, 1
+EntityFriction player, 0
+HideEntity player
+
+eye = CreateCamera()
+CameraClsColor eye, 120, 160, 210
+yaw# = 180
+pitch# = 0
+HidePointer
+
+; a camera placed in Blender, off until the program asks for it
+overview = FindChild(level, "Overview")
+CameraClsColor overview, 120, 160, 210
+useOverview = False
+
+; custom properties: the program finds objects by type and reads their values
+gemCount = CountLevelObjects(level, "gem")
+Dim gems(gemCount)
+For i = 1 To gemCount
+    gems(i) = LevelObject(level, i, "gem")
+Next
+
+; a model placed from another file by a "prefab" property, and animated
+Animate LevelObject(level, 1, "npc"), 1, 1, 2
+
+; any object can carry a custom value: these four lamps have flicker = 1
+Dim lamps(CountLevelObjects(level))
+lampCount = 0
+For i = 1 To CountLevelObjects(level)
+    obj = LevelObject(level, i)
+    If EntityPropertyInt(obj, "flicker") = 1
+        lampCount += 1
+        lamps(lampCount) = obj
+    End If
+Next
+
+gate = LevelObject(level, 1, "exit")
+score = 0
+left = gemCount
+won = False
+
+While Not KeyHit(1)
+    ; look
+    yaw = yaw - MouseXSpeed() * 0.15
+    pitch = pitch + MouseYSpeed() * 0.15
+    If pitch > 80 Then pitch = 80
+    If pitch < -80 Then pitch = -80
+    MoveMouse GraphicsWidth() / 2, GraphicsHeight() / 2
+
+    ; walk
+    forward# = KeyDown(17) - KeyDown(31)
+    strafe# = KeyDown(32) - KeyDown(30)
+    speed# = 6
+    vx# = (-Sin(yaw) * forward + Cos(yaw) * strafe) * speed
+    vz# = (Cos(yaw) * forward + Sin(yaw) * strafe) * speed
+    vy# = VelocityY(player)
+    If KeyHit(57) And Abs(vy) < 0.05 Then vy = 7
+    SetVelocity player, vx, vy, vz
+
+    PositionEntity eye, EntityX(player), EntityY(player) + 0.7, EntityZ(player)
+    RotateEntity eye, pitch, yaw, 0
+
+    ; switch between the player's eyes and the camera from the level
+    If KeyHit(46)
+        useOverview = Not useOverview
+        CameraProjMode overview, useOverview
+        CameraProjMode eye, Not useOverview
+    End If
+
+    ; gems: how many points each is worth was typed in Blender
+    For i = 1 To gemCount
+        If gems(i)
+            TurnEntity gems(i), 0, 2, 0
+            If EntityDistance(player, gems(i)) < 1.4
+                score += EntityPropertyInt(gems(i), "points", 10)
+                FreeEntity gems(i)
+                gems(i) = 0
+                left -= 1
+            End If
+        End If
+    Next
+
+    For i = 1 To lampCount
+        LightRange lamps(i), 16 + Rnd(-1, 1)
+    Next
+
+    If left = 0 And EntityDistance(player, gate) < 3.2 Then won = True
+
+    UpdateWorld
+    RenderWorld
+    Color 255, 255, 255
+    Text 16, 16, "Score: " + score + "   Gems left: " + left
+    If won
+        Text 16, 40, "You reached the gate! Esc to quit."
+    ElseIf left = 0
+        Text 16, 40, "All gems found. Find the blue gate."
+    End If
+    Text 16, GraphicsHeight() - 30, "WASD + mouse, Space jumps, C for the Blender camera"
+    Flip
+Wend
+End

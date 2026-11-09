@@ -53,6 +53,7 @@ programmed before.
 
 | | |
 |---|---|
+| [Making levels in Blender](BLENDER.md) | Build levels in Blender and load their shapes, lights, cameras, solid objects and custom properties: a guide of its own |
 | [The shader manual](SHADERS.md) | Materials, shaders, screen effects and shadows: a manual of its own |
 | [Command reference](COMMANDS.md) | Every command, with what it does and an example |
 | [Language summary](LANGUAGE.md) | The whole language on one page, for when you know it and need a reminder |

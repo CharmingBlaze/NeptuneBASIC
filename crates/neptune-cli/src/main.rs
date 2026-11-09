@@ -22,7 +22,7 @@
 
 mod bench;
 mod dap;
-mod json;
+use neptune_runtime::json;
 mod lsp;
 mod package;
 

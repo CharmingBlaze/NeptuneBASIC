@@ -1,8 +1,6 @@
 //! Drives `neptune dap` the way an editor does, over its TCP connection.
 
-#[allow(dead_code)]
-#[path = "../src/json.rs"]
-mod json;
+use neptune_runtime::json;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;

@@ -68,7 +68,20 @@ pub enum Status {
     Paused,
 }
 
-/// A runtime error with its source location.
+/// Callers an error lists before and after the ones it leaves out.
+const TRACE_HEAD: usize = 16;
+const TRACE_TAIL: usize = 4;
+
+/// A place in the program that was waiting on a call when an error happened.
+#[derive(Clone, Debug)]
+pub struct CallSite {
+    /// `file:line:col`
+    pub location: String,
+    /// Function containing the call.
+    pub function: String,
+}
+
+/// A runtime error with its source location and the calls that led to it.
 #[derive(Clone, Debug)]
 pub struct RuntimeError {
     pub message: String,
@@ -76,11 +89,22 @@ pub struct RuntimeError {
     pub location: String,
     /// Function the error occurred in.
     pub function: String,
+    /// The calls that led here, innermost first (`Gosub`s included).
+    pub callers: Vec<CallSite>,
+    /// Callers left out of the middle of `callers` when the stack is very deep.
+    pub omitted: usize,
 }
 
 impl std::fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "runtime error: {}\n  at {} (in {})", self.message, self.location, self.function)
+        write!(f, "runtime error: {}\n  at {} (in {})", self.message, self.location, self.function)?;
+        for (i, c) in self.callers.iter().enumerate() {
+            if self.omitted > 0 && i == TRACE_HEAD {
+                write!(f, "\n  ... {} more calls ...", self.omitted)?;
+            }
+            write!(f, "\n  called from {} (in {})", c.location, c.function)?;
+        }
+        Ok(())
     }
 }
 
@@ -217,10 +241,32 @@ impl Vm {
     /// Ends the program with an error at the current location.
     fn fatal(&mut self, message: String, prog: &Program) -> RuntimeError {
         self.finished = true;
-        let fr = self.frames.last().expect("frame");
-        let func = &prog.functions[fr.func as usize];
-        let span = func.span_at(fr.pc);
-        RuntimeError { message, location: prog.sources.location(span), function: func.name.clone() }
+        // every active call, innermost first; a waiting call's saved pc is
+        // the instruction after it
+        let top = self.frames.len() - 1;
+        let sites: Vec<(u32, u32)> = self
+            .frames
+            .iter()
+            .enumerate()
+            .rev()
+            .flat_map(|(i, fr)| {
+                let pc = if i == top { fr.pc } else { fr.pc.saturating_sub(1) };
+                std::iter::once((fr.func, pc)).chain(fr.gosub.iter().rev().map(move |r| (fr.func, r.saturating_sub(1))))
+            })
+            .collect();
+        let site = |&(f, pc): &(u32, u32)| {
+            let func = &prog.functions[f as usize];
+            CallSite { location: prog.sources.location(func.span_at(pc)), function: func.name.clone() }
+        };
+        let CallSite { location, function } = site(&sites[0]);
+        let rest = &sites[1..];
+        let omitted = rest.len().saturating_sub(TRACE_HEAD + TRACE_TAIL);
+        let callers = if omitted == 0 {
+            rest.iter().map(site).collect()
+        } else {
+            rest[..TRACE_HEAD].iter().chain(&rest[rest.len() - TRACE_TAIL..]).map(site).collect()
+        };
+        RuntimeError { message, location, function, callers, omitted }
     }
 
     #[inline]

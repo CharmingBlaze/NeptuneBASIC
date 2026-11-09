@@ -2998,6 +2998,7 @@ dependencies = [
  "fyrox",
  "gilrs",
  "glow",
+ "gltf",
  "image",
  "naga",
  "neptune-lang",

@@ -47,6 +47,10 @@ Models can be glTF (`.gltf`, `.glb`) or FBX files, with their textures
 and materials. glTF is the best choice: free tools such as Blender export
 it, and it keeps materials looking the same.
 
+To build a whole level in Blender, with its lights, cameras, solid objects
+and values for your program to read, see
+[Making levels in Blender](../BLENDER.md) and the `LoadLevelFile` command.
+
 A model's parts are child entities with the names they had in the 3D
 program: `FindChild(model, "Door")` finds one, so a game can open the
 door of a house model. `CopyEntity(model)` makes another copy cheaply;

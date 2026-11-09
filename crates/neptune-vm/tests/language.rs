@@ -623,3 +623,56 @@ fn settings_save_and_load() {
     std::fs::remove_file(&file).ok();
     assert_eq!(out, "0\n1\nAnn 1200 0.5\nnone 7\n0\n0\n");
 }
+
+#[test]
+fn runtime_errors_list_the_calls_that_led_there() {
+    let e = compile_err(
+        "Function Divide(a, b)
+    Return a / b
+End Function
+
+Function Half(n)
+    Return Divide(n, 0)
+End Function
+
+Gosub work
+End
+
+.work
+Print Half(10)
+Return
+",
+    );
+    let lines: Vec<&str> = e.lines().collect();
+    assert_eq!(lines.len(), 5, "{e}");
+    assert_eq!(lines[0], "runtime error: Integer divide by zero");
+    assert!(lines[1].starts_with("  at ") && lines[1].ends_with(":2:5 (in divide)"), "{e}");
+    assert!(lines[2].starts_with("  called from ") && lines[2].ends_with(":6:5 (in half)"), "{e}");
+    assert!(lines[3].starts_with("  called from ") && lines[3].ends_with(":13:1 (in <main>)"), "{e}");
+    assert!(lines[4].starts_with("  called from ") && lines[4].ends_with(":9:1 (in <main>)"), "{e}");
+}
+
+#[test]
+fn runtime_error_in_the_main_program_has_no_callers() {
+    let e = compile_err("x = 0\nPrint 1 / x\n");
+    assert_eq!(e.lines().count(), 2, "{e}");
+    assert!(!e.contains("called from"), "{e}");
+}
+
+#[test]
+fn very_deep_call_stacks_leave_out_the_middle() {
+    let e = compile_err(
+        "Function Down(n)
+    If n = 0 Then RuntimeError \"bottom\"
+    Return Down(n - 1)
+End Function
+Print Down(100)
+",
+    );
+    let lines: Vec<&str> = e.lines().collect();
+    // message, where it happened, 16 callers, the gap, 4 callers
+    assert_eq!(lines.len(), 23, "{e}");
+    assert_eq!(lines[0], "runtime error: bottom");
+    assert_eq!(lines[18], "  ... 81 more calls ...", "{e}");
+    assert!(lines[22].ends_with(":5:1 (in <main>)"), "{e}");
+}

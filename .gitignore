@@ -6,3 +6,11 @@
 # files written by examples/scenes.nb and examples/tilemap.nb
 /examples/saved_level.rgs
 tilemap_saved.txt
+
+# Ruflo local secrets and runtime data
+.env
+.env.local
+.env.*.local
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/

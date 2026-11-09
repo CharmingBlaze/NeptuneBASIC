@@ -136,6 +136,15 @@ pub struct Entity {
     /// Inside an `EntityBatch` drawn in the forward pass: standard materials
     /// would be unlit there, so the classic material is used instead.
     pub batch_forward: bool,
+    /// (ext) Custom properties (`EntityProperty`), from Blender or the program.
+    pub props: Vec<(String, String)>,
+    /// (ext) `LoadLevelFile`: the objects of the level that have properties.
+    pub level_objects: Option<Box<Vec<i32>>>,
+    /// (ext) The level this object came from, 0 if none.
+    pub level_of: u32,
+    /// (ext) The level that frees this object, for physics bodies, which
+    /// have left the level's tree.
+    pub level_owner: u32,
 }
 
 /// Program-visible state that persists across frames.
@@ -722,6 +731,10 @@ impl<'a> Host3D<'a> {
             shader: None,
             batch_forward: false,
             ragdoll: None,
+            props: Vec::new(),
+            level_objects: None,
+            level_of: 0,
+            level_owner: 0,
         };
         let id = match self.world.free.pop() {
             Some(i) => {
@@ -748,6 +761,12 @@ impl<'a> Host3D<'a> {
 
     /// Removes an entity and all of its children.
     pub fn free_entity(&mut self, id: i32) -> Result<(), String> {
+        if self.ent(id)?.level_objects.is_some() {
+            let bodies: Vec<i32> = self.entities().filter(|(_, e)| e.level_owner == id as u32).map(|(i, _)| i).collect();
+            for b in bodies {
+                self.free_entity(b)?;
+            }
+        }
         let (node, parent) = {
             let e = self.ent(id)?;
             // a physics entity's root node is its body
@@ -881,10 +900,12 @@ impl<'a> Host3D<'a> {
                 let e = self.ent(id)?;
                 (e.col_type, e.radius, e.col_box, e.pick_mode, e.obscurer, e.color, e.textures, e.shininess, e.fx, e.blend)
             };
+            let props = self.ent(id)?.props.clone();
             {
                 let e = self.ent_mut(new)?;
                 e.xf = xf;
                 e.name = name;
+                e.props = props;
                 (e.col_type, e.radius, e.col_box, e.pick_mode, e.obscurer, e.color, e.textures, e.shininess, e.fx, e.blend) = copied;
             }
             self.sync(new)?;
@@ -924,11 +945,13 @@ impl<'a> Host3D<'a> {
             }
             k => k,
         };
+        let props = self.ent(id)?.props.clone();
         let new = self.attach_entity(new_node, kind, parent)?;
         {
             let e = self.ent_mut(new)?;
             e.xf = xf;
             e.name = name;
+            e.props = props;
             e.color = color;
             e.hidden = hidden;
             (e.textures, e.normal_map, e.shininess, e.fx, e.blend, e.order) = look;

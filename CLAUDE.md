@@ -16,6 +16,7 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | Entity table, `Host3D`, `Kind` | `crates/neptune-runtime/src/world.rs` |
 | Blitz↔Fyrox coordinate mirror | `crates/neptune-runtime/src/transform.rs` |
 | Feature modules | runtime `collision`, `pick`, `mesh`, `model`, `anim`, `texture`, `material`, `classic` (fixed-function shader), `sprite`, `terrain`, `physics`, `sound`, `quality`, `buffer`, `draw2d`, `image2d`, `input`, `joy` (gamepads), `keyanim`, `mirror`, `screenshot`, `primitive` |
+| Blender levels (`LoadLevelFile`, custom properties) | runtime `level.rs`; add-on in `tools/blender`; guide `docs/BLENDER.md` |
 | Retained GUI (`Gui*`) | runtime `gui.rs` (core, DPI via `px`), `gui_lists.rs`, `gui_dialogs.rs`, `gui_editors.rs` |
 | Networking (TCP/UDP) | `crates/neptune-vm/src/net.rs` |
 | Plugins (registry, C ABI) and shared-library loading | `crates/neptune-vm/src/{plugin,dynlib}.rs`; SDK in `sdk/` (C header, `neptune-plugin` crate, examples) |

@@ -156,6 +156,35 @@ fn gltf_uris(text: &str) -> Vec<String> {
     out
 }
 
+/// Adds a model and the files it needs: a `.gltf` file's textures and
+/// buffers, and the prefabs a level's objects name.
+fn add_model_files(rel: &Path, root: &Path, found: &mut BTreeSet<PathBuf>) {
+    let dir = rel.parent().unwrap_or(Path::new(""));
+    let is = |ext: &str| rel.extension().is_some_and(|x| x.eq_ignore_ascii_case(ext));
+    if is("gltf") {
+        if let Ok(text) = std::fs::read_to_string(root.join(rel)) {
+            for uri in gltf_uris(&text) {
+                let p = dir.join(uri);
+                if root.join(&p).is_file() {
+                    found.insert(p);
+                }
+            }
+        }
+    }
+    if !is("gltf") && !is("glb") {
+        return;
+    }
+    let Ok(level) = std::fs::read(root.join(rel)).map_err(|e| e.to_string()).and_then(|b| neptune_runtime::level::parse_level(&b)) else { return };
+    let level_path = rel.to_string_lossy();
+    for node in &level.nodes {
+        let Some(name) = neptune_runtime::level::prop(&node.props, "prefab") else { continue };
+        let Some(p) = neptune_runtime::level::prefab_path(&level_path, name, |c| root.join(c).is_file()) else { continue };
+        if found.insert(p.clone()) {
+            add_model_files(&p, root, found);
+        }
+    }
+}
+
 /// Media files named by string literals that exist relative to `root`.
 pub fn media_files(entries: &[Entry], root: &Path) -> BTreeSet<PathBuf> {
     let mut found = BTreeSet::new();
@@ -170,17 +199,7 @@ pub fn media_files(entries: &[Entry], root: &Path) -> BTreeSet<PathBuf> {
             }
             if root.join(&rel).is_file() {
                 found.insert(rel.clone());
-                if rel.extension().is_some_and(|x| x.eq_ignore_ascii_case("gltf")) {
-                    if let Ok(text) = std::fs::read_to_string(root.join(&rel)) {
-                        let dir = rel.parent().unwrap_or(Path::new(""));
-                        for uri in gltf_uris(&text) {
-                            let p = dir.join(uri);
-                            if root.join(&p).is_file() {
-                                found.insert(p);
-                            }
-                        }
-                    }
-                }
+                add_model_files(&rel, root, &mut found);
             }
         }
     }
@@ -271,6 +290,21 @@ pub fn build(main: &str, out: Option<&str>, console: bool) -> Result<PathBuf, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_levels_prefabs_are_packed() {
+        let root = std::env::temp_dir().join(format!("neptune_pack_{}", std::process::id()));
+        std::fs::create_dir_all(root.join("levels")).unwrap();
+        let level = r#"{"scenes":[{"nodes":[0]}],"nodes":[{"name":"A","extras":{"prefab":"tree.gltf"}}]}"#;
+        std::fs::write(root.join("levels/a.gltf"), level).unwrap();
+        std::fs::write(root.join("levels/tree.gltf"), r#"{"buffers":[{"uri":"tree.bin"}]}"#).unwrap();
+        std::fs::write(root.join("levels/tree.bin"), b"x").unwrap();
+        let entries = vec![Entry { key: "m".into(), canon: "m".into(), text: "l = LoadLevelFile(\"levels/a.gltf\")".into() }];
+        let found = media_files(&entries, &root);
+        std::fs::remove_dir_all(&root).ok();
+        let names: Vec<String> = found.iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
+        assert_eq!(names, ["levels/a.gltf", "levels/tree.bin", "levels/tree.gltf"]);
+    }
 
     #[test]
     fn payload_round_trip() {

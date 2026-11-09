@@ -1,4 +1,5 @@
-//! A small JSON reader and writer for the language server (no extra crates).
+//! A small JSON reader and writer (no extra crates): the language server,
+//! the debugger and glTF levels use it.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

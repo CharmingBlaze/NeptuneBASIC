@@ -96,7 +96,7 @@ fn light_of(h: &mut Host3D, e: i32) -> Result<(fyrox::core::pool::Handle<fyrox::
     }
 }
 
-fn base_light_mut(
+pub(crate) fn base_light_mut(
     graph: &mut fyrox::scene::graph::Graph,
     light: fyrox::core::pool::Handle<fyrox::scene::node::Node>,
     kind: LightKind,
@@ -115,6 +115,34 @@ fn camera_mut<'h>(h: &'h mut Host3D, e: i32) -> Result<&'h mut Camera, String> {
         _ => return Err(format!("Entity {e} is not a camera")),
     };
     h.graph()?[node].cast_mut::<Camera>().ok_or_else(|| "camera node missing".to_string())
+}
+
+/// `CreateCamera`.
+pub(crate) fn create_camera(h: &mut Host3D, parent: i32) -> Result<i32, String> {
+    h.scene()?;
+    let id = h.add_entity(camera_node(), Kind::Camera { zoom: 1.0, mode: 1 }, parent)?;
+    if h.world.current_scene != 0 {
+        // cameras of later scenes draw over the scenes below
+        set_cls_mode(h, id, false)?;
+    }
+    if !h.world.gamma.is_identity() {
+        h.world.gamma_dirty = true;
+    }
+    h.update_camera_fov(id)?;
+    Ok(id)
+}
+
+/// `CreateLight`.
+pub(crate) fn create_light(h: &mut Host3D, kind: LightKind, parent: i32) -> Result<i32, String> {
+    h.scene()?;
+    let light = h.graph()?.add_node(light_node(kind));
+    let id = h.add_entity(pivot_node(), Kind::Light { kind, light }, parent)?;
+    let pivot = h.ent(id)?.node;
+    h.graph()?.link_nodes(light, pivot);
+    if h.world.quality.shadow_bias.is_some() || h.world.quality.cascades != 3 || h.world.quality.shadow_distance.is_some() {
+        h.apply_light_shadows()?;
+    }
+    Ok(id)
 }
 
 fn mesh_extent(h: &mut Host3D, e: i32, axis: usize) -> Result<Value, String> {
@@ -2139,34 +2167,14 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%CreateCone%segments=8%solid=1%parent=0", |h, a, _| create(h, "cone", a[0].int(), a[1].int() != 0, a[2].int())),
     ("%CreateMirror%parent=0", |h, a, _| int(h.create_mirror(a[0].int())?)),
     ("%CreatePlane%segments=1%parent=0", |h, a, _| create(h, "plane", a[0].int(), true, a[1].int())),
-    ("%CreateCamera%parent=0", |h, a, _| {
-        h.scene()?;
-        let id = h.add_entity(camera_node(), Kind::Camera { zoom: 1.0, mode: 1 }, a[0].int())?;
-        if h.world.current_scene != 0 {
-            // cameras of later scenes draw over the scenes below
-            set_cls_mode(h, id, false)?;
-        }
-        if !h.world.gamma.is_identity() {
-            h.world.gamma_dirty = true;
-        }
-        h.update_camera_fov(id)?;
-        int(id)
-    }),
+    ("%CreateCamera%parent=0", |h, a, _| int(create_camera(h, a[0].int())?)),
     ("%CreateLight%type=1%parent=0", |h, a, _| {
-        h.scene()?;
         let kind = match a[0].int() {
             2 => LightKind::Point,
             3 => LightKind::Spot,
             _ => LightKind::Directional,
         };
-        let light = h.graph()?.add_node(light_node(kind));
-        let id = h.add_entity(pivot_node(), Kind::Light { kind, light }, a[1].int())?;
-        let pivot = h.ent(id)?.node;
-        h.graph()?.link_nodes(light, pivot);
-        if h.world.quality.shadow_bias.is_some() || h.world.quality.cascades != 3 || h.world.quality.shadow_distance.is_some() {
-            h.apply_light_shadows()?;
-        }
-        int(id)
+        int(create_light(h, kind, a[1].int())?)
     }),
     ("LoaderMatrix$file_extension#xx#xy#xz#yx#yy#yz#zx#zy#zz", |h, a, _| {
         let ext = a[0].str().trim_start_matches('.').to_lowercase();
@@ -2190,6 +2198,27 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%LoadMesh$file%parent=0", |h, a, _| int(crate::model::load_mesh(h, &a[0].str(), a[1].int())?)),
     // (ext) background loading: the entity is returned at once and the model
     // appears in it when loaded
+    // (ext) levels made in Blender or any glTF tool (see level.rs)
+    ("%LoadLevelFile$file%parent=0%collision_type=0", |h, a, _| int(crate::level::load_level(h, &a[0].str(), a[1].int(), a[2].int())?)),
+    ("%CountLevelObjects%level$type=\"\"", |h, a, _| int(crate::level::objects(h, a[0].int(), &a[1].str())?.len() as i32)),
+    ("%LevelObject%level%index$type=\"\"", |h, a, _| int(crate::level::object(h, a[0].int(), a[1].int(), &a[2].str())?)),
+    ("$EntityProperty%entity$name$fallback=\"\"", |h, a, _| {
+        let found = crate::level::prop(&h.ent(a[0].int())?.props, &a[1].str()).map(str::to_string);
+        Ok(Value::Str(found.unwrap_or_else(|| a[2].str().to_string()).as_str().into()))
+    }),
+    ("%EntityPropertyInt%entity$name%fallback=0", |h, a, _| int(crate::level::property_int(h, a[0].int(), &a[1].str(), a[2].int())?)),
+    ("#EntityPropertyFloat%entity$name#fallback=0", |h, a, _| float(crate::level::property_float(h, a[0].int(), &a[1].str(), a[2].float())?)),
+    ("%EntityHasProperty%entity$name", |h, a, _| int(crate::level::prop(&h.ent(a[0].int())?.props, &a[1].str()).is_some() as i32)),
+    ("SetEntityProperty%entity$name$value", |h, a, _| {
+        crate::level::set_property(h, a[0].int(), &a[1].str(), &a[2].str())?;
+        VOID
+    }),
+    ("%CountEntityProperties%entity", |h, a, _| int(h.ent(a[0].int())?.props.len() as i32)),
+    ("$EntityPropertyName%entity%index", |h, a, _| {
+        let i = a[1].int();
+        let name = usize::try_from(i - 1).ok().and_then(|n| h.ent(a[0].int()).ok()?.props.get(n).map(|p| p.0.clone()));
+        Ok(Value::Str(name.ok_or_else(|| format!("property index {i} out of range"))?.as_str().into()))
+    }),
     ("%LoadMeshAsync$file%parent=0", |h, a, _| int(crate::loading::load_mesh(h, &a[0].str(), a[1].int())?)),
     ("%EntityLoaded%entity", |h, a, _| int(crate::loading::entity_state(h, a[0].int())?)),
     ("%PendingLoads", |h, _, _| int(crate::loading::pending(h)?)),

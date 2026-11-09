@@ -111,6 +111,7 @@ neptune run examples/games/orbrun.nb
 * [Language summary](docs/LANGUAGE.md): the whole language on one page
 * [Shaders, materials and post-processing](docs/SHADERS.md)
 * [Sound: playing, 3D sound, mixing and effects](docs/SOUND.md)
+* [Making levels in Blender](docs/BLENDER.md)
 * [Changelog](CHANGELOG.md): what changed, commit by commit
 * [Architecture](docs/ARCHITECTURE.md)
 * [Implementation status](docs/STATUS.md)

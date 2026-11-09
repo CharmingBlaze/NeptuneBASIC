@@ -4,6 +4,37 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Call stacks on runtime errors
+
+* When a program stops with a runtime error, the message now lists the calls
+  that led there, each with its file, line and function, back to the main
+  program. `Gosub`s are included. If the chain is very long, the middle is
+  left out.
+
+## Levels from Blender
+
+* **Build levels in Blender** – `LoadLevelFile` loads a whole level from one file:
+  shapes, materials, lights, cameras, where things are placed and what they
+  are. See the new guide, [docs/BLENDER.md](docs/BLENDER.md).
+* **Lights and cameras come across** – sun, point and spot lights look much as
+  they do in Blender. Cameras from the level start off and are switched on
+  with `CameraProjMode`.
+* **Solid by name** – objects named `col_...` are solid, and `hit_...` are
+  solid and invisible. It works with physics and with `Collisions`.
+* **Custom properties** – values typed on objects in Blender can be read with
+  `EntityProperty`, `EntityPropertyInt` and `EntityPropertyFloat`.
+  `CountLevelObjects` and `LevelObject` find every object of a type, such as
+  all the coins. Properties can also make objects fall (`physics`), set their
+  shape and mass, hide them, or place another model file there (`prefab`).
+* **Blender add-on** – `tools/blender/neptune_levels.py` adds a Neptune tab
+  with buttons for solid objects and properties and one-click export.
+* **A sample level** – `examples/level.nb` is a small game in a courtyard
+  built in Blender, and `examples/media/courtyard.blend` is its source.
+* **Models with lights now load** – Blender marks lights as something a
+  reader must understand, so any export containing a light used to fail in
+  `LoadMesh`. Those files now load.
+* `neptune build` also packs the model files a level places.
+
 ## Debugger
 
 * **Debug in VS Code** – press F5 on a `.nb` file. Click in the margin to set

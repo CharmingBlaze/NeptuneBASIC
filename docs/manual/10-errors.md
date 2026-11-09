@@ -65,10 +65,14 @@ prints `5`, then stops with:
 ```
 runtime error: Integer divide by zero
   at divide.nb:2:5 (in divide)
+  called from divide.nb:6:1 (in <main>)
 ```
 
-The last line says where it happened: line 2, column 5, inside the
-function `Divide`. In a graphics program the message is also shown in a
+The `at` line says where it happened: line 2, column 5, inside the
+function `Divide`. Each `called from` line shows the call that led
+there, `Gosub`s included, working back to the main program (`<main>`).
+If a very long chain of calls led to the error, the middle of the list
+is left out. In a graphics program the message is also shown in a
 message box, so it isn't lost when the window closes.
 
 ## Catching errors: Try and Catch

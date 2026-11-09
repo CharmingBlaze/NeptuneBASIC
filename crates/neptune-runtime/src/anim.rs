@@ -694,6 +694,10 @@ impl Host3D<'_> {
         };
         match found {
             Some(n) => self.adopt_node(n),
+            // a level's physics bodies have left its node tree
+            None if self.ent(e)?.level_objects.is_some() => {
+                Ok(self.entities().find(|(_, x)| x.level_owner == e as u32 && x.name.eq_ignore_ascii_case(name)).map_or(0, |(id, _)| id))
+            }
             None => Ok(0),
         }
     }

@@ -22,7 +22,7 @@ pub mod vm;
 
 pub use stdlib::{base_env, Core, Output};
 pub use value::Value;
-pub use vm::{Host, NativeCtx, NoHost, RuntimeError, Status, Vm};
+pub use vm::{CallSite, Host, NativeCtx, NoHost, RuntimeError, Status, Vm};
 
 /// Compiles and runs a console program, capturing its output.
 /// Returns compiler diagnostics or the runtime error as `Err`.
