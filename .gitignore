@@ -6,11 +6,18 @@
 # files written by examples/scenes.nb and examples/tilemap.nb
 /examples/saved_level.rgs
 tilemap_saved.txt
+# written by the engine when an example runs
+/examples/data/
 
 # Ruflo local secrets and runtime data
 .env
 .env.local
 .env.*.local
-.claude-flow/data/
-.claude-flow/logs/
-.claude-flow/sessions/
+.claude-flow/
+.swarm/
+.claude/.proven-config-version
+.claude/proven-config.json
+.claude/agents/
+.claude/commands/
+.claude/helpers/
+.claude/skills/
