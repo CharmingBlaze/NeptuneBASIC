@@ -1,0 +1,545 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::{
+    asset::{self, item::AssetItem},
+    fyrox::{
+        asset::manager::ResourceManager,
+        core::{
+            futures::executor::block_on, log::Log, ok_or_return, pool::Handle,
+            pool::HandlesVecExtension, reflect::prelude::*, type_traits::prelude::*,
+            visitor::prelude::*, SafeLock,
+        },
+        engine::Engine,
+        graph::SceneGraph,
+        gui::{
+            button::{Button, ButtonBuilder, ButtonMessage},
+            control_trait_proxy_impls,
+            formatted_text::WrapMode,
+            grid::{Column, GridBuilder, Row},
+            menu::{
+                ContextMenuBuilder, MenuItem, MenuItemBuilder, MenuItemContent, MenuItemMessage,
+            },
+            message::UiMessage,
+            messagebox::{
+                MessageBox, MessageBoxBuilder, MessageBoxButtons, MessageBoxMessage,
+                MessageBoxResult,
+            },
+            popup::{Placement, PopupBuilder, PopupMessage},
+            stack_panel::StackPanelBuilder,
+            text::{TextBuilder, TextMessage},
+            text_box::{TextBox, TextBoxBuilder, TextCommitMode},
+            widget::{Widget, WidgetBuilder, WidgetMessage},
+            window::{Window, WindowAlignment, WindowBuilder, WindowMessage, WindowTitle},
+            BuildContext, Control, HorizontalAlignment, Orientation, RcUiNodeHandle, Thickness,
+            UiNode, UserInterface,
+        },
+    },
+    message::MessageSender,
+    Message,
+};
+use std::{
+    fs::File,
+    io::Write,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+};
+
+#[derive(Clone, Visit, Reflect, Debug, ComponentProvider, TypeUuidProvider)]
+#[reflect(derived_type = "UiNode")]
+#[type_uuid(id = "8c9934ad-b4e1-4c68-9876-f253e34c6667")]
+struct AssetRenameDialog {
+    window: Window,
+    name_field: Handle<TextBox>,
+    rename: Handle<Button>,
+    cancel: Handle<Button>,
+    old_file_name: String,
+    new_file_name: String,
+    extension: String,
+    folder: String,
+    old_path: PathBuf,
+    #[visit(skip)]
+    #[reflect(hidden)]
+    resource_manager: ResourceManager,
+}
+
+impl Deref for AssetRenameDialog {
+    type Target = Widget;
+
+    fn deref(&self) -> &Self::Target {
+        &self.window.widget
+    }
+}
+
+impl DerefMut for AssetRenameDialog {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.window.widget
+    }
+}
+
+impl Control for AssetRenameDialog {
+    control_trait_proxy_impls!(window);
+
+    fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
+        self.window.handle_routed_message(ui, message);
+
+        if let Some(ButtonMessage::Click) = message.data() {
+            if message.destination() == self.rename {
+                Log::verify(block_on(self.resource_manager.move_resource_by_path(
+                    &self.old_path,
+                    format!("{}/{}.{}", self.folder, self.new_file_name, self.extension),
+                    false,
+                )));
+            }
+
+            if message.destination() == self.cancel || message.destination() == self.rename {
+                ui.send(self.handle, WindowMessage::Close);
+            }
+        } else if let Some(TextMessage::Text(name)) = message.data_from(self.name_field) {
+            name.clone_into(&mut self.new_file_name);
+
+            let can_be_moved = block_on(self.resource_manager.can_resource_be_moved(
+                &self.old_path,
+                format!("{}/{}.{}", self.folder, self.new_file_name, self.extension),
+                false,
+            ));
+
+            ui.send(self.rename, WidgetMessage::Enabled(can_be_moved));
+        } else if let Some(WindowMessage::Open { .. }) = message.data() {
+            if message.destination() == self.handle {
+                ui.send(self.name_field, WidgetMessage::Focus);
+            }
+        }
+    }
+}
+
+struct AssetRenameDialogBuilder {
+    window_builder: WindowBuilder,
+}
+
+impl AssetRenameDialogBuilder {
+    fn new(window_builder: WindowBuilder) -> Self {
+        Self { window_builder }
+    }
+
+    fn build(
+        self,
+        old_file_name: String,
+        extension: String,
+        folder: String,
+        old_path: PathBuf,
+        resource_manager: ResourceManager,
+        ctx: &mut BuildContext,
+    ) -> Handle<AssetRenameDialog> {
+        let rename;
+        let cancel;
+        let name_field;
+        let content = GridBuilder::new(
+            WidgetBuilder::new()
+                .with_child(
+                    TextBuilder::new(
+                        WidgetBuilder::new()
+                            .on_row(0)
+                            .with_margin(Thickness::uniform(2.0)),
+                    )
+                    .with_text(format!(
+                        "Enter a new name for {old_file_name}.{extension} resource."
+                    ))
+                    .with_wrap(WrapMode::Word)
+                    .build(ctx),
+                )
+                .with_child({
+                    name_field = TextBoxBuilder::new(
+                        WidgetBuilder::new()
+                            .on_row(1)
+                            .with_margin(Thickness::uniform(2.0))
+                            .with_tab_index(Some(0)),
+                    )
+                    .with_text(&old_file_name)
+                    .with_text_commit_mode(TextCommitMode::Immediate)
+                    .build(ctx);
+                    name_field
+                })
+                .with_child(
+                    StackPanelBuilder::new(
+                        WidgetBuilder::new()
+                            .on_row(3)
+                            .with_horizontal_alignment(HorizontalAlignment::Right)
+                            .with_child({
+                                rename = ButtonBuilder::new(
+                                    WidgetBuilder::new()
+                                        .with_margin(Thickness::uniform(1.0))
+                                        .with_width(100.0)
+                                        .with_height(24.0)
+                                        .with_tab_index(Some(1)),
+                                )
+                                .with_text("Rename")
+                                .build(ctx);
+                                rename
+                            })
+                            .with_child({
+                                cancel = ButtonBuilder::new(
+                                    WidgetBuilder::new()
+                                        .with_margin(Thickness::uniform(1.0))
+                                        .with_width(100.0)
+                                        .with_height(24.0)
+                                        .with_tab_index(Some(2)),
+                                )
+                                .with_text("Cancel")
+                                .build(ctx);
+                                cancel
+                            }),
+                    )
+                    .with_orientation(Orientation::Horizontal)
+                    .build(ctx),
+                ),
+        )
+        .add_row(Row::auto())
+        .add_row(Row::auto())
+        .add_row(Row::stretch())
+        .add_row(Row::auto())
+        .add_column(Column::stretch())
+        .build(ctx);
+
+        let dialog = AssetRenameDialog {
+            window: self.window_builder.with_content(content).build_window(ctx),
+            name_field,
+            rename,
+            cancel,
+            new_file_name: old_file_name.clone(),
+            old_file_name,
+            extension,
+            folder,
+            old_path,
+            resource_manager,
+        };
+
+        ctx.add(dialog)
+    }
+}
+
+pub struct AssetItemContextMenu {
+    pub menu: RcUiNodeHandle,
+    pub open: Handle<MenuItem>,
+    pub duplicate: Handle<MenuItem>,
+    pub copy_path: Handle<MenuItem>,
+    pub copy_file_name: Handle<MenuItem>,
+    pub show_in_explorer: Handle<MenuItem>,
+    pub delete: Handle<MenuItem>,
+    pub rename: Handle<MenuItem>,
+    pub placement_target: Handle<UiNode>,
+    pub dependencies: Handle<MenuItem>,
+    pub delete_confirmation_dialog: Handle<MessageBox>,
+    pub path_to_delete: PathBuf,
+    pub reload: Handle<MenuItem>,
+}
+
+impl AssetItemContextMenu {
+    pub fn new(ctx: &mut BuildContext) -> Self {
+        fn item(text: &str, ctx: &mut BuildContext) -> Handle<MenuItem> {
+            MenuItemBuilder::new(WidgetBuilder::new())
+                .with_content(MenuItemContent::text(text))
+                .build(ctx)
+        }
+
+        let delete = item("Delete", ctx);
+        let show_in_explorer = item("Show In Explorer", ctx);
+        let open = item("Open", ctx);
+        let duplicate = item("Duplicate", ctx);
+        let copy_path = item("Copy Full Path", ctx);
+        let copy_file_name = item("Copy File Name", ctx);
+        let dependencies = item("Dependencies", ctx);
+        let rename = item("Rename", ctx);
+        let reload = item("Reload", ctx);
+
+        let menu = ContextMenuBuilder::new(
+            PopupBuilder::new(WidgetBuilder::new())
+                .with_content(
+                    StackPanelBuilder::new(
+                        WidgetBuilder::new().with_children(
+                            vec![
+                                open,
+                                duplicate,
+                                copy_path,
+                                copy_file_name,
+                                delete,
+                                show_in_explorer,
+                                dependencies,
+                                rename,
+                                reload,
+                            ]
+                            .to_base(),
+                        ),
+                    )
+                    .build(ctx),
+                )
+                .with_restrict_picking(false),
+        )
+        .build(ctx);
+        let menu = RcUiNodeHandle::new(menu, ctx.sender());
+
+        Self {
+            menu,
+            open,
+            duplicate,
+            copy_path,
+            delete,
+            show_in_explorer,
+            placement_target: Default::default(),
+            copy_file_name,
+            dependencies,
+            delete_confirmation_dialog: Default::default(),
+            path_to_delete: Default::default(),
+            rename,
+            reload,
+        }
+    }
+
+    fn on_menu_placed(
+        &mut self,
+        placement_target: Handle<UiNode>,
+        ui: &UserInterface,
+        resource_manager: &ResourceManager,
+    ) {
+        self.placement_target = placement_target;
+        let item = ok_or_return!(ui.try_get_of_type::<AssetItem>(self.placement_target));
+        let is_built_in = resource_manager
+            .state()
+            .built_in_resources
+            .get(&item.path)
+            .is_some();
+        let is_file = item.path.is_file();
+        for handle in [self.dependencies, self.duplicate] {
+            let is_enabled = is_file || is_built_in;
+            ui.send(handle, WidgetMessage::Enabled(is_enabled));
+        }
+        let is_registry_folder =
+            item.path.canonicalize().ok() == Some(resource_manager.registry_folder());
+        let can_be_deleted = !is_built_in && !is_registry_folder;
+        ui.send(self.delete, WidgetMessage::Enabled(can_be_deleted));
+        ui.send(self.reload, WidgetMessage::Enabled(is_file));
+    }
+
+    pub fn handle_ui_message(
+        &mut self,
+        message: &UiMessage,
+        sender: &MessageSender,
+        engine: &mut Engine,
+    ) -> bool {
+        let ui = engine.user_interfaces.first_mut();
+        if let Some(PopupMessage::Placement(Placement::Cursor(target))) = message.data() {
+            if message.destination() == self.menu.handle() {
+                self.on_menu_placed(*target, ui, &engine.resource_manager)
+            }
+        } else if let Some(MenuItemMessage::Click) = message.data() {
+            if let Ok(item) = ui.try_get_mut_of_type::<AssetItem>(self.placement_target) {
+                if message.destination() == self.delete {
+                    let text = format!(
+                        "Do you really want to delete {} asset? This \
+                    is irreversible operation!",
+                        item.path.display()
+                    );
+
+                    self.path_to_delete = item.path.clone();
+
+                    self.delete_confirmation_dialog = MessageBoxBuilder::new(
+                        WindowBuilder::new(
+                            WidgetBuilder::new().with_width(250.0).with_height(100.0),
+                        )
+                        .open(false)
+                        .with_remove_on_close(true)
+                        .with_title(WindowTitle::text("Confirm Deletion")),
+                    )
+                    .with_text(&text)
+                    .with_buttons(MessageBoxButtons::YesNo)
+                    .build(&mut ui.build_ctx());
+
+                    ui.send(
+                        self.delete_confirmation_dialog,
+                        WindowMessage::Open {
+                            alignment: WindowAlignment::Center,
+                            modal: true,
+                            focus_content: true,
+                        },
+                    );
+
+                    return true;
+                } else if message.destination() == self.show_in_explorer {
+                    if let Ok(canonical_path) = item.path.canonicalize() {
+                        asset::show_in_explorer(canonical_path)
+                    }
+                } else if message.destination() == self.open {
+                    item.open();
+                } else if message.destination() == self.duplicate {
+                    if let Some(resource) = item.untyped_resource() {
+                        if let Some(path) = engine.resource_manager.resource_path(&resource) {
+                            let built_in = engine
+                                .resource_manager
+                                .state()
+                                .built_in_resources
+                                .get(&path)
+                                .cloned();
+                            if let Some(built_in) = built_in {
+                                let registry_path = engine
+                                    .resource_manager
+                                    .state()
+                                    .resource_registry
+                                    .safe_lock()
+                                    .path()
+                                    .parent()
+                                    .map(|p| p.to_path_buf())
+                                    .unwrap_or_default();
+
+                                if let Some(data_source) = built_in.data_source.as_ref() {
+                                    let final_copy_path = asset::make_unique_path(
+                                        &registry_path,
+                                        path.to_str().unwrap(),
+                                        &data_source.extension,
+                                    );
+
+                                    match File::create(&final_copy_path) {
+                                        Ok(mut file) => {
+                                            let result = file.write_all(&data_source.bytes);
+                                            drop(file);
+                                            if result.is_ok() {
+                                                engine
+                                                    .resource_manager
+                                                    .request_untyped(&final_copy_path);
+                                            }
+                                            Log::verify(result);
+                                            sender
+                                                .send(Message::ShowInAssetBrowser(final_copy_path));
+                                        }
+                                        Err(err) => Log::err(format!(
+                                            "Failed to create a file for resource at path {final_copy_path:?}. \
+                                                Reason: {err}",
+                                        )),
+                                    }
+                                } else if let Some(data) = built_in.resource.lock().state.data_mut()
+                                {
+                                    let loaders = engine.resource_manager.state().loaders.clone();
+                                    let loaders = loaders.lock();
+
+                                    if let Some(loader) =
+                                        loaders.loader_for_data_type(data.type_uuid())
+                                    {
+                                        if let Some(extension) = loader.extensions().first() {
+                                            if data.can_be_saved() {
+                                                let final_copy_path = asset::make_unique_path(
+                                                    &registry_path,
+                                                    path.to_str().unwrap(),
+                                                    extension,
+                                                );
+                                                drop(loaders);
+                                                if data.save(&final_copy_path).is_ok() {
+                                                    engine
+                                                        .resource_manager
+                                                        .request_untyped(&final_copy_path);
+
+                                                    sender.send(Message::ShowInAssetBrowser(
+                                                        final_copy_path,
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if let Ok(canonical_path) = path.canonicalize() {
+                                if let (Some(parent), Some(stem), Some(ext)) = (
+                                    canonical_path.parent(),
+                                    canonical_path.file_stem(),
+                                    canonical_path.extension(),
+                                ) {
+                                    let stem = stem.to_string_lossy().to_string();
+                                    let ext = ext.to_string_lossy().to_string();
+                                    let final_copy_path =
+                                        asset::make_unique_path(parent, &stem, &ext);
+                                    let result = std::fs::copy(canonical_path, &final_copy_path);
+                                    if result.is_ok() {
+                                        engine.resource_manager.request_untyped(final_copy_path);
+                                    }
+                                    Log::verify(result);
+                                }
+                            }
+                        }
+                    }
+                } else if message.destination() == self.copy_path {
+                    if let Ok(canonical_path) = item.path.canonicalize() {
+                        asset::put_path_to_clipboard(engine, canonical_path.as_os_str())
+                    }
+                } else if message.destination() == self.copy_file_name {
+                    if let Some(file_name) = item.path.clone().file_name() {
+                        asset::put_path_to_clipboard(engine, file_name)
+                    }
+                } else if message.destination() == self.rename {
+                    if let (Some(file_stem), Some(extension), Some(parent)) = (
+                        item.path.file_stem(),
+                        item.path.extension(),
+                        item.path.parent(),
+                    ) {
+                        let dialog = AssetRenameDialogBuilder::new(
+                            WindowBuilder::new(
+                                WidgetBuilder::new().with_width(350.0).with_height(100.0),
+                            )
+                            .with_title(WindowTitle::text("Rename a Resource"))
+                            .with_remove_on_close(true)
+                            .open(false),
+                        )
+                        .build(
+                            file_stem.to_string_lossy().to_string(),
+                            extension.to_string_lossy().to_string(),
+                            parent.to_string_lossy().to_string(),
+                            item.path.clone(),
+                            engine.resource_manager.clone(),
+                            &mut ui.build_ctx(),
+                        );
+                        ui.send(
+                            dialog,
+                            WindowMessage::Open {
+                                alignment: WindowAlignment::Center,
+                                modal: true,
+                                focus_content: true,
+                            },
+                        );
+                    }
+                } else if message.destination() == self.reload {
+                    if let Ok(resource) =
+                        block_on(engine.resource_manager.request_untyped(&item.path))
+                    {
+                        engine.resource_manager.state().reload_resource(resource);
+                    }
+                }
+            }
+        } else if let Some(MessageBoxMessage::Close(result)) =
+            message.data_from(self.delete_confirmation_dialog)
+        {
+            if *result == MessageBoxResult::Yes {
+                if self.path_to_delete.is_file() {
+                    Log::verify(std::fs::remove_file(&self.path_to_delete));
+                } else if self.path_to_delete.is_dir() {
+                    Log::verify(std::fs::remove_dir_all(&self.path_to_delete));
+                }
+            }
+            self.delete_confirmation_dialog = Handle::NONE;
+        }
+
+        false
+    }
+}

@@ -4,6 +4,46 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Neptune Level Editor: our own copy of the editor
+
+* **A short Inspector** – selecting an object now shows its name, position,
+  rotation, scale, whether it is seen and casts shadows, and its properties.
+  The engine's own settings (seventeen rows of them) are left out; start the
+  editor with `--full-inspector` to see everything.
+* **Plain object names** – the object list shows `Coin1`, not `Coin1 (9:1)`.
+* **Words a level designer uses** – the panels are called Objects, Level and
+  Undo History, and the Inspector says `Mesh`, not the type's Rust path.
+* **No build button** – Play checks your program itself, so the hammer beside
+  it is gone, and Play and Stop are in the IDE's green and red.
+* **Starts on the move tool** – the editor used to open on a tool chosen by
+  chance, sometimes the terrain brush.
+* **The starter level's sun and start point are where they belong** – they
+  were all put at the centre of the level.
+* **How** – Fyrox's editor does not let a program change these from outside,
+  so its source (MIT licence) is now kept in `vendor/fyroxed_base` with each
+  of our changes marked.
+
+## Neptune Level Editor: more room for the level
+
+* **The 3D view takes most of the window** – it had half the width and now
+  has more than three quarters. The panels are arranged as in Blender: the
+  view fills the left, the object list is at the top right with the Inspector
+  under it, and the asset browser, the log and the undo list are tabs under
+  the view instead of three panels side by side. The audio panel starts
+  closed. A layout you have arranged yourself is kept; *View > Reset Layout*
+  gives this one.
+* **Blender's keys** – G, R and S pick the move, rotate and scale tools, W the
+  select tool, and X deletes. The camera moves on the arrow keys so that S
+  can be scale. Keys you have changed yourself are kept.
+* **It opens on a level, not a blank window** – without a scene to open, the
+  editor starts with a solid ground, a sun and a place to start, ready to
+  change and to play.
+* **Clearer panels, square buttons** – title bars and text boxes are darker
+  than what the panels hold, so each panel stands apart, and buttons, tick
+  boxes and drop-downs have square corners like the IDE's.
+* **A quieter log** – the engine's own progress reports are off in a new game
+  folder, so warnings and errors are not buried.
+
 ## Neptune Level Editor: a first version
 
 * **A 3D level editor of our own** – `neptune-editor <game folder>` opens

@@ -30,8 +30,41 @@ level uses must be inside the game folder, as with every file a program
 loads. The editor keeps `settings.ron`, `neptune-editor.log` and a `data`
 folder there.
 
-Choose *File > New Scene*, build the level, and save it with *File > Save
-Scene* as a `.rgs` file.
+It opens on a starter level: a solid ground, a sun and a place to start.
+Change it, press Play to walk about in it, and save it with *File > Save
+Scene* as a `.rgs` file. To open a level you saved, name it too:
+`neptune-editor mygame levels/castle.rgs`.
+
+The panels are arranged as in Blender. The 3D view (**Level**) fills the left
+of the window. The list of objects (**Objects**) is at the top right, with
+the **Inspector** (the selected object's settings and properties) under it,
+and the asset browser, the log and the undo history are tabs under the view.
+
+The Inspector shows what a level needs: an object's name, where it is, how
+it is turned and how big it is, whether it is seen and casts shadows, and
+its properties. The engine's own settings are left out; start the editor
+with `--full-inspector` to see them all. Drag a panel's title to
+move it; *View > Reset Layout* puts everything back.
+
+## Keys
+
+The tools are on Blender's keys:
+
+| Key | What it does |
+|---|---|
+| G, R, S | Move, rotate and scale the selected object |
+| W | The select tool |
+| X | Delete the selection |
+| F | Bring the selection into view |
+| Ctrl+Z, Ctrl+Shift+Z | Undo and redo |
+| Ctrl+S | Save the scene |
+| F5 | Play |
+| Right mouse button | Look around |
+| Arrow keys, Page Up, Page Down | Move the camera |
+
+The camera moves on the arrow keys, not W A S D, so that S can be scale.
+Every key can be changed in the editor's settings, and keys you change are
+kept. Orbiting with the middle mouse button, as Blender does, is not there.
 
 ## Play
 
@@ -99,4 +132,6 @@ program, because the editor's X axis points the other way.
   are not connected to `EntityPhysics`. Use `col_` names and the `physics`
   property instead.
 * The editor still shows tools that mean nothing for BASIC programs, such as
-  its script editors and export window.
+  its script editors and export window. Rows in its lists are close
+  together, and the asset browser lists the engine's built-in fonts and
+  shapes beside your own files.

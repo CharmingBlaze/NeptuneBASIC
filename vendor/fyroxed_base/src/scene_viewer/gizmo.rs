@@ -1,0 +1,380 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::camera::CameraController;
+use crate::fyrox::{
+    core::{
+        algebra::{Matrix4, UnitQuaternion, Vector2, Vector3},
+        color::Color,
+        pool::Handle,
+    },
+    engine::Engine,
+    material::{Material, MaterialResource},
+    resource::texture::{TextureResource, TextureResourceExtension},
+    scene::{
+        base::BaseBuilder,
+        camera::CameraBuilder,
+        graph::Graph,
+        light::{directional::DirectionalLightBuilder, BaseLightBuilder},
+        mesh::{
+            surface::{SurfaceBuilder, SurfaceData, SurfaceResource},
+            MeshBuilder,
+        },
+        pivot::PivotBuilder,
+        transform::TransformBuilder,
+        Scene,
+    },
+};
+use crate::scene::GameScene;
+use fyrox::scene::camera::Camera;
+use fyrox::scene::mesh::Mesh;
+use fyrox::scene::pivot::Pivot;
+use fyrox::scene::{EnvironmentLightingSource, SceneContainer};
+
+pub struct CameraRotation {
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
+pub enum SceneGizmoAction {
+    Rotate(CameraRotation),
+    SwitchProjection,
+}
+
+pub struct DragContext {
+    pub initial_click_pos: Vector2<f32>,
+    pub initial_rotation: CameraRotation,
+}
+
+pub struct SceneGizmo {
+    pub scene: Handle<Scene>,
+    pub render_target: TextureResource,
+    pub camera_pivot: Handle<Pivot>,
+    pub camera_hinge: Handle<Pivot>,
+    pub camera: Handle<Camera>,
+    pub pos_x: Handle<Mesh>,
+    pub neg_x: Handle<Mesh>,
+    pub pos_y: Handle<Mesh>,
+    pub neg_y: Handle<Mesh>,
+    pub pos_z: Handle<Mesh>,
+    pub neg_z: Handle<Mesh>,
+    pub center: Handle<Mesh>,
+    pub drag_context: Option<DragContext>,
+}
+
+fn make_cone(transform: Matrix4<f32>, color: Color, graph: &mut Graph) -> Handle<Mesh> {
+    let mut material = Material::standard();
+
+    material.set_property("diffuseColor", color);
+
+    MeshBuilder::new(BaseBuilder::new().with_cast_shadows(false))
+        .with_surfaces(vec![SurfaceBuilder::new(SurfaceResource::new_embedded(
+            SurfaceData::make_cone(16, 0.3, 1.0, &transform),
+        ))
+        .with_material(MaterialResource::new_embedded(material))
+        .build()])
+        .build(graph)
+}
+
+impl SceneGizmo {
+    pub fn new(engine: &mut Engine) -> Self {
+        let mut scene = Scene::new();
+        scene.set_skybox(None);
+
+        let render_target = TextureResource::new_render_target(85, 85);
+        scene.rendering_options.render_target = Some(render_target.clone());
+        scene.rendering_options.clear_color = Some(Color::TRANSPARENT);
+        scene.rendering_options.environment_lighting_source =
+            EnvironmentLightingSource::AmbientColor;
+        scene.rendering_options.ambient_lighting_color = Color::repeat_opaque(120);
+
+        DirectionalLightBuilder::new(BaseLightBuilder::new(
+            BaseBuilder::new().with_cast_shadows(false),
+        ))
+        .build(&mut scene.graph);
+
+        let pos_x;
+        let neg_x;
+        let pos_y;
+        let neg_y;
+        let pos_z;
+        let neg_z;
+        let center = MeshBuilder::new(
+            BaseBuilder::new()
+                .with_cast_shadows(false)
+                .with_child({
+                    neg_y = make_cone(
+                        Matrix4::new_translation(&Vector3::new(0.0, -1.50, 0.0)),
+                        Color::WHITE,
+                        &mut scene.graph,
+                    );
+                    neg_y
+                })
+                .with_child({
+                    pos_y = make_cone(
+                        Matrix4::new_translation(&Vector3::new(0.0, 1.50, 0.0))
+                            * UnitQuaternion::from_axis_angle(
+                                &Vector3::x_axis(),
+                                180.0f32.to_radians(),
+                            )
+                            .to_homogeneous(),
+                        Color::GREEN,
+                        &mut scene.graph,
+                    );
+                    pos_y
+                })
+                .with_child({
+                    pos_x = make_cone(
+                        Matrix4::new_translation(&Vector3::new(1.50, 0.0, 0.0))
+                            * UnitQuaternion::from_axis_angle(
+                                &Vector3::z_axis(),
+                                90.0f32.to_radians(),
+                            )
+                            .to_homogeneous(),
+                        Color::RED,
+                        &mut scene.graph,
+                    );
+                    pos_x
+                })
+                .with_child({
+                    neg_x = make_cone(
+                        Matrix4::new_translation(&Vector3::new(-1.50, 0.0, 0.0))
+                            * UnitQuaternion::from_axis_angle(
+                                &Vector3::z_axis(),
+                                (-90.0f32).to_radians(),
+                            )
+                            .to_homogeneous(),
+                        Color::WHITE,
+                        &mut scene.graph,
+                    );
+                    neg_x
+                })
+                .with_child({
+                    pos_z = make_cone(
+                        Matrix4::new_translation(&Vector3::new(0.0, 0.0, 1.50))
+                            * UnitQuaternion::from_axis_angle(
+                                &Vector3::x_axis(),
+                                (-90.0f32).to_radians(),
+                            )
+                            .to_homogeneous(),
+                        Color::BLUE,
+                        &mut scene.graph,
+                    );
+                    pos_z
+                })
+                .with_child({
+                    neg_z = make_cone(
+                        Matrix4::new_translation(&Vector3::new(0.0, 0.0, -1.50))
+                            * UnitQuaternion::from_axis_angle(
+                                &Vector3::x_axis(),
+                                90.0f32.to_radians(),
+                            )
+                            .to_homogeneous(),
+                        Color::WHITE,
+                        &mut scene.graph,
+                    );
+                    neg_z
+                }),
+        )
+        .with_surfaces(vec![SurfaceBuilder::new(SurfaceResource::new_embedded(
+            SurfaceData::make_cube(Matrix4::identity()),
+        ))
+        .build()])
+        .build(&mut scene.graph);
+
+        let camera_hinge;
+        let camera;
+        let camera_pivot = PivotBuilder::new(BaseBuilder::new().with_child({
+            camera_hinge = PivotBuilder::new(BaseBuilder::new().with_child({
+                camera = CameraBuilder::new(
+                    BaseBuilder::new().with_local_transform(
+                        TransformBuilder::new()
+                            .with_local_position(Vector3::new(0.0, 0.0, -3.0))
+                            .build(),
+                    ),
+                )
+                .build(&mut scene.graph);
+                camera
+            }))
+            .build(&mut scene.graph);
+            camera_hinge
+        }))
+        .build(&mut scene.graph);
+
+        scene.graph.update_hierarchical_data();
+
+        Self {
+            scene: engine.scenes.add(scene),
+            render_target,
+            camera_pivot,
+            camera_hinge,
+            camera,
+            pos_x,
+            neg_x,
+            pos_y,
+            neg_y,
+            pos_z,
+            neg_z,
+            center,
+            drag_context: None,
+        }
+    }
+
+    pub fn sync_rotations(&self, game_scene: &GameScene, engine: &mut Engine) {
+        let graph = &engine.scenes[game_scene.scene].graph;
+        let hinge_rotation = **graph[game_scene.camera_controller.camera_hinge]
+            .local_transform()
+            .rotation();
+        let pivot_rotation = **graph[game_scene.camera_controller.pivot]
+            .local_transform()
+            .rotation();
+        let gizmo_graph = &mut engine.scenes[self.scene].graph;
+
+        gizmo_graph[self.camera_hinge]
+            .local_transform_mut()
+            .set_rotation(hinge_rotation);
+        gizmo_graph[self.camera_pivot]
+            .local_transform_mut()
+            .set_rotation(pivot_rotation);
+    }
+
+    fn parts(&self) -> [(Handle<Mesh>, Color); 7] {
+        [
+            (self.center, Color::WHITE),
+            (self.pos_x, Color::RED),
+            (self.neg_x, Color::WHITE),
+            (self.pos_y, Color::GREEN),
+            (self.neg_y, Color::WHITE),
+            (self.pos_z, Color::BLUE),
+            (self.neg_z, Color::WHITE),
+        ]
+    }
+
+    fn pick(&self, pos: Vector2<f32>, scenes: &SceneContainer) -> Handle<Mesh> {
+        let graph = &scenes[self.scene].graph;
+        let ray = graph[self.camera].make_ray(
+            pos,
+            self.render_target
+                .data_ref()
+                .kind()
+                .rectangle_size()
+                .unwrap()
+                .map(|c| c as f32),
+        );
+
+        let mut closest = Handle::NONE;
+        let mut min_toi = f32::MAX;
+        for (node, _) in self.parts() {
+            let node_ref = &graph[node];
+            if let Some(result) = ray.aabb_intersection(
+                &node_ref
+                    .local_bounding_box()
+                    .transform(&node_ref.global_transform()),
+            ) {
+                if result.min < min_toi {
+                    closest = node;
+                    min_toi = result.min;
+                }
+            }
+        }
+        closest
+    }
+
+    pub fn on_mouse_move(
+        &mut self,
+        pos: Vector2<f32>,
+        engine: &mut Engine,
+        camera_controller: &mut CameraController,
+    ) {
+        if let Some(drag_context) = self.drag_context.as_ref() {
+            let delta = pos - drag_context.initial_click_pos;
+            let sens: f32 = 0.03;
+            camera_controller.set_yaw(drag_context.initial_rotation.yaw + delta.x * -sens);
+            camera_controller.set_pitch(drag_context.initial_rotation.pitch + delta.y * sens);
+        } else {
+            let graph = &engine.scenes[self.scene].graph;
+            let closest = self.pick(pos, &engine.scenes);
+            fn set_color(node: Handle<Mesh>, graph: &Graph, color: Color) {
+                graph[node].surfaces()[0]
+                    .material()
+                    .data_ref()
+                    .set_property("diffuseColor", color);
+            }
+            for (node, default_color) in self.parts() {
+                set_color(
+                    node,
+                    graph,
+                    if node == closest {
+                        Color::opaque(255, 255, 0)
+                    } else {
+                        default_color
+                    },
+                );
+            }
+        }
+    }
+
+    pub fn on_click(
+        &mut self,
+        pos: Vector2<f32>,
+        scenes: &SceneContainer,
+    ) -> Option<SceneGizmoAction> {
+        if let Some(_drag_context) = self.drag_context.as_ref() {
+            return None;
+        }
+
+        let closest = self.pick(pos, scenes);
+        if closest == self.neg_x {
+            Some(SceneGizmoAction::Rotate(CameraRotation {
+                pitch: 0.0,
+                yaw: 90.0f32.to_radians(),
+            }))
+        } else if closest == self.pos_x {
+            Some(SceneGizmoAction::Rotate(CameraRotation {
+                pitch: 0.0,
+                yaw: (-90.0f32).to_radians(),
+            }))
+        } else if closest == self.neg_y {
+            Some(SceneGizmoAction::Rotate(CameraRotation {
+                pitch: (-90.0f32).to_radians(),
+                yaw: 0.0,
+            }))
+        } else if closest == self.pos_y {
+            Some(SceneGizmoAction::Rotate(CameraRotation {
+                pitch: 90.0f32.to_radians(),
+                yaw: 0.0,
+            }))
+        } else if closest == self.neg_z {
+            Some(SceneGizmoAction::Rotate(CameraRotation {
+                pitch: 0.0,
+                yaw: 0.0f32.to_radians(),
+            }))
+        } else if closest == self.pos_z {
+            Some(SceneGizmoAction::Rotate(CameraRotation {
+                pitch: 0.0,
+                yaw: (-180.0f32).to_radians(),
+            }))
+        } else if closest == self.center {
+            Some(SceneGizmoAction::SwitchProjection)
+        } else {
+            None
+        }
+    }
+}

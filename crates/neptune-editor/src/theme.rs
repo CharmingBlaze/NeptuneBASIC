@@ -4,13 +4,22 @@
 //! background to brightest detail. Each palette here gives those names the
 //! colours of an IDE theme (`crates/neptune-ide/src/theme.rs`): keep the two
 //! files in step.
+//!
+//! The backgrounds are spread further apart than the IDE's, which has two
+//! panels where the editor has seven: the gaps between panels are darkest,
+//! title bars and text boxes come next, and what a panel holds is lighter,
+//! so each panel reads as one thing. Buttons are square, like the IDE's.
 
 use fyroxed_base::{
     fyrox::{
         core::color::Color,
         gui::{
             brush::Brush,
+            button::Button,
+            check_box::CheckBox,
+            dropdown_list::DropdownList,
             style::{resource::StyleResource, Style},
+            toggle::ToggleButton,
         },
     },
     settings::general::EditorStyle,
@@ -40,8 +49,8 @@ pub struct Palette {
 
 /// "Neptune Deep", the IDE's default theme.
 pub const NEPTUNE_DEEP: Palette = Palette {
-    surfaces: [0x0A0F18, 0x0E1420, 0x131B2A, 0x182235, 0x1C2739, 0x243047, 0x2E3D58, 0x3A4B69],
-    details: [0x4A5870, 0x8796AE],
+    surfaces: [0x0A0D13, 0x111620, 0x181E2B, 0x232C3D, 0x293348, 0x34415C, 0x435373, 0x55688F],
+    details: [0x8091AE, 0xB4C0D4],
     selection: 0x2B7FB8,
     selection_dim: 0x1F5F8C,
     accent: 0x2BC4E0,
@@ -114,6 +123,9 @@ pub fn paint(style: &mut Style, p: &Palette) {
     for (name, rgb) in named {
         style.set(name, brush(rgb));
     }
+    for corner in [Button::CORNER_RADIUS, ToggleButton::CORNER_RADIUS, CheckBox::CORNER_RADIUS, DropdownList::CORNER_RADIUS] {
+        style.set(corner, 0.0f32);
+    }
 }
 
 /// Replaces the editor's dark and light styles with Neptune's and shows the
@@ -150,7 +162,7 @@ mod tests {
                 assert_ne!(before.get::<Brush>(name), after.get::<Brush>(name), "{name} kept Fyrox's colour");
             }
         }
-        assert_eq!(after.get::<Brush>(Style::BRUSH_DARKER), Some(brush(0x0E1420)));
+        assert_eq!(after.get::<Brush>(Style::BRUSH_DARKER), Some(brush(0x111620)));
     }
 
     #[test]
@@ -161,6 +173,15 @@ mod tests {
         assert!(after.inner().len() >= before.inner().len());
         assert_eq!(after.get::<Brush>(Style::BRUSH_TEXT), Some(brush(0x1F2933)));
         assert_eq!(after.get::<Brush>(Style::BRUSH_OK_NORMAL), Some(brush(0x1E8E5A)));
+    }
+
+    #[test]
+    fn buttons_are_square() {
+        let style = painted(Style::dark_style(), &NEPTUNE_DEEP);
+        assert_eq!(Style::dark_style().get::<f32>(Button::CORNER_RADIUS), Some(4.0));
+        for corner in [Button::CORNER_RADIUS, ToggleButton::CORNER_RADIUS, CheckBox::CORNER_RADIUS, DropdownList::CORNER_RADIUS] {
+            assert_eq!(style.get::<f32>(corner), Some(0.0), "{corner}");
+        }
     }
 
     #[test]

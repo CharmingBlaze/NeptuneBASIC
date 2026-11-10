@@ -1,0 +1,375 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::{
+    fyrox::{
+        core::{
+            algebra::Vector2, color::Color, pool::ErasedHandle, pool::Handle, reflect::prelude::*,
+            type_traits::prelude::*, uuid_provider, visitor::prelude::*,
+        },
+        graph::SceneGraph,
+        gui::{
+            brush::Brush,
+            draw::{CommandTexture, Draw, DrawingContext},
+            grid::{Column, GridBuilder, Row},
+            image::ImageBuilder,
+            message::{OsEvent, UiMessage},
+            style::{resource::StyleResourceExt, Style, StyledProperty},
+            text::{TextBuilder, TextMessage},
+            tree::{Tree, TreeBuilder},
+            utils::make_simple_tooltip,
+            widget::{Widget, WidgetBuilder, WidgetMessage},
+            BuildContext, Control, Thickness, UiNode, UserInterface, VerticalAlignment,
+        },
+    },
+    load_image,
+    message::MessageSender,
+    utils::make_node_name,
+    Message,
+};
+
+use crate::world::SceneItemIcon;
+use fyrox::gui::grid::Grid;
+use fyrox::gui::image::Image;
+use fyrox::gui::message::MessageData;
+use fyrox::gui::text::Text;
+use std::{
+    fmt::{Debug, Formatter},
+    ops::{Deref, DerefMut},
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SceneItemMessage {
+    Name(String),
+    Validate(Result<(), String>),
+}
+impl MessageData for SceneItemMessage {}
+
+#[derive(Copy, Clone)]
+pub enum DropAnchor {
+    Side {
+        visual_offset: f32,
+        index_offset: isize,
+    },
+    OnTop,
+}
+
+#[derive(Visit, Reflect, ComponentProvider)]
+#[reflect(derived_type = "UiNode")]
+pub struct SceneItem {
+    #[component(include)]
+    pub tree: Tree,
+    text_name: Handle<Text>,
+    name_value: String,
+    grid: Handle<Grid>,
+    pub entity_handle: ErasedHandle,
+    // Can be unassigned if there's no warning.
+    pub warning_icon: Handle<Image>,
+    #[reflect(hidden)]
+    #[visit(skip)]
+    sender: MessageSender,
+    #[reflect(hidden)]
+    #[visit(skip)]
+    pub drop_anchor: DropAnchor,
+}
+
+impl SceneItem {
+    pub fn name(&self) -> &str {
+        &self.name_value
+    }
+}
+
+impl Clone for SceneItem {
+    fn clone(&self) -> Self {
+        Self {
+            tree: self.tree.clone(),
+            text_name: self.text_name,
+            name_value: self.name_value.clone(),
+            grid: self.grid,
+            entity_handle: self.entity_handle,
+            warning_icon: self.warning_icon,
+            sender: self.sender.clone(),
+            drop_anchor: self.drop_anchor,
+        }
+    }
+}
+
+impl Debug for SceneItem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SceneItem")
+    }
+}
+
+impl Deref for SceneItem {
+    type Target = Widget;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tree
+    }
+}
+
+impl DerefMut for SceneItem {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tree
+    }
+}
+
+uuid_provider!(SceneItem = "16f35257-a250-413b-ab51-b1ad086a3a9c");
+
+impl Control for SceneItem {
+    fn measure_override(&self, ui: &UserInterface, available_size: Vector2<f32>) -> Vector2<f32> {
+        self.tree.measure_override(ui, available_size)
+    }
+
+    fn arrange_override(&self, ui: &UserInterface, final_size: Vector2<f32>) -> Vector2<f32> {
+        self.tree.arrange_override(ui, final_size)
+    }
+
+    fn post_draw(&self, drawing_context: &mut DrawingContext) {
+        self.tree.draw(drawing_context);
+
+        let width = self.screen_bounds().w();
+        match self.drop_anchor {
+            DropAnchor::Side { visual_offset, .. } => {
+                drawing_context.push_line(
+                    Vector2::new(0.0, visual_offset),
+                    Vector2::new(width, visual_offset),
+                    2.0,
+                );
+            }
+            DropAnchor::OnTop => {}
+        }
+        drawing_context.commit(
+            self.clip_bounds().inflate(0.0, 2.0),
+            Brush::Solid(Color::CORN_FLOWER_BLUE),
+            CommandTexture::None,
+            &self.material,
+            None,
+        );
+    }
+
+    fn update(&mut self, dt: f32, ui: &mut UserInterface) {
+        self.tree.update(dt, ui);
+    }
+
+    fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
+        self.tree.handle_routed_message(ui, message);
+
+        if let Some(SceneItemMessage::Name(name)) = message.data() {
+            if message.destination() == self.handle() {
+                self.name_value = make_node_name(name, self.entity_handle);
+                ui.send(self.text_name, TextMessage::Text(self.name_value.clone()));
+            }
+        } else if let Some(SceneItemMessage::Validate(result)) = message.data() {
+            if message.destination() == self.handle() {
+                match result {
+                    Ok(_) => {
+                        ui.send(self.warning_icon, WidgetMessage::Remove);
+                        self.warning_icon = Handle::NONE;
+                    }
+                    Err(msg) => {
+                        self.warning_icon = ImageBuilder::new(
+                            WidgetBuilder::new()
+                                .with_width(20.0)
+                                .with_height(20.0)
+                                .with_tooltip(make_simple_tooltip(&mut ui.build_ctx(), msg))
+                                .with_margin(Thickness::uniform(1.0))
+                                .on_row(0)
+                                .on_column(2),
+                        )
+                        .with_opt_texture(load_image!("../../resources/warning.png"))
+                        .build(&mut ui.build_ctx());
+
+                        ui.send(self.warning_icon, WidgetMessage::link_with(self.grid));
+                    }
+                }
+            }
+        } else if let Some(WidgetMessage::DoubleClick { .. }) = message.data() {
+            let flag = 0b0010;
+            if message.flags & flag != flag {
+                self.sender
+                    .send(Message::FocusObject(self.entity_handle.into()));
+                message.set_handled(true);
+                message.flags |= flag;
+            }
+        } else if let Some(msg) = message.data::<WidgetMessage>() {
+            match msg {
+                WidgetMessage::DragOver(_) => {
+                    if let Ok(background) = ui.try_get_node(self.tree.background) {
+                        let cursor_pos = ui.cursor_position();
+                        let bounds = background.screen_bounds();
+                        let deflated_bounds = bounds.deflate(0.0, 5.0);
+                        if bounds.contains(cursor_pos) {
+                            if cursor_pos.y < deflated_bounds.y() {
+                                self.drop_anchor = DropAnchor::Side {
+                                    visual_offset: 0.0,
+                                    index_offset: 0,
+                                };
+                            } else if deflated_bounds.contains(cursor_pos) {
+                                self.drop_anchor = DropAnchor::OnTop;
+                            } else if cursor_pos.y > deflated_bounds.y() + deflated_bounds.h() {
+                                self.drop_anchor = DropAnchor::Side {
+                                    visual_offset: bounds.h() - 1.0,
+                                    index_offset: 0,
+                                };
+                            }
+                        } else {
+                            self.drop_anchor = DropAnchor::OnTop;
+                        }
+                    }
+                }
+                WidgetMessage::MouseLeave => {
+                    self.drop_anchor = DropAnchor::OnTop;
+                }
+                _ => (),
+            }
+        }
+    }
+
+    fn preview_message(&self, ui: &UserInterface, message: &mut UiMessage) {
+        self.tree.preview_message(ui, message);
+    }
+
+    fn handle_os_event(
+        &mut self,
+        self_handle: Handle<UiNode>,
+        ui: &mut UserInterface,
+        event: &OsEvent,
+    ) {
+        self.tree.handle_os_event(self_handle, ui, event);
+    }
+}
+
+pub struct SceneItemBuilder {
+    tree_builder: TreeBuilder,
+    entity_handle: ErasedHandle,
+    name: String,
+    icon: Option<SceneItemIcon>,
+    text_brush: Option<StyledProperty<Brush>>,
+}
+
+impl SceneItemBuilder {
+    pub fn new(tree_builder: TreeBuilder) -> Self {
+        Self {
+            tree_builder,
+            entity_handle: Default::default(),
+            name: Default::default(),
+            icon: None,
+            text_brush: None,
+        }
+    }
+
+    pub fn with_entity_handle(mut self, entity_handle: ErasedHandle) -> Self {
+        self.entity_handle = entity_handle;
+        self
+    }
+
+    pub fn with_name(mut self, name: String) -> Self {
+        self.name = name;
+        self
+    }
+
+    pub fn with_icon(mut self, icon: Option<SceneItemIcon>) -> Self {
+        self.icon = icon;
+        self
+    }
+
+    pub fn with_text_brush(mut self, brush: StyledProperty<Brush>) -> Self {
+        self.text_brush = Some(brush);
+        self
+    }
+
+    pub fn build(self, ctx: &mut BuildContext, sender: MessageSender) -> Handle<SceneItem> {
+        let text_name;
+        let content = GridBuilder::new(
+            WidgetBuilder::new()
+                .with_child(
+                    ImageBuilder::new(
+                        WidgetBuilder::new()
+                            .with_width(16.0)
+                            .with_height(16.0)
+                            .on_column(0)
+                            .with_margin(Thickness::left_right(1.0))
+                            .with_visibility(self.icon.is_some())
+                            .with_background(
+                                self.icon
+                                    .as_ref()
+                                    .map(|i| StyledProperty::from(Brush::Solid(i.color)))
+                                    .unwrap_or_else(|| ctx.style.property(Style::BRUSH_TEXT)),
+                            ),
+                    )
+                    .with_opt_texture(self.icon.as_ref().map(|i| i.icon.clone()))
+                    .build(ctx),
+                )
+                .with_child({
+                    text_name = TextBuilder::new(
+                        WidgetBuilder::new()
+                            .with_foreground(
+                                self.text_brush
+                                    .unwrap_or(ctx.style.property(Style::BRUSH_TEXT)),
+                            )
+                            // Neptune: a gap between the icon and the name (was `left(1.0)`)
+                            .with_margin(Thickness::left(5.0))
+                            .on_column(1),
+                    )
+                    .with_vertical_text_alignment(VerticalAlignment::Center)
+                    // Neptune: the name alone, without the object's (index:generation)
+                    .with_text(self.name.clone())
+                    .build(ctx);
+                    text_name
+                }),
+        )
+        .add_row(Row::stretch())
+        .add_column(Column::auto())
+        .add_column(Column::stretch())
+        .add_column(Column::auto())
+        .build(ctx);
+
+        let tree = self.tree_builder.with_content(content).build_tree(ctx);
+
+        let item = SceneItem {
+            tree,
+            entity_handle: self.entity_handle,
+            name_value: self.name,
+            text_name,
+            grid: content,
+            warning_icon: Default::default(),
+            sender,
+            drop_anchor: DropAnchor::OnTop,
+        };
+
+        ctx.add(item)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::world::item::SceneItemBuilder;
+    use fyrox::gui::tree::TreeBuilder;
+    use fyrox::{gui::test::test_widget_deletion, gui::widget::WidgetBuilder};
+
+    #[test]
+    fn test_deletion() {
+        test_widget_deletion(|ctx| {
+            SceneItemBuilder::new(TreeBuilder::new(WidgetBuilder::new()))
+                .build(ctx, Default::default())
+        });
+    }
+}

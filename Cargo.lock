@@ -2491,8 +2491,6 @@ dependencies = [
 [[package]]
 name = "fyroxed_base"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5f26f07790d71b959b5280927dea84251cc0820b9126affa4c2a80ad62b84fa"
 dependencies = [
  "bitflags 2.13.2",
  "cargo_metadata",

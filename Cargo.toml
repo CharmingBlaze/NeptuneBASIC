@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/neptune-lang", "crates/neptune-vm", "crates/neptune-runtime", "crates/neptune-cli", "crates/neptune-ide", "crates/neptune-editor", "sdk/rust", "sdk/examples/rust-hello"]
+# our copy of Fyrox's editor: built as a dependency of neptune-editor, not
+# tested or linted as our own code
+exclude = ["vendor/fyroxed_base"]
 
 [workspace.package]
 version = "0.1.0"

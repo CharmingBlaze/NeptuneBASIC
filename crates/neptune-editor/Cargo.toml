@@ -12,4 +12,4 @@ path = "src/main.rs"
 # Neptune's colours and tools on top. It is a program of its own so that
 # `neptune` and Neptune IDE do not build or link it.
 [dependencies]
-fyroxed_base = "1.0.1"
+fyroxed_base = { path = "../../vendor/fyroxed_base" }
