@@ -1052,6 +1052,7 @@ fn before_render(h: &mut Host3D, tween: f32) -> Result<(), String> {
     h.update_lods()?;
     h.update_terrain_lods()?;
     h.update_render_targets()?;
+    h.sync_render_scale()?;
     // put tweened nodes back to their real transforms
     for e in std::mem::take(&mut h.world.tweened) {
         if h.ent(e).is_ok() {

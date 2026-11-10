@@ -56,16 +56,22 @@ every time, which is what that benchmark measures.
 
 ### Which graphics card
 
-This laptop has two graphics cards, and every frame rate on this page
-except the NVIDIA rows of the quality table was drawn by the slower,
-power-saving one (AMD Radeon 780M, built into the processor): Windows gives
-that card to OpenGL programs that do not ask for the other. NeptuneBASIC now
-asks for the fast card, and `GraphicsCardName` (and the quality table) says
-which one drew. The quality table shows both: the built-in card gains a
-factor of two from ultra to low, while the NVIDIA card draws every level at
-the 144 a second its driver holds this screen to. The other tables have not
-been run again on the NVIDIA card; to measure the built-in card on purpose,
-build with `NEPTUNE_GPU_EXPORTS=0`.
+This laptop has two graphics cards, and the tables on this page were drawn
+by the slower one that is built into the processor (AMD Radeon 780M), on
+purpose: the build was made with `NEPTUNE_GPU_EXPORTS=0`, which leaves out
+NeptuneBASIC's request for the fast card. The reasons:
+
+* The built-in card is the better guide to what an older or cheaper PC does.
+* On the NVIDIA card (RTX 5050) the driver holds this screen to 144 frames
+  a second even without vsync, so an empty scene, 5000 hidden sprites and
+  10,000 rectangles all read 144 and the tables would hide the differences.
+  The quality scene, 45 to 90 frames a second here, is 144 at every level
+  there.
+
+A normal build asks for the fast card (Windows was giving OpenGL programs
+the power-saving one), and `GraphicsCardName` says which card is drawing.
+Before that request was added, every earlier version of this page had also
+been drawn by the built-in card, so its old and new numbers compare.
 
 ### Large games
 
@@ -76,10 +82,10 @@ build with `NEPTUNE_GPU_EXPORTS=0`.
 * **Hidden objects cost time; stored ones do not.** Every object in the
   scene is visited by the engine each frame, about 0.4 microseconds each,
   hidden or not: 40,000 hidden objects bring an empty scene from about 300
-  frames a second to 54. `StoreEntity` takes an entity and its children out
+  frames a second to 59. `StoreEntity` takes an entity and its children out
   of the scene without freeing them, and `RestoreEntity` puts them back as
   they were. With the far chunks stored instead of hidden, the same walk
-  through the world runs at 176 frames a second instead of 36, and storing
+  through the world runs at 184 frames a second instead of 38, and storing
   or restoring a chunk of 400 objects takes 0.04 ms. `examples/bigworld.nb`
   shows it.
 
@@ -100,6 +106,4 @@ build with `NEPTUNE_GPU_EXPORTS=0`.
 * Still slow: `Text` lays its string out again every frame (about 2
   microseconds a call), and every sprite is a scene node of its own.
 * Language times are for a bytecode VM with typed instructions and no JIT.
-  The frame rates above were measured before the interpreter was made
-  faster; programs that do a lot of their own work each frame gain from it.
 * Results depend on the machine. Run `neptune bench` on yours to compare.

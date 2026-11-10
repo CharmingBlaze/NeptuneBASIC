@@ -10,6 +10,7 @@ sees.
 - [Using effects](#using-effects)
 - [Built-in effects](#built-in-effects)
 - [One-call weather and atmosphere](#one-call-weather-and-atmosphere)
+- [Lens effects](#lens-effects)
 - [Order, cameras and switching](#order-cameras-and-switching)
 - [HDR and the final image](#hdr-and-the-final-image)
 - [Routing: inputs, outputs and resolution](#routing-inputs-outputs-and-resolution)
@@ -86,7 +87,9 @@ to use 0-255.
 | `chromatic` | colour fringes at the edges, like a cheap lens | `amount` (0.004) |
 | `grain` | film grain | `amount` (0.06), `size` (1.5) |
 | `dof` | depth of field: blur in front of and behind the focus | `focusDistance` (10 units), `focusRange` (6: how deep the sharp zone is), `maxBlur` (6 pixels) |
-| `motionblur` | blur from camera movement | `amount` (1) |
+| `motionblur` | blur from camera movement; objects moving on their own are not blurred | `amount` (1), `maxLength` (0.08: the longest streak, as a part of the screen) |
+| `godrays` | shafts of light from the sun, cut by whatever is in the way | `amount` (0.6), `color` (1,0.92,0.75), `sun` (0.4,0.6,0.7,0), `reach` (0.9: how far along the way to the sun each pixel looks), `spread` (0.9: how far the glow extends around the sun, in screen heights), `skyDistance` (0) |
+| `lensflare` | glow, streak and coloured circles from a bright light | `amount` (0.7), `size` (1), `color` (1,0.92,0.8), `sun` (0.4,0.6,0.7,0), `skyDistance` (0) |
 | `blur` | a simple blur | `radius` (2 pixels) |
 | `gaussian` | a smoother blur | `radius` (3 pixels) |
 | `radialblur` | zoom blur from a point | `amount` (0.08), `center` (0.5, 0.5: the screen centre) |
@@ -114,8 +117,15 @@ to use 0-255.
 | `ssao` | screen-space ambient occlusion: dark creases | `radius` (0.6 units), `intensity` (1) |
 | `ssr` | screen-space reflections on shiny floors | `intensity` (0.5), `maxDistance` (20 units), `thickness` (0.4) |
 
-Effects that read depth (`dof`, `fog`, `heathaze`, `outline`, `ssao`, `ssr`,
-`underwater`) see every object, including water and see-through
+`sun` in `godrays` and `lensflare` is `x, y, z, w` in world space: with
+`w` 0, the direction towards the sun; with `w` 1, a position. Light gets
+through only where nothing was drawn (the camera's clear colour or a sky
+box), or where the scene is further away than a positioned light. A big
+sky sphere or dome is a real object and would block it: set `skyDistance`
+to a distance just inside the dome, and anything beyond that counts as sky.
+
+Effects that read depth (`dof`, `fog`, `godrays`, `heathaze`, `lensflare`,
+`outline`, `ssao`, `ssr`, `underwater`) see every object, including water and see-through
 surfaces. `outline`, `ssao` and `ssr` also read normals, which only
 deferred surfaces (PBR materials, `//! pass gbuffer` shaders) provide.
 
@@ -157,6 +167,11 @@ SetRainEffect camera, 0.7                        ; heavy rain
 SetSnowEffect camera, 0.4, 0.2                   ; light, slow snow
 SetAtmosphericFog camera, 0.02, 180, 190, 200    ; thin grey-blue fog
 SetUnderwaterEffect camera, True, 0          ; the sea surface is at y = 0
+
+sun = CreateLight(1)
+SetDepthOfField camera, 20                       ; sharpest 20 units away
+SetGodRays camera, 0.7, sun                      ; follows the light by itself
+SetLensFlare camera, 0.8, sun
 ```
 
 | Command | Effect |
@@ -165,6 +180,136 @@ SetUnderwaterEffect camera, True, 0          ; the sea surface is at y = 0
 | `SetSnowEffect camera, amount [, speed]` | falling snow, amount 0-1 |
 | `SetAtmosphericFog camera, density [, r, g, b, height_falloff]` | height fog in a colour (0-255) |
 | `SetUnderwaterEffect camera, enable [, water_level, r, g, b]` | the underwater look whenever the camera is below `water_level` |
+| `SetDepthOfField camera, focus_distance [, focus_range, max_blur]` | blur in front of and behind the focus; a distance of 0 turns it off |
+| `SetGodRays camera, amount [, source, r, g, b, sky_distance]` | light shafts from `source`: a directional light, or any other entity for a position |
+| `SetLensFlare camera, amount [, source, size, sky_distance]` | a lens flare from `source`, hidden when something is in front of it |
+
+## Lens effects
+
+Depth of field, god rays and lens flares copy what a real camera does.
+`examples/lensfx.nb` shows all three, each on its own key.
+
+### Depth of field
+
+```basic
+SetDepthOfField camera, 20, 8, 10
+```
+
+The three numbers are the focus distance, the focus range and the
+strongest blur in pixels:
+
+- Things within half of the range of the focus distance are fully sharp.
+  Here, that is from 16 to 24 units away.
+- The blur grows from there and is full one and a half ranges from the
+  focus. Here, that is nearer than 8 units or further than 32.
+- A small range looks like a close-up or a miniature. A large range looks
+  like an ordinary view with only a soft distance.
+
+Sharp objects keep clean edges against a blurred background, and a blurred
+object close to the camera spreads softly over what is behind it.
+
+The focus often needs to follow what the player looks at. Pick from the
+middle of the screen and move the focus part of the way each frame, so it
+eases over instead of jumping. Objects need `EntityPickMode` for this:
+
+```basic
+; in the game loop
+hit = CameraPick(camera, GraphicsWidth() / 2, GraphicsHeight() / 2)
+If hit Then
+    dx# = PickedX() - EntityX(camera, True)
+    dy# = PickedY() - EntityY(camera, True)
+    dz# = PickedZ() - EntityZ(camera, True)
+    wanted# = Sqr(dx * dx + dy * dy + dz * dz)
+    focus = focus + (wanted - focus) * 0.1
+EndIf
+SetDepthOfField camera, focus, 8, 10
+```
+
+### God rays
+
+```basic
+sun = CreateLight(1)
+RotateEntity sun, 25, 180, 0     ; shines back towards a camera facing +Z
+SetGodRays camera, 0.7, sun
+```
+
+A directional light is treated as a sun infinitely far away, in the
+opposite direction to where it shines. Any other entity is a light at that
+place. The effect checks where the source is every frame, so moving or
+rotating it is all you need to do.
+
+The shafts fade out as the source leaves the screen and vanish when it is
+behind the camera, because the effect only knows what the camera can see.
+
+Try an amount from 0.3 to 1. Call `SetGodRays camera, 0` to turn the effect
+off. It keeps its source, so `SetGodRays camera, 0.7` turns it back on.
+
+### Lens flare
+
+```basic
+SetLensFlare camera, 0.8, sun, 1.2      ; a little bigger than usual
+```
+
+The source works just as it does for god rays. The flare dims as objects
+cover the source, so it fades smoothly when the sun passes behind a tree.
+
+### Sky domes and see-through objects
+
+Light gets through only where nothing was drawn or, for a positioned
+light, where the scene is further away than the light. That has two
+effects on your game:
+
+- A big sky sphere is an ordinary object, so it blocks the sun. Sky boxes
+  and the camera's clear colour do not.
+- Water, glass and other see-through surfaces also block it, as they are
+  in the depth buffer.
+
+For a sky sphere, pass a distance just inside it as the last argument.
+Anything further away than that counts as sky:
+
+```basic
+; the dome is 400 units away
+SetGodRays camera, 0.7, sun, 255, 235, 190, 350
+SetLensFlare camera, 0.8, sun, 1, 350
+```
+
+If you load `builtin:godrays` or `builtin:lensflare` yourself, set the
+`skyDistance` parameter instead. Those effects do not follow a light by
+themselves, so give them the sun's direction, each frame if the light
+moves:
+
+```basic
+rays = LoadPostProcess("builtin:godrays")
+SetPostProcessParameter rays, "skyDistance", "350"
+AddPostProcess rays, camera
+
+; the direction towards the sun: the opposite of where the light shines
+TFormVector 0, 0, -1, sun, 0
+SetPostProcessParameter rays, "sun", TFormedX() + "," + TFormedY() + "," + TFormedZ() + ",0"
+```
+
+### Order and cost
+
+Effects run in the order they were made. Call `SetDepthOfField` before
+`SetLensFlare`, so that the flare is drawn on top of the blur and stays
+crisp.
+
+Each effect does its work for every pixel on the screen, so they cost more
+at high resolutions:
+
+| Effect | Samples per pixel |
+|---|---|
+| depth of field | 41 of both the picture and the depth, whenever it is on |
+| god rays | 48 of the depth, while the source is on or near the screen |
+| lens flare | 13 of the depth, while the source is on or just off the screen |
+
+As a guide, on a laptop GeForce RTX 5050 at 1600x900, depth of field and
+god rays took about 0.5 milliseconds of each frame, and lens flare less
+than 0.2. A 60 frames a second game has 16.7 milliseconds per frame.
+Integrated graphics will be several times slower.
+
+On slow machines, turn off depth of field first. An amount or distance of
+0 means the effect costs nothing.
 
 ## Order, cameras and switching
 
@@ -280,6 +425,7 @@ An effect can read:
 | `nb_time` | float | seconds since the program started |
 | `nb_cameraPos` | vec3 | the camera's position |
 | `nb_clip` | vec2 | the camera's near and far distance |
+| `nb_viewProj` | mat4 | world position → screen position, for this frame |
 | `nb_invViewProj` | mat4 | screen position and depth → world position |
 | `nb_prevViewProj` | mat4 | last frame's camera, for motion effects |
 
@@ -336,6 +482,28 @@ vec4 nb_post(vec2 uv) {
     vec3 c = texture(nb_screenTexture, uv).rgb;
     float edge = smoothstep(0.3, 0.8, length(uv - 0.5) * 1.4);
     return vec4(mix(c, vec3(0.8, 0.0, 0.0), edge * hurt), 1.0);
+}
+```
+
+`nb_viewProj` finds where a place in the world is on the screen. World
+positions inside an effect, including `nb_cameraPos` and `nb_worldPosAt`,
+are the engine's, which has `x` the other way round from your program, so
+flip `x` on anything your program passes in:
+
+```glsl
+// marker.glsl: a ring around a place in the world; set "place" to x, y, z
+uniform vec3 place = vec3(0.0, 1.0, 10.0);
+uniform float radius = 0.05;
+
+//! fragment
+vec4 nb_post(vec2 uv) {
+    vec3 c = texture(nb_screenTexture, uv).rgb;
+    vec4 clip = nb_viewProj * vec4(-place.x, place.y, place.z, 1.0);
+    if (clip.w <= 0.0) return vec4(c, 1.0);          // behind the camera
+    vec2 p = clip.xy / clip.w * 0.5 + 0.5;
+    vec2 aspect = vec2(nb_resolution.x / nb_resolution.y, 1.0);
+    float d = abs(length((uv - p) * aspect) - radius);
+    return vec4(mix(c, vec3(1.0, 0.8, 0.1), 1.0 - smoothstep(0.002, 0.004, d)), 1.0);
 }
 ```
 

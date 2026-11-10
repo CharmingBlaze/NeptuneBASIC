@@ -39,6 +39,7 @@ is somewhere else, set its place in Settings.
 | Ctrl+/ | Comment or uncomment lines |
 | Alt+Up, Alt+Down | Move lines |
 | Ctrl+Shift+I | Tidy the file: indent every block and fix capitals |
+| Ctrl+R | Rename the variable, function or type at the caret, everywhere |
 
 Help > Keyboard Shortcuts lists all of them.
 
@@ -53,6 +54,11 @@ Help > Keyboard Shortcuts lists all of them.
   Short names like `for`, `func`, `main3d` and `main2d` offer ready-made blocks.
 * Errors appear as you type, underlined and at the end of the line. F8 walks
   through them; the Problems tab lists them all.
+* Ctrl+R renames the name at the caret everywhere it means the same thing,
+  across `Include`d files too. A local stays in its function, and `score`
+  leaves `AddScore` alone. Files are changed but not saved, so you can check
+  them and undo. It refuses when it cannot be sure, such as a field name used
+  by two Types, and when the program has errors.
 * Hover over a command to read about it. When the program is stopped, hover
   over a variable to see its value.
 
@@ -69,6 +75,11 @@ Help > Keyboard Shortcuts lists all of them.
   come back next time.
 * Old `.bb` files that are not UTF-8 are opened and saved in their own
   encoding.
+* Ctrl+Shift+F finds text in every file of the project. Fill in "Replace with"
+  and press Replace All to change it everywhere: each file is opened and
+  changed without being saved, so you can check it, undo it, then Save All.
+  Turn on W (whole word) first when renaming: without it, replacing `score`
+  also changes `AddScore`.
 
 ## Debugging
 
@@ -95,5 +106,5 @@ They are kept in `ide.json`, in `%APPDATA%\NeptuneBASIC` on Windows,
 
 ## Not there yet
 
-Word wrap, regular expressions in Find, replacing across files, and editing a
-variable's value while stopped.
+Word wrap, regular expressions in Find, and editing a variable's value while
+stopped.

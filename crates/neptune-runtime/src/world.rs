@@ -328,6 +328,11 @@ pub struct World {
     /// Renderer quality (ext); `quality_dirty` asks the engine to apply it.
     pub quality: crate::quality::Quality,
     pub quality_dirty: bool,
+    /// (ext) `RenderScale`: what the program asked for, the player's
+    /// ceiling, and the size of the picture the 3D view is drawn into now.
+    pub render_scale: f32,
+    pub render_scale_max: f32,
+    pub(crate) render_frame: Option<(u32, u32)>,
     /// (ext) Automatic quality, when on, and when the last frame ended.
     pub auto_quality: Option<crate::quality::AutoQuality>,
     pub(crate) last_flip: Option<std::time::Instant>,
@@ -459,6 +464,9 @@ impl Default for World {
             quality_dirty: true,
             auto_quality: crate::quality::auto_requested().then(|| crate::quality::AutoQuality::new(crate::quality::AUTO_TARGET)),
             last_flip: None,
+            render_scale: 1.0,
+            render_scale_max: crate::renderscale::max_scale(),
+            render_frame: None,
             listener: None,
             listener_rolloff: 1.0,
             listener_distance: 1.0,

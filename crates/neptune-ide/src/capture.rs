@@ -141,6 +141,13 @@ fn run_step(cmd: &str, app: &mut App, ctx: &egui::Context) {
     } else if let Some(text) = cmd.strip_prefix("complete:") {
         app.with_doc(|d| d.buf.insert(text, crate::buffer::EditKind::Other));
         app.queue.push(Action::TriggerCompletion);
+    } else if let Some(text) = cmd.strip_prefix("rename:") {
+        if let Some((id, at)) = app.active().map(|d| (d.id, d.buf.primary().head)) {
+            app.request_rename(id, at, text.to_string());
+        }
+    } else if let Some(text) = cmd.strip_prefix("replace-in-files:") {
+        app.search_replace = text.to_string();
+        app.replace_in_files();
     } else if cmd == "wait" {
         // gives slow things time to arrive
     } else if cmd == "breakpoint" {

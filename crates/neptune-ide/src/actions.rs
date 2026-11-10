@@ -39,6 +39,7 @@ pub enum Action {
     LowerCase,
     TrimTrailing,
     FormatFile,
+    RenameSymbol,
     TriggerCompletion,
     Palette,
     ToggleSidebar,
@@ -149,6 +150,7 @@ table! {
     LowerCase, "Edit", "Selection to Lower Case";
     TrimTrailing, "Edit", "Trim Trailing Spaces";
     FormatFile, "Edit", "Format File (Indent and Capitalise)", CS + I;
+    RenameSymbol, "Edit", "Rename Symbol...", CTRL + R;
     TriggerCompletion, "Edit", "Show Completions", CTRL + Space;
     Palette, "View", "Command Palette...", CS + P;
     ToggleSidebar, "View", "Toggle Side Bar", CTRL + B;

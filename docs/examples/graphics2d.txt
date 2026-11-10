@@ -317,6 +317,26 @@ While Not KeyHit(1)
     Flip
 Wend
 
+=== RenderScale
+; draw the 3D view at half size on slow computers; the text stays sharp
+Graphics3D 800, 600
+cam = CreateCamera()
+cube = CreateCube()
+PositionEntity cube, 0, 0, 5
+RenderScale 0.5
+While Not KeyHit(1)
+    TurnEntity cube, 0, 1, 0
+    RenderWorld
+    Text 10, 10, "3D at half resolution"
+    Flip
+Wend
+
+=== GetRenderScale
+; A settings screen shows the scale in use
+Graphics3D 800, 600
+RenderScale 0.75
+Print "3D resolution: " + Int(GetRenderScale() * 100) + "%"
+
 === GraphicsCardName
 ; Show which graphics card is drawing the game
 Graphics3D 800, 600

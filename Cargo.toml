@@ -6,7 +6,7 @@ members = ["crates/neptune-lang", "crates/neptune-vm", "crates/neptune-runtime",
 version = "0.1.0"
 edition = "2021"
 license = "Zlib"
-repository = "https://github.com/neptunebasic/neptunebasic"
+repository = "https://github.com/CharmingBlaze/NeptuneBASIC"
 
 [workspace.dependencies]
 neptune-lang = { path = "crates/neptune-lang" }

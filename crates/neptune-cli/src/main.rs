@@ -5,6 +5,7 @@
 //!     --quality low|medium|high|ultra   starting graphics quality
 //!     --quality auto                    steps down while the game runs slowly
 //!     --max-quality <level>             a ceiling the program cannot go over (old PCs: low)
+//!     --render-scale <0.25-1>           draw the 3D view at a lower resolution (old PCs: 0.5)
 //!     --uncapped                        no vsync or 60 Hz limit (benchmarks)
 //!     --players <n>                     start n copies (to test multiplayer)
 //! neptune check <file.nb>     compile only, report diagnostics
@@ -43,6 +44,8 @@ usage:
                           auto steps down while the game runs slowly;
                           --max-quality <level>: a ceiling for old PCs that
                           the program cannot go over;
+                          --render-scale <0.25-1>: draw the 3D view at a
+                          lower resolution, for slow graphics cards;
                           --uncapped: no vsync or 60 Hz limit, for benchmarks;
                           --players <n>: start n copies, to test multiplayer)
   neptune check <file>    compile only and report diagnostics
@@ -212,6 +215,16 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
         std::env::set_var("NEPTUNE_MAX_QUALITY", &level);
+        args.drain(i..=i + 1);
+    }
+    // --render-scale <0.25-1 or a percentage> draws the 3D view smaller (old PCs)
+    if let Some(i) = args.iter().position(|a| a == "--render-scale") {
+        let scale = args.get(i + 1).cloned().unwrap_or_default();
+        if neptune_runtime::renderscale::parse_scale(&scale).is_none() {
+            eprintln!("error: --render-scale must be a number from 0.25 to 1, or a percentage such as 50%");
+            return ExitCode::from(2);
+        }
+        std::env::set_var("NEPTUNE_RENDER_SCALE", &scale);
         args.drain(i..=i + 1);
     }
     // --uncapped runs as fast as the machine allows (benchmarks)

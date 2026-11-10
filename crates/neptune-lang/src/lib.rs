@@ -16,6 +16,7 @@ pub mod fuse;
 pub mod ir;
 pub mod lexer;
 pub mod parser;
+pub mod rename;
 pub mod sema;
 
 pub use bytecode::Program;

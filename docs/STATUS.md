@@ -71,7 +71,7 @@ gamepad constants, modern command names, ...).
 | Window and frames | done | `Graphics3D`/`Graphics` (mode 1 = borderless fullscreen), `RenderWorld` (with `CaptureWorld` tweening), `Flip`, `UpdateWorld`, `ClearWorld`, `AppTitle`, `GraphicsWidth/Height/Depth`, `SetFullscreen`/`IsFullscreen` (ext), `TrisRendered`, `VWait`, `ScanLine` |
 | Graphics modes | done | `CountGfxModes`, `GfxModeWidth/Height/Depth`, `GfxModeExists`, `GfxMode3DExists`, `GfxMode3D`, `CountGfxDrivers`, `GfxDriverName`, `SetGfxDriver`, `GfxDriver3D`, `Windowed3D`, `TotalVidMem`, `AvailVidMem`, `GfxDriverCaps3D`, `HWTexUnits`, `HWMultiTex`, `AntiAlias`, `Dither`, `WBuffer` |
 | Gamma | done | `SetGamma`, `UpdateGamma`, `GammaRed/Green/Blue` (applied through a colour-grading table on every camera) |
-| Graphics quality (ext) | done | `GraphicsQuality 0-3`, `GetGraphicsQuality`, `PostEffect` (bloom, SSAO, FXAA, shadows, light scattering), `neptune run --quality low` |
+| Graphics quality (ext) | done | `GraphicsQuality 0-3`, `GetGraphicsQuality`, `PostEffect` (bloom, SSAO, FXAA, shadows, light scattering), `AutoQuality`, `RenderScale`, `GetRenderScale`, `GraphicsCardName`, `neptune run --quality low|auto`, `--max-quality`, `--render-scale` |
 | Entities | done | `CreatePivot/Cube/Sphere/Cylinder/Cone/Plane`, `FreeEntity`, `CopyEntity`, parenting, names, `Hide/ShowEntity` |
 | Transforms | done | `Position/Move/Translate/Rotate/Turn/Scale/PointEntity`, `AlignToVector`, `EntityX/Y/Z`, `EntityPitch/Yaw/Roll`, `EntityDistance`, `EntityScaleX/Y/Z` (ext), `GetMatElement`, `TFormPoint/Vector/Normal` + `TFormedX/Y/Z`, `VectorYaw/Pitch`, `DeltaYaw/Pitch`, `EntityClass`, `LookAt`, `SetLightDirection`, `SetEntityDirection` (ext) |
 | Tweens and easing (ext) | done | `TweenPosition`, `TweenRotation`, `TweenScale`, `TweenAlpha`, `TweenColor` along 17 easing curves (`EASE_*`), `Tweening`, `StopTweens`; `Ease` and `EaseBetween` for anything else |
@@ -100,6 +100,7 @@ gamepad constants, modern command names, ...).
 | Cloth and ropes (ext) | done | `CreateCloth` and `CreateRope` simulated on the CPU (Verlet points with stretch, shear and bend links, 120 steps a second): `ClothPin`, `ClothPinEdge` (to a place or to a moving entity: capes, curtains), `ClothUnpin`, `ClothStiffness`, `ClothDamping`, `ClothGravity`, `ClothWind` (the global wind, with gusts), `ClothCollide` (spheres, with friction), `ClothFloor`, `ClothTear`, `ResetCloth`, `ClothPointX/Y/Z`. Cloth is drawn on both sides |
 | PBR materials (ext) | done | `EntityMetallic`, `EntityRoughness`, `EntityEmissive` (glows with `PostEffect EFFECT_BLOOM`; the glow is multiplied by the surface colour), and maps: `EntityMetallicMap`, `EntityRoughnessMap`, `EntityEmissiveMap`, `EntityAOMap`, `EntityLightmap` (second UV set), `EntityHeightMap` (parallax mapping). They apply to the standard material, not the classic shader |
 | Sky box (ext) | done | `SkyBox` shows a cube map texture (`LoadTexture file, 128` or `CreateTexture w, h, 128`) as the sky |
+| Lens effects (ext) | done | `SetDepthOfField` (each sample spreads by its own blur size, so sharp edges stay clean), `SetGodRays` and `SetLensFlare` (follow a light entity, blocked by the scene); also `builtin:dof`, `builtin:godrays`, `builtin:lensflare` |
 | Camera effects (ext) | done | `CameraExposure` (fixed or automatic exposure on the HDR image), `CameraColorGrading` (a 256x16 colour lookup table per camera), `CameraToTexture` (a camera draws into a texture: monitors, mini-maps) |
 | Decals (ext) | done | `CreateDecal` projects a texture onto the scene inside its box (sized with `ScaleEntity`); `EntityColor`, `EntityAlpha`, `EntityTexture`, `EntityNormalMap` work on decals |
 | Particles (ext) | done | `CreateEmitter` with `EmitterRate`, `EmitterMax`, `EmitterLife`, `EmitterVelocity`, `EmitterSize`, `EmitterSpin`, `EmitterColor`, `EmitterFadeColor`, `EmitterGravity`, `EmitterShape` (sphere or box), `EmitterSoftness` (soft particles), `EmitterLocal`, `EmitterEnable`, `EmitterClear` |
@@ -176,9 +177,13 @@ for older integrated GPUs; `ultra` turns everything up.
 * Measured on an integrated card (AMD Radeon 780M, 1920x1080): the quality
   benchmark scene runs at 41 frames a second on ultra, 52 on high, 71 on
   medium and 89 on low.
-* Not done: a render scale (drawing the 3D view at a lower resolution than
-  the window), which is what helps a slow graphics card most. Nothing has
-  been run on a graphics card from before 2015 yet.
+* **Render scale.** `RenderScale 0.5` (or `--render-scale 0.5` from the
+  player, as a ceiling) draws the 3D view at a lower resolution and
+  stretches it over the window; text, 2D drawing and the GUI stay sharp. On
+  the same integrated card and scene: ultra goes from 42 to 63 frames a
+  second at 0.75 and 81 at 0.5; low from 97 to 155 and 265. First scene
+  only; `AutoQuality` does not change it yet.
+* Not done: nothing has been run on a graphics card from before 2015 yet.
 
 ## Tooling
 
@@ -188,7 +193,7 @@ for older integrated GPUs; `ultra` turns everything up.
 | `neptune build`: stand-alone game folder (executable + media; no console window on Windows) | done |
 | `neptune bench`: runs the programs in `benchmarks/` (language, entities, models, physics, queries, rendering, graphics quality levels, a large world in chunks) and the island and beach demos uncapped (`neptune run --uncapped`), detects the machine, writes [docs/BENCHMARKS.md](BENCHMARKS.md) | done |
 | `neptune plugins`: list loaded plugins and plugin folders | done |
-| `neptune lsp`: language server (errors as you type, completion, hover, signature help, outline, go to definition) | done |
+| `neptune lsp`: language server (errors as you type, completion, hover, signature help, outline, go to definition, rename) | done |
 | `neptune dap`: debugger for editors (Debug Adapter Protocol on a local TCP port): breakpoints with conditions (`lives < 2 And player\x > 10`) and hit counts, step in/over/out, pause (also in loops that never yield), call stack, locals, globals, `Dim` arrays, objects and vectors, watches and hover (`a\b`, `grid(1, i)`, `v[0]`), stops at `Stop` and on uncaught runtime errors. While stopped, a game's window stays alive and physics is frozen; sound and Fyrox animations and particles go on. Not yet: changing variables, `Input` (reads nothing under the debugger) | done |
 | Runtime errors list the calls that led to them (`Gosub`s included; the middle of very deep stacks is left out) | done |
 | `tools/gen_big_program.py`: writes a console program of any size (200,000 lines and more) to time the compiler on very large games | done |
@@ -289,6 +294,7 @@ and windowing (see the CI workflow for the list).
 | `examples/beach.nb` | a tropical beach: see-through water (depth from the depth buffer) with caustics, foam, breaking lines and surge, terrain shader sand that darkens where wet, post-process haze, drifting clouds, palms, rocks and grass |
 | `examples/bigworld.nb` | 40,000 towers in 100 districts, the far ones stored with `StoreEntity` and restored as you fly near; Tab hides them instead, to compare frame rates |
 | `examples/worlds.nb` | painted terrain with level of detail, prefabs placed many times, a second scene drawn over the first |
+| `examples/lensfx.nb` | depth of field, god rays and a lens flare from one sun, each on its own key, with the focus on the arrow keys |
 | `examples/shaders.nb` | every ready-made material and custom GLSL/WGSL shaders side by side, with post-processing effects on keys 1-7 |
 | `examples/shadertests.nb` | the shader acceptance tests: 20 GPU checks with screenshot pixel comparisons (`neptune run --uncapped`) |
 | `examples/soundfx.nb` | audio buses: music and effects volumes, room, hall and cave reverb, underwater and radio filters |

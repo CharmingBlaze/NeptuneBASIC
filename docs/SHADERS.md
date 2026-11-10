@@ -22,7 +22,7 @@ extension, marked (ext) in the command reference.
 | [3. Ready-made materials](shaders/03-materials.md) | PBR, toon and stylized looks, water, foliage and wind, procedural patterns, and the 33 built-in shaders, with every setting explained |
 | [4. Writing shaders](shaders/04-writing-shaders.md) | A tutorial: colour, animation, parameters, textures, lighting, transparency, moving vertices and keywords |
 | [5. The shader language](shaders/05-shader-language.md) | Reference for NeptuneBASIC's GLSL: file layout, directives, surfaces, built-in values, attributes and the function library |
-| [6. Post-processing](shaders/06-post-processing.md) | Effect chains, the 30 built-in effects with every parameter, and writing your own effects |
+| [6. Post-processing](shaders/06-post-processing.md) | Effect chains, the 32 built-in effects with every parameter, lens effects (depth of field, god rays, lens flares), and writing your own effects |
 | [7. Shadows](shaders/07-shadows.md) | How real-time shadows work, every shadow setting, and fixing the usual problems |
 | [8. WGSL and Fyrox shader files](shaders/08-wgsl-and-fyrox.md) | The other two shader formats |
 | [9. Debugging and performance](shaders/09-debugging.md) | Reading errors, hot reloading, inspecting shaders, keeping things fast, coordinates, limits and how the system works |
@@ -55,6 +55,7 @@ extension, marked (ext) in the command reference.
 | File | Shows |
 |---|---|
 | `examples/shaders.nb` | every kind of material and shader side by side, with screen effects on keys 1-7 |
+| `examples/lensfx.nb` | depth of field, god rays and a lens flare from one sun, each on its own key |
 | `examples/shadertests.nb` | 20 checks of the shader system on the GPU (`neptune run --uncapped examples/shadertests.nb`) |
 | `examples/media/shaders/rimtoon.glsl` | a complete surface shader: toon lighting, noise and a glowing rim |
 | `examples/media/shaders/ripple.wgsl` | a WGSL shader |

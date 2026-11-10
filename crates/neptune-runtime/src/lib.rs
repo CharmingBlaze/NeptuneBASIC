@@ -80,6 +80,7 @@ pub mod tween;
 pub mod probe;
 pub mod primitive;
 pub mod quality;
+pub mod renderscale;
 pub mod screenshot;
 pub mod spritesheet;
 pub mod tiled;

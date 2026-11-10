@@ -1002,6 +1002,31 @@ camera = CreateCamera()
 SetSnowEffect camera, 0.5, 0.2
 ; SetSnowEffect camera, 0 would stop it
 
+=== SetDepthOfField
+; keep things about 20 units away sharp and blur the rest
+Graphics3D 800, 600
+camera = CreateCamera()
+SetDepthOfField camera, 20, 8
+; SetDepthOfField camera, 0 would turn it off
+
+=== SetGodRays
+; shafts of warm light from the sun, passing between whatever is in the way
+Graphics3D 800, 600
+camera = CreateCamera()
+sun = CreateLight(1)
+RotateEntity sun, 30, 180, 0
+SetGodRays camera, 0.7, sun
+; SetGodRays camera, 0 would turn it off
+
+=== SetLensFlare
+; a flare from the sun that fades when something moves in front of it
+Graphics3D 800, 600
+camera = CreateCamera()
+sun = CreateLight(1)
+RotateEntity sun, 30, 180, 0
+SetLensFlare camera, 0.8, sun
+; SetLensFlare camera, 0 would turn it off
+
 === SetAtmosphericFog
 ; a hazy desert: pale sand coloured fog
 Graphics3D 800, 600

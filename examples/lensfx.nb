@@ -1,0 +1,57 @@
+; Lens effects: depth of field, god rays and a lens flare from one sun.
+; Run from the repository root: neptune run examples/lensfx.nb
+; 1: depth of field   2: god rays   3: lens flare
+; Left/Right: look around   Up/Down: move the focus   Esc: quit
+
+Graphics3D 1280, 720
+AppTitle "NeptuneBASIC - Lens effects"
+
+cam = CreateCamera()
+CameraClsColor cam, 120, 165, 225
+PositionEntity cam, 0, 3, -14
+AmbientLight 90, 95, 110
+
+; the sun is ahead of the camera: the light shines back towards it
+sun = CreateLight(1)
+RotateEntity sun, 27, 172, 0
+
+ground = CreateCube()
+ScaleEntity ground, 60, 0.1, 80
+PositionEntity ground, 0, -0.1, 30
+EntityColor ground, 110, 130, 90
+
+; two rows of pillars going away from the camera, for the focus to pick out
+For i = 0 To 9
+    For side = -1 To 1 Step 2
+        p = CreateCube()
+        ScaleEntity p, 0.7, 6, 0.7
+        PositionEntity p, side * 5, 6, i * 7
+        EntityColor p, 215, 200, 175
+    Next
+Next
+
+focus# = 20
+dofOn = True
+raysOn = True
+flareOn = True
+yaw# = 0
+
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_1) Then dofOn = Not dofOn
+    If KeyHit(KEY_2) Then raysOn = Not raysOn
+    If KeyHit(KEY_3) Then flareOn = Not flareOn
+    If KeyDown(KEY_LEFT) Then yaw = yaw + 0.5
+    If KeyDown(KEY_RIGHT) Then yaw = yaw - 0.5
+    If KeyDown(KEY_UP) Then focus = focus + 0.2
+    If KeyDown(KEY_DOWN) And focus > 2 Then focus = focus - 0.2
+    RotateEntity cam, -10, yaw, 0
+
+    ; an amount or distance of 0 switches an effect off
+    If dofOn Then SetDepthOfField cam, focus, 8, 10 Else SetDepthOfField cam, 0
+    If raysOn Then SetGodRays cam, 0.7, sun Else SetGodRays cam, 0
+    If flareOn Then SetLensFlare cam, 0.8, sun Else SetLensFlare cam, 0
+
+    RenderWorld
+    Text 10, 10, "1 depth of field  2 god rays  3 lens flare   left/right look   up/down focus: " + Int(focus)
+    Flip
+Wend

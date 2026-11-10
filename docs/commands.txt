@@ -254,6 +254,8 @@ ScreenFading: (ext) Returns 1 while a ScreenFade is still running and 0 once it 
 GraphicsQuality: (ext) Sets the renderer quality preset: level 0 low, 1 medium, 2 high, 3 ultra (QUALITY_LOW to QUALITY_ULTRA). Use a low level for old graphics cards.
 GetGraphicsQuality: (ext) Returns the quality level in use, 0 (low) to 3 (ultra). Until you set one it is 2 (high), unless the NEPTUNE_QUALITY environment variable chose another. It can be lower than the level GraphicsQuality asked for: the player's ceiling (neptune run --max-quality, or NEPTUNE_MAX_QUALITY) holds it down, and AutoQuality lowers it while the game runs slowly.
 AutoQuality: (ext) Lets the quality level look after itself: while the game runs slower than fps frames a second, the level steps down one at a time. A step that does not make the game faster is taken back, and the level is then left alone (the graphics card was not what held the game back). The level never rises by itself. AutoQuality 0 turns this off. Players can turn it on for any program with neptune run --quality auto.
+RenderScale: (ext) Draws the 3D view at a lower resolution than the window and stretches it to fit: scale 1 is the window's own resolution, 0.5 is half as wide and half as high (a quarter of the pixels), 0.25 is the least. This is what helps a slow graphics card most. Text, 2D drawing and the GUI stay sharp. Players can set a ceiling with neptune run --render-scale (or NEPTUNE_RENDER_SCALE). Applies to the first scene.
+GetRenderScale: (ext) Returns the render scale in use, from 0.25 to 1: what RenderScale asked for, held under the player's ceiling.
 GraphicsCardName: (ext) Returns what the graphics card that draws the game calls itself, such as "Intel(R) HD Graphics 4400", for settings screens and bug reports. Empty before Graphics3D.
 PostEffect: (ext) Turns a rendering effect on (enable = 1) or off (enable = 0): EFFECT_BLOOM, EFFECT_SSAO, EFFECT_FXAA, EFFECT_SHADOWS or EFFECT_LIGHT_SCATTER.
 AntiAlias: Turns anti-aliasing (smoothing of jagged edges) on (1) or off (0) using a fast screen filter (FXAA). It overrides the level's choice, but a later GraphicsQuality call resets it.
@@ -1252,7 +1254,7 @@ ShaderGetBackend: (ext) Returns the rendering backend and shader languages, and 
 
 # Post-processing
 CreatePostProcess: (ext) Creates a post-processing effect from source (GLSL with vec4 nb_post(vec2 uv), or WGSL) and returns it. Add it to a camera with AddPostProcess.
-LoadPostProcess: (ext) Loads a post-processing effect from a file or "builtin:<name>" (bloom, exposure, tonemap, vignette, chromatic, grain, colorgrade, gamma, contrast, saturation, brightness, fxaa, outline, pixelate, crt, distortion, heathaze, blur, gaussian, radialblur, sharpen, dof, motionblur, ssr, ssao, fog, underwater, rain, snow, invert) and returns it, or 0 on failure.
+LoadPostProcess: (ext) Loads a post-processing effect from a file or "builtin:<name>" (bloom, exposure, tonemap, vignette, chromatic, grain, colorgrade, gamma, contrast, saturation, brightness, fxaa, outline, pixelate, crt, distortion, heathaze, blur, gaussian, radialblur, sharpen, dof, motionblur, godrays, lensflare, ssr, ssao, fog, underwater, rain, snow, invert) and returns it, or 0 on failure.
 AddPostProcess: (ext) Adds effect to the chain of camera (0 = every camera).
 RemovePostProcess: (ext) Removes effect from the chain of camera (0 = from every chain); the effect still exists.
 FreePostProcess: (ext) Removes effect from every camera and frees it together with its shader. The handle is invalid afterwards, and using it gives an error.
@@ -1270,6 +1272,9 @@ SetUnderwaterEffect: (ext) Turns the underwater effect of camera on or off: tint
 SetRainEffect: (ext) Draws rain streaks over camera's view with amount 0-1 (0 turns it off) and speed.
 SetSnowEffect: (ext) Draws falling snow over camera's view with amount 0-1 (0 turns it off) and speed.
 SetAtmosphericFog: (ext) Adds height fog to camera from the depth buffer: density (0 turns it off), colour red, green, blue, and how fast it thins with height.
+SetDepthOfField: (ext) Blurs what is nearer or further than focus_distance from camera (0 turns it off); focus_range sets how deep the sharp zone is, max_blur the strongest blur in pixels.
+SetGodRays: (ext) Draws shafts of light from source over camera's view with strength amount (0 turns it off): a directional light gives the sun's direction, any other entity a position. Colour red, green, blue. Leave source 0 to keep the current one. With a big sky sphere, set sky_distance just inside it: anything further away counts as sky.
+SetLensFlare: (ext) Draws a lens flare from source over camera's view with strength amount (0 turns it off) and scale size; it fades when something is in front of source. Source and sky_distance work as in SetGodRays.
 
 # Shadows
 SetShadowMode: (ext) Chooses the shadow style: SHADOW_OFF (no shadows), SHADOW_HARD (sharp edges) or SHADOW_SOFT (filtered, smoother edges). Any other value is an error. LightShadows switches single lights.

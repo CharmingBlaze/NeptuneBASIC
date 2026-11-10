@@ -893,6 +893,7 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, view: &mut View, sh: &mut Shared) {
         act(ui, Action::SelectAll);
         ui.separator();
         act(ui, Action::GotoDefinition);
+        act(ui, Action::RenameSymbol);
         act(ui, Action::QuickHelp);
         ui.separator();
         act(ui, Action::ToggleComment);

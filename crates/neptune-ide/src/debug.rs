@@ -108,15 +108,22 @@ impl App {
                 }
             }
             Pending::Stack if ok => {
+                // the files as they were compiled, read once per stop
+                let mut sources: std::collections::HashMap<String, String> = std::collections::HashMap::new();
                 self.debug.frames = body
                     .get("stackFrames")
                     .arr()
                     .iter()
-                    .map(|f| Frame {
-                        name: f.get("name").str().unwrap_or("").to_string(),
-                        path: f.get("source").get("path").str().unwrap_or("").to_string(),
-                        line: f.get("line").num().unwrap_or(1.0) as usize,
-                        col: f.get("column").num().unwrap_or(1.0) as usize,
+                    .map(|f| {
+                        let name = f.get("name").str().unwrap_or("").to_string();
+                        let path = f.get("source").get("path").str().unwrap_or("").to_string();
+                        let source = sources.entry(path.clone()).or_insert_with(|| std::fs::read_to_string(&path).unwrap_or_default());
+                        Frame {
+                            name: crate::lang::declared_name(source, &name).unwrap_or(name),
+                            path,
+                            line: f.get("line").num().unwrap_or(1.0) as usize,
+                            col: f.get("column").num().unwrap_or(1.0) as usize,
+                        }
                     })
                     .collect();
                 self.select_frame(0);

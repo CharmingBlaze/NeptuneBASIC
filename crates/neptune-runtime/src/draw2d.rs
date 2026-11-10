@@ -135,6 +135,9 @@ pub enum DrawOp {
     /// (ext) A rotated or scaled image (`DrawImageEx`): corners clockwise from
     /// the top-left, tinted by `color`.
     Quad { pts: [Vector2<f32>; 4], uv: Rect<f32>, texture: TextureResource, color: Color },
+    /// (ext) The 3D picture when it is drawn smaller than the window
+    /// (`RenderScale`): stretched over the whole window, opaque.
+    Frame { texture: TextureResource },
 }
 
 impl DrawOp {
@@ -177,6 +180,7 @@ impl DrawOp {
                     *p *= k;
                 }
             }
+            DrawOp::Frame { .. } => {}
         }
         op
     }
@@ -202,6 +206,9 @@ pub struct Canvas2D {
     applied: Option<Matrix3<f32>>,
     /// (ext) `ScreenFade`: a colour laid over the whole screen.
     pub fade: Option<crate::screenfx::Fade>,
+    /// (ext) The picture the 3D view is drawn into while `RenderScale` is
+    /// below 1; every frame shown starts with it.
+    pub frame: Option<TextureResource>,
 }
 
 impl Default for Canvas2D {
@@ -218,6 +225,7 @@ impl Default for Canvas2D {
             camera_on: false,
             applied: None,
             fade: None,
+            frame: None,
         }
     }
 }
@@ -289,7 +297,12 @@ impl Canvas2D {
             self.items.push(DrawOp::Clip { rect: None });
             self.items.push(DrawOp::Rect { x: -10.0, y: -10.0, w: 100_000.0, h: 100_000.0, color: c, solid: true });
         }
-        self.published = Some(std::mem::take(&mut self.items));
+        let mut items = std::mem::take(&mut self.items);
+        if let Some(texture) = self.frame.clone() {
+            // under everything, where Fyrox would have put the 3D view itself
+            items.insert(0, DrawOp::Frame { texture });
+        }
+        self.published = Some(items);
         // each frame's list starts in screen space
         self.applied = None;
     }
@@ -371,6 +384,14 @@ impl Control for CanvasWidget {
                     }
                     ctx.push_triangle(i, i + 1, i + 2);
                     ctx.push_triangle(i, i + 2, i + 3);
+                }
+                DrawOp::Frame { texture } => {
+                    flush!();
+                    // render targets are stored bottom-up: V runs from 1 to 0
+                    let tc = [Vector2::new(0.0, 1.0), Vector2::new(1.0, 1.0), Vector2::new(1.0, 0.0), Vector2::new(0.0, 0.0)];
+                    ctx.push_rect_filled(&Rect::new(0.0, 0.0, full.w(), full.h()), Some(&tc));
+                    let opaque = crate::renderscale::frame_material();
+                    ctx.commit(full, Brush::Solid(Color::WHITE), CommandTexture::Texture(texture.clone()), &opaque, None);
                 }
                 DrawOp::Clip { rect } => {
                     flush!();

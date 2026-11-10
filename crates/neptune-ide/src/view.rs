@@ -207,6 +207,7 @@ impl App {
                         Some(A::LowerCase),
                         Some(A::TrimTrailing),
                         Some(A::FormatFile),
+                        Some(A::RenameSymbol),
                     ],
                 );
             });
@@ -503,6 +504,15 @@ impl App {
         let mut select = None;
         let mut swap = None;
         let mut close_others = None;
+        // bring the active tab into view when it changes, and only then, so
+        // the strip can still be scrolled by hand
+        let seen = ui.scope_id().with(("tab-seen", pane));
+        let now = (self.panes[pane].active, self.panes[pane].tabs.len());
+        let reveal = ui.ctx().data_mut(|d| {
+            let changed = d.get_temp::<(usize, usize)>(seen) != Some(now);
+            d.insert_temp(seen, now);
+            changed
+        });
         egui::ScrollArea::horizontal().id_salt(("tabs", pane)).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(&mut child, |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.horizontal(|ui| {
@@ -517,6 +527,9 @@ impl App {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::click_and_drag());
                     let active = self.panes[pane].active == i;
                     let focused = active && self.focus_pane == pane;
+                    if active && reveal {
+                        resp.scroll_to_me(None);
+                    }
                     ui.painter().rect_filled(r, 0.0, if active { th.bg } else if resp.hovered() { th.hover } else { th.panel });
                     if active {
                         ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(r.width(), 2.0)), 0.0, if focused { th.accent } else { th.faint });

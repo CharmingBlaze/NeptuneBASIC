@@ -73,6 +73,8 @@ fn drives() -> Vec<PathBuf> {
 }
 
 pub enum PromptKind {
+    /// The document and caret the rename starts from.
+    RenameSymbol(u64, crate::buffer::Pos),
     CommandLine,
     NewFile(PathBuf),
     NewFolder(PathBuf),
@@ -567,6 +569,12 @@ impl App {
             if *focus {
                 r.request_focus();
                 *focus = false;
+                // a new name usually replaces the old one altogether
+                if matches!(kind, PromptKind::RenameSymbol(..)) {
+                    let mut state = TextEdit::load_state(ctx, r.id).unwrap_or_default();
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::select_all_str(value)));
+                    TextEdit::store_state(ctx, r.id, state);
+                }
             }
             if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 ok = true;
@@ -585,6 +593,7 @@ impl App {
             let v = value.trim().to_string();
             match kind {
                 PromptKind::CommandLine => self.command_line = v,
+                PromptKind::RenameSymbol(id, at) if !v.is_empty() => self.request_rename(*id, *at, v),
                 PromptKind::NewFile(dir) if !v.is_empty() => {
                     let p = dir.join(&v);
                     if !p.exists() {

@@ -1291,7 +1291,7 @@ impl<'s, 'a> Parser<'s, 'a> {
 
 /// Index of the `}` closing the hole that opens at `open`, skipping
 /// string literals and nested braces inside the hole.
-fn matching_brace(raw: &str, open: usize) -> Option<usize> {
+pub(crate) fn matching_brace(raw: &str, open: usize) -> Option<usize> {
     let mut depth = 0usize;
     let mut in_str = false;
     for (i, c) in raw.bytes().enumerate().skip(open) {

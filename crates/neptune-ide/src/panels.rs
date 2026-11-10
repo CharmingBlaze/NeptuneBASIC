@@ -253,6 +253,7 @@ impl App {
         let th = self.th;
         header(ui, th, "Find in Files", |_| {});
         let mut go = false;
+        let mut replace = false;
         egui::Frame::new().inner_margin(Margin::symmetric(8, 0)).show(ui, |ui| {
             let r = ui.add(TextEdit::singleline(&mut self.search_query).hint_text("Search the project").desired_width(f32::INFINITY));
             if self.search_focus {
@@ -274,7 +275,30 @@ impl App {
                 }
                 ui.label(RichText::new(format!("{} results", self.search_hits.len())).size(12.0).color(th.dim));
             });
+            ui.add(TextEdit::singleline(&mut self.search_replace).hint_text("Replace with").desired_width(f32::INFINITY));
+            if !self.search_hits.is_empty() && !self.search_busy {
+                ui.add_space(4.0);
+                let mut files: Vec<&Path> = self.search_hits.iter().map(|h| h.path.as_path()).collect();
+                files.sort();
+                files.dedup();
+                let inside = if self.search_last.2 { "" } else { ", even inside longer words" };
+                let question = format!("Replace in {} file(s){inside}?", files.len());
+                ui.horizontal(|ui| {
+                    if self.search_confirm {
+                        ui.label(RichText::new(question).size(12.0).color(th.text));
+                        replace = ui_util::primary_button(ui, th, "Replace").clicked();
+                        if replace || ui.button("Cancel").clicked() {
+                            self.search_confirm = false;
+                        }
+                    } else if ui.button("Replace All").on_hover_text("Opens each file and changes it without saving, so you can check it first").clicked() {
+                        self.search_confirm = true;
+                    }
+                });
+            }
         });
+        if replace {
+            self.replace_in_files();
+        }
         if go {
             self.start_project_search();
         }
@@ -306,10 +330,16 @@ impl App {
             for r0 in &rows[range] {
                 match r0 {
                     R::File(p) => {
-                        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::hover());
+                        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::hover());
                         paint_icon(ui.painter(), Rect::from_center_size(Pos2::new(r.left() + 14.0, r.center().y), Vec2::splat(13.0)), Icon::File, th.accent);
-                        let shown = folder.as_deref().and_then(|f| p.strip_prefix(f).ok()).unwrap_or(p);
-                        ui.painter().text(Pos2::new(r.left() + 26.0, r.center().y), Align2::LEFT_CENTER, shown.display().to_string(), prop(12.5), th.text);
+                        // the name first: a long folder must not push it out of sight
+                        let name = p.file_name().map_or(p.display().to_string(), |n| n.to_string_lossy().into_owned());
+                        let used = ui.painter().text(Pos2::new(r.left() + 26.0, r.center().y), Align2::LEFT_CENTER, name, prop(12.5), th.text);
+                        let inside = folder.as_deref().and_then(|f| p.strip_prefix(f).ok()).unwrap_or(p);
+                        if let Some(dir) = inside.parent().filter(|d| !d.as_os_str().is_empty()) {
+                            ui.painter().text(Pos2::new(used.right() + 8.0, r.center().y), Align2::LEFT_CENTER, dir.display().to_string(), prop(11.5), th.faint);
+                        }
+                        resp.on_hover_text(p.display().to_string());
                     }
                     R::Hit(i) => {
                         let h = &self.search_hits[*i];
@@ -371,6 +401,9 @@ impl App {
         let rect = ui.available_rect_before_wrap();
         let list_rect = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.bottom() - detail_h));
         let mut list = ui.new_child(UiBuilder::new().max_rect(list_rect).id_salt("ref-list"));
+        // show_rows measures rows with this spacing, so it has to be set before
+        // the call for the jump to the selected command to land on it
+        list.spacing_mut().item_spacing.y = 0.0;
         let mut pick = None;
         let mut scroll = egui::ScrollArea::vertical().id_salt("ref").auto_shrink([false, false]);
         if self.ref_scroll_to {

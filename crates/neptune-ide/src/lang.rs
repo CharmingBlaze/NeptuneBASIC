@@ -438,6 +438,21 @@ pub fn declarations(lines: &[String]) -> Vec<Decl> {
 }
 
 /// The identifier under (or just before) a column.
+/// How `name` is spelled where the function is declared. The compiler keeps
+/// names in lower case, which reads badly in the call stack.
+pub fn declared_name(source: &str, name: &str) -> Option<String> {
+    source.lines().find_map(|line| {
+        let line = line.trim_start();
+        let rest = line.get(..8).filter(|w| w.eq_ignore_ascii_case("function")).map(|_| &line[8..])?;
+        if !rest.starts_with([' ', '\t']) {
+            return None;
+        }
+        let rest = rest.trim_start();
+        let end = rest.find(|c: char| !is_word(c)).unwrap_or(rest.len());
+        rest[..end].eq_ignore_ascii_case(name).then(|| rest[..end].to_string())
+    })
+}
+
 pub fn word_at(line: &str, col: usize) -> Option<(String, usize, usize)> {
     let chars: Vec<char> = line.chars().collect();
     let mut start = col.min(chars.len());
@@ -626,6 +641,15 @@ mod tests {
         assert_eq!(k.canonical("WEND"), Some("Wend"));
         assert!(k.help.iter().all(|h| !h.example.is_empty()), "a command has no example");
         assert!(k.help_for("min").unwrap().ext);
+    }
+
+    #[test]
+    fn finds_how_a_function_is_spelled() {
+        let src = "; Function NotThis()\nfunction AddScore%(n)\n  FUNCTION Spawn.Enemy(x#)\nFunctional = 1\n";
+        assert_eq!(declared_name(src, "addscore").as_deref(), Some("AddScore"));
+        assert_eq!(declared_name(src, "spawn").as_deref(), Some("Spawn"));
+        assert_eq!(declared_name(src, "notthis"), None);
+        assert_eq!(declared_name(src, "al"), None);
     }
 
     #[test]

@@ -13,7 +13,7 @@ Measured with `neptune bench` (programs in [`benchmarks/`](../benchmarks)), run 
 | Graphics | NVIDIA GeForce RTX 5050 Laptop GPU, AMD Radeon 780M Graphics |
 | NeptuneBASIC | 0.1.0 (release build) |
 | Runs | 3 (each result is the median) |
-| Run time | 509 s |
+| Run time | 494 s |
 
 ## Language
 
@@ -22,12 +22,12 @@ The bytecode VM on its own, no window: wall-clock time of each program (lower is
 | Benchmark | Result |
 |---|---:|
 | fib(30), recursive calls | 49.0 ms |
-| 20M integer loop iterations | 283 ms |
-| 3M float sin/cos/sqrt | 234 ms |
-| 100k string appends + 20k searches | 274 ms |
-| quicksort 200k integers | 115 ms |
-| 200k objects x 10 updates | 262 ms |
-| prime sieve to 5M | 347 ms |
+| 20M integer loop iterations | 260 ms |
+| 3M float sin/cos/sqrt | 236 ms |
+| 100k string appends + 20k searches | 273 ms |
+| quicksort 200k integers | 113 ms |
+| 200k objects x 10 updates | 278 ms |
+| prime sieve to 5M | 351 ms |
 
 ## Entities
 
@@ -35,19 +35,19 @@ Copies of a cube: still, all turned every frame by the program, and merged with 
 
 | Benchmark | Result |
 |---|---:|
-| create 1000 copies | 2.000 ms |
-| 1000 still cubes | 228 fps |
-| 1000 cubes all turning | 229 fps |
-| create 5000 copies | 27.0 ms |
-| 5000 still cubes | 78.2 fps |
-| 5000 cubes all turning | 63.6 fps |
-| create 10000 copies | 121 ms |
-| 10000 still cubes | 46.2 fps |
-| 10000 cubes all turning | 32.4 fps |
-| create 20000 copies | 543 ms |
-| 20000 still cubes | 26.7 fps |
-| 20000 cubes all turning | 18.8 fps |
-| 20000 still cubes, batched | 92.7 fps |
+| create 1000 copies | 1.000 ms |
+| 1000 still cubes | 231 fps |
+| 1000 cubes all turning | 250 fps |
+| create 5000 copies | 8.000 ms |
+| 5000 still cubes | 76.1 fps |
+| 5000 cubes all turning | 65.8 fps |
+| create 10000 copies | 13.0 ms |
+| 10000 still cubes | 43.2 fps |
+| 10000 cubes all turning | 33.1 fps |
+| create 20000 copies | 28.0 ms |
+| 20000 still cubes | 24.7 fps |
+| 20000 cubes all turning | 17.6 fps |
+| 20000 still cubes, batched | 98.5 fps |
 
 ## Models
 
@@ -56,12 +56,12 @@ Loading glTF files and textures (milliseconds) and animated glTF characters, eac
 | Benchmark | Result |
 |---|---:|
 | load Fox.glb (first time) | 10.0 ms |
-| load Fox.glb again (each, cached) | 0.300 ms |
-| LoadTexture (each, cached) | 0.070 ms |
-| 10 animated Fox models | 302 fps |
-| 50 animated Fox models | 214 fps |
-| 100 animated Fox models | 138 fps |
-| 200 animated Fox models | 75.6 fps |
+| load Fox.glb again (each, cached) | 0.280 ms |
+| LoadTexture (each, cached) | 0.060 ms |
+| 10 animated Fox models | 322 fps |
+| 50 animated Fox models | 227 fps |
+| 100 animated Fox models | 140 fps |
+| 200 animated Fox models | 76.2 fps |
 
 ## Physics
 
@@ -69,13 +69,13 @@ Rigid bodies falling and stacking (Rapier physics), and spheres sliding over a l
 
 | Benchmark | Result |
 |---|---:|
-| 250 falling, stacking boxes | 150 fps |
-| 500 falling, stacking boxes | 84.8 fps |
-| 1000 falling, stacking boxes | 43.6 fps |
-| 2000 falling, stacking boxes | 88.4 fps |
-| 100 spheres sliding (Blitz collisions) | 171 fps |
-| 300 spheres sliding (Blitz collisions) | 74.2 fps |
-| 1000 spheres sliding (Blitz collisions) | 19.7 fps |
+| 250 falling, stacking boxes | 161 fps |
+| 500 falling, stacking boxes | 83.9 fps |
+| 1000 falling, stacking boxes | 41.7 fps |
+| 2000 falling, stacking boxes | 71.3 fps |
+| 100 spheres sliding (Blitz collisions) | 184 fps |
+| 300 spheres sliding (Blitz collisions) | 76.1 fps |
+| 1000 spheres sliding (Blitz collisions) | 20.4 fps |
 
 ## Queries
 
@@ -83,14 +83,14 @@ Picking, navigation meshes, pathfinding, agents and terrain erosion (millisecond
 
 | Benchmark | Result |
 |---|---:|
-| LinePick among 400 boxes (each) | 0.028 ms |
-| GenerateNavMesh 190x190 m, 1 m cells | 633 ms |
-| FindPath across the navmesh (each) | 0.758 ms |
-| grid A* on 256x256 with walls (each) | 0.276 ms |
-| 50 agents walking the navmesh | 154 fps |
-| 200 agents walking the navmesh | 108 fps |
-| 500 agents walking the navmesh | 65.4 fps |
-| ErodeTerrain 256 grid, 100k raindrops | 256 ms |
+| LinePick among 400 boxes (each) | 0.026 ms |
+| GenerateNavMesh 190x190 m, 1 m cells | 577 ms |
+| FindPath across the navmesh (each) | 0.580 ms |
+| grid A* on 256x256 with walls (each) | 0.260 ms |
+| 50 agents walking the navmesh | 169 fps |
+| 200 agents walking the navmesh | 117 fps |
+| 500 agents walking the navmesh | 67.7 fps |
+| ErodeTerrain 256 grid, 100k raindrops | 244 ms |
 
 ## Rendering
 
@@ -98,15 +98,15 @@ Terrain with and without level of detail, particles, sprites and 2D drawing over
 
 | Benchmark | Result |
 |---|---:|
-| 1024x1024 terrain, full detail | 72.7 fps |
-| 1024x1024 terrain, TerrainDetail 60000 | 184 fps |
-| 20000 particles | 333 fps |
-| 5000 camera-facing sprites, 1 m, overlapping | 66.2 fps |
-| 5000 camera-facing sprites, 0.2 m | 69.7 fps |
-| 1000 DrawImage per frame | 284 fps |
-| 5000 DrawImage per frame | 190 fps |
-| 10000 DrawImage per frame | 132 fps |
-| 1000 Text calls per frame | 264 fps |
+| 1024x1024 terrain, full detail | 71.3 fps |
+| 1024x1024 terrain, TerrainDetail 60000 | 197 fps |
+| 20000 particles | 362 fps |
+| 5000 camera-facing sprites, 1 m, overlapping | 69.8 fps |
+| 5000 camera-facing sprites, 0.2 m | 72.0 fps |
+| 1000 DrawImage per frame | 306 fps |
+| 5000 DrawImage per frame | 196 fps |
+| 10000 DrawImage per frame | 133 fps |
+| 1000 Text calls per frame | 273 fps |
 
 ## Quality
 
@@ -114,14 +114,10 @@ One scene that leans on the graphics card (shadows from the sun and six lamps, a
 
 | Benchmark | Result |
 |---|---:|
-| quality low on AMD Radeon 780M Graphics | 89.4 fps |
-| quality medium on AMD Radeon 780M Graphics | 71.3 fps |
-| quality high on AMD Radeon 780M Graphics | 51.7 fps |
-| quality ultra on AMD Radeon 780M Graphics | 41.4 fps |
-| quality low on NVIDIA GeForce RTX 5050 Laptop GPU | 144 fps |
-| quality medium on NVIDIA GeForce RTX 5050 Laptop GPU | 144 fps |
-| quality high on NVIDIA GeForce RTX 5050 Laptop GPU | 144 fps |
-| quality ultra on NVIDIA GeForce RTX 5050 Laptop GPU | 144 fps |
+| quality low on AMD Radeon 780M Graphics | 90.1 fps |
+| quality medium on AMD Radeon 780M Graphics | 71.7 fps |
+| quality high on AMD Radeon 780M Graphics | 52.4 fps |
+| quality ultra on AMD Radeon 780M Graphics | 44.7 fps |
 
 ## World
 
@@ -129,14 +125,14 @@ A world of 40,000 objects in 100 chunks, with only the chunks near the camera in
 
 | Benchmark | Result |
 |---|---:|
-| build a world of 40000 objects in 100 chunks | 70 ms |
-| 40000 objects in memory, none shown | 54.5 fps |
-| walking through it, 9 chunks (3600 objects) shown | 35.7 fps |
-| 40000 objects stored, none in the scene | 267 fps |
-| walking through it, far chunks stored | 176 fps |
+| build a world of 40000 objects in 100 chunks | 90.0 ms |
+| 40000 objects in memory, none shown | 58.6 fps |
+| walking through it, 9 chunks (3600 objects) shown | 38.3 fps |
+| 40000 objects stored, none in the scene | 274 fps |
+| walking through it, far chunks stored | 184 fps |
 | store or restore a chunk of 400 objects (each) | 0.040 ms |
-| free a chunk of 400 objects and build another (each) | 0.55 ms |
-| free the whole world | 27 ms |
+| free a chunk of 400 objects and build another (each) | 0.550 ms |
+| free the whole world | 25.0 ms |
 
 ## Demos
 
@@ -144,8 +140,8 @@ The example demos as they are, run for a fixed number of frames (frames per seco
 
 | Benchmark | Result |
 |---|---:|
-| island demo, orbiting (2952 trees, 67 palms) | 78.4 fps |
-| beach demo, standing on the sand | 123 fps |
+| island demo, orbiting (2980 trees, 60 palms) | 62.6 fps |
+| beach demo, standing on the sand | 103 fps |
 
 
 ## What was improved
@@ -206,16 +202,22 @@ every time, which is what that benchmark measures.
 
 ### Which graphics card
 
-This laptop has two graphics cards, and every frame rate on this page
-except the NVIDIA rows of the quality table was drawn by the slower,
-power-saving one (AMD Radeon 780M, built into the processor): Windows gives
-that card to OpenGL programs that do not ask for the other. NeptuneBASIC now
-asks for the fast card, and `GraphicsCardName` (and the quality table) says
-which one drew. The quality table shows both: the built-in card gains a
-factor of two from ultra to low, while the NVIDIA card draws every level at
-the 144 a second its driver holds this screen to. The other tables have not
-been run again on the NVIDIA card; to measure the built-in card on purpose,
-build with `NEPTUNE_GPU_EXPORTS=0`.
+This laptop has two graphics cards, and the tables on this page were drawn
+by the slower one that is built into the processor (AMD Radeon 780M), on
+purpose: the build was made with `NEPTUNE_GPU_EXPORTS=0`, which leaves out
+NeptuneBASIC's request for the fast card. The reasons:
+
+* The built-in card is the better guide to what an older or cheaper PC does.
+* On the NVIDIA card (RTX 5050) the driver holds this screen to 144 frames
+  a second even without vsync, so an empty scene, 5000 hidden sprites and
+  10,000 rectangles all read 144 and the tables would hide the differences.
+  The quality scene, 45 to 90 frames a second here, is 144 at every level
+  there.
+
+A normal build asks for the fast card (Windows was giving OpenGL programs
+the power-saving one), and `GraphicsCardName` says which card is drawing.
+Before that request was added, every earlier version of this page had also
+been drawn by the built-in card, so its old and new numbers compare.
 
 ### Large games
 
@@ -226,10 +228,10 @@ build with `NEPTUNE_GPU_EXPORTS=0`.
 * **Hidden objects cost time; stored ones do not.** Every object in the
   scene is visited by the engine each frame, about 0.4 microseconds each,
   hidden or not: 40,000 hidden objects bring an empty scene from about 300
-  frames a second to 54. `StoreEntity` takes an entity and its children out
+  frames a second to 59. `StoreEntity` takes an entity and its children out
   of the scene without freeing them, and `RestoreEntity` puts them back as
   they were. With the far chunks stored instead of hidden, the same walk
-  through the world runs at 176 frames a second instead of 36, and storing
+  through the world runs at 184 frames a second instead of 38, and storing
   or restoring a chunk of 400 objects takes 0.04 ms. `examples/bigworld.nb`
   shows it.
 
@@ -250,6 +252,4 @@ build with `NEPTUNE_GPU_EXPORTS=0`.
 * Still slow: `Text` lays its string out again every frame (about 2
   microseconds a call), and every sprite is a scene node of its own.
 * Language times are for a bytecode VM with typed instructions and no JIT.
-  The frame rates above were measured before the interpreter was made
-  faster; programs that do a lot of their own work each frame gain from it.
 * Results depend on the machine. Run `neptune bench` on yours to compare.

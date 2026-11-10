@@ -194,6 +194,12 @@ pub struct App {
     pub search_case: bool,
     pub search_word: bool,
     pub search_hits: Vec<SearchHit>,
+    pub search_replace: String,
+    /// The rename the language server is working on: request, new name.
+    pub rename_wait: Option<(u32, String)>,
+    /// The search that produced `search_hits`: text, match case, whole word.
+    pub search_last: (String, bool, bool),
+    pub search_confirm: bool,
     pub search_busy: bool,
     pub search_gen: Arc<AtomicU64>,
     pub search_focus: bool,
@@ -304,6 +310,10 @@ impl App {
             search_case: false,
             search_word: false,
             search_hits: Vec::new(),
+            search_replace: String::new(),
+            rename_wait: None,
+            search_last: (String::new(), false, false),
+            search_confirm: false,
             search_busy: false,
             search_gen: Arc::new(AtomicU64::new(0)),
             search_focus: false,
@@ -859,14 +869,98 @@ impl App {
         self.say(format!("Replaced {n} occurrence(s)"), false);
     }
 
+    /// Replaces every match of the last project search. Each file is opened
+    /// and edited like normal typing: nothing is saved, and each can be
+    /// checked and undone. Matches are found again in the open text, so
+    /// edits made since the search are respected.
+    pub fn replace_in_files(&mut self) {
+        let (needle, case, word) = self.search_last.clone();
+        let o = procs::SearchOptions { needle, case, word };
+        let mut paths: Vec<PathBuf> = Vec::new();
+        for h in &self.search_hits {
+            if !paths.contains(&h.path) {
+                paths.push(h.path.clone());
+            }
+        }
+        let capped = self.search_hits.len() >= 5000;
+        let rep = self.search_replace.clone();
+        let (mut total, mut files) = (0, 0);
+        for p in paths {
+            let Some(id) = self.open_path(&p) else { continue };
+            let Some(d) = self.doc_mut(id) else { continue };
+            let mut items = Vec::new();
+            for (l, text) in d.buf.lines().iter().enumerate() {
+                for (c, n) in procs::find_in_line(text, &o) {
+                    items.push((Pos::new(l, c), Pos::new(l, c + n), rep.clone()));
+                }
+            }
+            if items.is_empty() {
+                continue;
+            }
+            total += items.len();
+            files += 1;
+            let carets = d.buf.carets.clone();
+            d.buf.edit(items, crate::buffer::EditKind::Other, |_| carets);
+        }
+        self.search_hits.clear();
+        let more = if capped { " The search stopped at 5000 results, so search again for the rest." } else { "" };
+        self.say(format!("Replaced {total} in {files} file(s). Check them, then Save All.{more}"), false);
+    }
+
+    /// Asks the language server what `Rename Symbol` has to change.
+    pub fn request_rename(&mut self, id: u64, at: Pos, new: String) {
+        use crate::json::{n, obj, s};
+        let Some(d) = self.doc(id) else { return };
+        let (uri, text) = (doc_uri(d), d.buf.text());
+        let Some(lsp) = self.lsp.as_mut() else {
+            self.say("Rename needs the neptune program, which is not running", true);
+            return;
+        };
+        // it must see what is on screen, not what was typed a moment ago
+        lsp.did_change(&uri, text);
+        let params = obj([
+            ("textDocument", obj([("uri", s(uri))])),
+            ("position", obj([("line", n(at.line as u32)), ("character", n(at.col as u32))])),
+            ("newName", s(new.clone())),
+        ]);
+        let request = lsp.request("textDocument/rename", params);
+        self.rename_wait = Some((request, new));
+    }
+
+    /// Applies the server's answer: every file is opened and edited without
+    /// saving, so one Undo per file takes it back.
+    fn finish_rename(&mut self, j: &Json, new: &str) {
+        if let Some(m) = j.get("error").get("message").str() {
+            let m = m.to_string();
+            self.say(m, true);
+            return;
+        }
+        let (mut total, mut files) = (0, 0);
+        for change in j.get("result").get("documentChanges").arr() {
+            let uri = change.get("textDocument").get("uri").str().unwrap_or("");
+            let open = self.docs.iter().find(|d| doc_uri(d) == uri).map(|d| d.id);
+            let id = open.or_else(|| self.open_path(Path::new(change.get("path").str().unwrap_or(""))));
+            let Some(d) = id.and_then(|id| self.doc_mut(id)) else { continue };
+            let pos = |x: &Json| Pos::new(x.get("line").num().unwrap_or(0.0) as usize, x.get("character").num().unwrap_or(0.0) as usize);
+            let items: Vec<_> = change.get("edits").arr().iter().map(|e| (pos(e.get("range").get("start")), pos(e.get("range").get("end")), new.to_string())).collect();
+            total += items.len();
+            files += 1;
+            let carets = d.buf.carets.clone();
+            d.buf.edit(items, crate::buffer::EditKind::Other, |_| carets);
+        }
+        self.say(format!("Renamed to {new} in {total} place(s) across {files} file(s). Check them, then Save All."), false);
+    }
+
     pub fn start_project_search(&mut self) {
         use std::sync::atomic::Ordering;
         self.search_hits.clear();
+        self.search_confirm = false;
         let generation = self.search_gen.fetch_add(1, Ordering::Relaxed) + 1;
         self.search_busy = false;
         if self.search_query.is_empty() {
             return;
         }
+        self.search_last = (self.search_query.clone(), self.search_case, self.search_word);
         let o = procs::SearchOptions { needle: self.search_query.clone(), case: self.search_case, word: self.search_word };
         let mut files = self.file_index.clone();
         // open files count even outside the folder
@@ -1155,6 +1249,13 @@ impl App {
                 .collect();
             return;
         }
+        if let Some((request, new)) = self.rename_wait.clone() {
+            if j.get("id").num() == Some(request as f64) {
+                self.rename_wait = None;
+                self.finish_rename(&j, &new);
+                return;
+            }
+        }
         match j.get("id").num() {
             Some(1.0) => self.lsp_ready = true,
             Some(2.0) => {
@@ -1343,6 +1444,12 @@ impl App {
             A::UpperCase => self.with_doc(|d| editor::change_case(d, true)),
             A::LowerCase => self.with_doc(|d| editor::change_case(d, false)),
             A::TrimTrailing => self.with_doc(Doc::trim_trailing),
+            A::RenameSymbol => match (self.word_at_caret(), self.active().map(|d| (d.id, d.buf.primary().head))) {
+                (Some(word), Some((id, at))) => {
+                    self.dialog = Some(Dialog::Prompt { title: format!("Rename {word} to"), value: word, kind: PromptKind::RenameSymbol(id, at), focus: true });
+                }
+                _ => self.say("Put the caret on a name to rename it", false),
+            },
             A::FormatFile => {
                 if let Some(id) = self.active_id() {
                     let i = self.docs.iter().position(|d| d.id == id).unwrap();

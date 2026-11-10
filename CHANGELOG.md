@@ -4,6 +4,56 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Neptune IDE: rename, replace across files and smaller fixes
+
+* **Rename Symbol (Ctrl+R)** – renames a variable, function, array, type,
+  field, label or enum member everywhere it means the same thing, including
+  in `Include`d files. A function's local stays in that function, and renaming
+  `score` leaves `AddScore` alone. Nothing is saved until you say so. It also
+  works in VS Code through the language server.
+* **Errors as you type now see your unsaved `Include`d files** – a program
+  was checked against the saved copy of each file it includes, and was not
+  checked again when an included file changed.
+* **Replace across the whole project** – Find in Files now has a "Replace with"
+  box and a Replace All button. Each file is opened and changed without being
+  saved, so you can check it and undo it first.
+* **The active tab stays in view** – with more tabs than fit, the tab you
+  switch to now scrolls into sight.
+* **Find in Files shows the file name first** – a long folder path used to
+  push the name out of sight.
+* **The Command Reference jumps to the right command** – opening a command
+  from the editor used to leave the list showing a different part of it.
+* **The call stack shows names as you wrote them** – `AddScore`, not
+  `addscore`.
+
+## Better depth of field, god rays and lens flares
+
+* **Depth of field has clean edges now** – sharp objects no longer smear into
+  the blurred background behind them, and a blurred object close to the camera
+  now spreads softly over what is behind it. Your existing `builtin:dof`
+  settings keep working. It takes more samples than before, so it costs a
+  little more to draw.
+* **`SetDepthOfField`** – turns depth of field on for a camera in one call,
+  like `SetRainEffect`. A focus distance of 0 turns it off.
+* **`SetGodRays`** – shafts of light from the sun that pass between trees,
+  pillars and anything else in the way. Give it a light and it follows that
+  light by itself.
+* **`SetLensFlare`** – a glow, a streak and coloured circles from a bright
+  light, which fade when something moves in front of it. If your sky is a big
+  sphere, both this and `SetGodRays` take a `sky_distance` so that the sphere
+  does not block the sun.
+* **`builtin:godrays` and `builtin:lensflare`** – the same effects for use
+  with `LoadPostProcess`, and custom effects can now read `nb_viewProj`, the
+  camera of the current frame. See them together in `examples/lensfx.nb`.
+* **Motion blur no longer flickers on fast screens** – on a screen faster
+  than 60 Hz, most frames showed no blur at all, and after a stutter one frame
+  could smear across a large part of the screen. The blur now follows the
+  game's own updates, and its new `maxLength` setting caps how long a streak
+  can get.
+* **A new "Lens effects" section in the shader guide** – how to tune each
+  effect, make the focus follow the player's aim and use a sky dome, and what
+  each effect costs. It is in `docs/shaders/06-post-processing.md`.
+
 ## Screenshots always show the right frame
 
 * **`SaveBuffer BackBuffer(), "shot.png"` no longer saves a black or
@@ -36,8 +86,13 @@ the top. Every command mentioned here is explained in
 * **A benchmark of the quality levels** – `benchmarks/quality.nb` (part of
   `neptune bench`) shows what each level is worth on your graphics card. On
   a built-in AMD card, low is twice as fast as ultra.
-* Not done yet: drawing the 3D view at a lower resolution than the window,
-  which helps slow graphics cards most.
+* **`RenderScale`: the 3D view at a lower resolution** – `RenderScale 0.5`
+  draws the 3D view half as wide and half as high and stretches it over the
+  window, which is what helps a slow graphics card most. Text, 2D drawing
+  and the GUI stay sharp. On a built-in AMD card a heavy scene went from 42
+  to 81 frames a second on ultra, and from 97 to 265 on low. Players can set
+  it for any game with `neptune run --render-scale 0.5`, which the program
+  cannot go over.
 
 ## Programs run two to four times faster
 

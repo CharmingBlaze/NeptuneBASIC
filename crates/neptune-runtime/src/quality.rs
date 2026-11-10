@@ -338,6 +338,19 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.world.auto_quality = (fps > 0.0).then(|| AutoQuality::new(fps));
         Ok(Value::Null)
     }),
+    // (ext) the 3D view at a lower resolution than the window (renderscale.rs)
+    ("RenderScale#scale", |h, a, _| {
+        let s = a[0].float();
+        if !(s > 0.0 && s <= 1.0) {
+            return Err(format!("RenderScale: scale must be above 0 and at most 1, not {s}"));
+        }
+        h.world.render_scale = s.max(crate::renderscale::MIN_SCALE);
+        if h.scene().is_ok() {
+            h.sync_render_scale()?;
+        }
+        Ok(Value::Null)
+    }),
+    ("#GetRenderScale", |h, _, _| Ok(Value::Float(h.render_scale()))),
     // (ext) what the graphics card calls itself, for settings screens and bug reports
     ("$GraphicsCardName", |h, _, _| {
         let name = h.gpu.and_then(crate::screenshot::card_name).unwrap_or_default();

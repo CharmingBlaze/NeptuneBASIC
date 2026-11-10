@@ -28,6 +28,7 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | Language server (`neptune lsp`) | `crates/neptune-cli/src/lsp.rs` (+ `json.rs`) |
 | Debugger | VM side `crates/neptune-vm/src/debug.rs`; protocol (`neptune dap`) `crates/neptune-cli/src/dap.rs` |
 | Primitive shapes | `crates/neptune-runtime/src/primitive.rs` |
+| Render scale (`RenderScale`): the first scene draws into a smaller texture that the 2D layer stretches over the window | runtime `renderscale.rs`, `frame.shader` |
 | Stored entities (`StoreEntity`): out of the scene graph, so `ent()` fails and `entities()` skips them | runtime `store.rs` |
 | VS Code extension | `editors/vscode` (regenerate grammar with `python tools/gen_grammar.py`) |
 | IDE (egui, talks to `neptune lsp`/`dap`, never links Fyrox) | `crates/neptune-ide/src`: `editor.rs` (widget), `buffer.rs` (text, carets, undo), `lang.rs` (tokens, blocks), `app.rs` (state, actions), `view.rs`/`panels.rs`/`dialogs.rs` (drawing), `actions.rs` (menu and key table); guide `docs/IDE.md` |
