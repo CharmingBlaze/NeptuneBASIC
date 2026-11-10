@@ -6,6 +6,8 @@
 # files written by examples/scenes.nb and examples/tilemap.nb
 /examples/saved_level.rgs
 tilemap_saved.txt
+# written by neptune-editor in the folder it opens
+neptune-editor.log
 # written by the engine when an example runs
 /examples/data/
 

@@ -171,6 +171,17 @@ fn add_model_files(rel: &Path, root: &Path, found: &mut BTreeSet<PathBuf>) {
             }
         }
     }
+    if is("rgs") {
+        // a scene from Neptune Level Editor: the prefabs its objects name
+        let Ok(text) = std::fs::read_to_string(root.join(rel)) else { return };
+        for name in neptune_runtime::level::scene_prefabs(&text) {
+            let Some(p) = neptune_runtime::level::prefab_path(&rel.to_string_lossy(), &name, |c| root.join(c).is_file()) else { continue };
+            if found.insert(p.clone()) {
+                add_model_files(&p, root, found);
+            }
+        }
+        return;
+    }
     if !is("gltf") && !is("glb") {
         return;
     }
@@ -338,6 +349,20 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
         let names: Vec<String> = found.iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
         assert_eq!(names, ["levels/a.gltf", "levels/tree.bin", "levels/tree.gltf"]);
+    }
+
+    #[test]
+    fn an_editor_scenes_prefabs_are_packed() {
+        let root = std::env::temp_dir().join(format!("neptune_pack_rgs_{}", std::process::id()));
+        std::fs::create_dir_all(root.join("levels")).unwrap();
+        let scene = r#"Item0[Name<str:"prefab">]{ Value[Id<u32:2>0<str:"tree.gltf">]{} }"#;
+        std::fs::write(root.join("levels/a.rgs"), scene).unwrap();
+        std::fs::write(root.join("levels/tree.gltf"), "{}").unwrap();
+        let entries = vec![Entry { key: "m".into(), canon: "m".into(), text: "l = LoadLevelFile(\"levels/a.rgs\")".into() }];
+        let found = media_files(&entries, &root);
+        std::fs::remove_dir_all(&root).ok();
+        let names: Vec<String> = found.iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
+        assert_eq!(names, ["levels/a.rgs", "levels/tree.gltf"]);
     }
 
     #[test]

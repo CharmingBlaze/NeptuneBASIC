@@ -4,6 +4,30 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Neptune Level Editor: a first version
+
+* **A 3D level editor of our own** – `neptune-editor <game folder>` opens
+  Fyrox's scene editor in Neptune IDE's colours (Neptune Deep, or Daylight
+  when its light style is chosen), with Neptune's name on the window. It is a
+  separate program, so `neptune` and Neptune IDE build and start as fast as
+  before. See [docs/EDITOR.md](docs/EDITOR.md).
+* **`LoadLevelFile` loads the editor's scenes** – a scene saved by the editor
+  (`.rgs`) now loads like a level from Blender. Its lights and cameras become
+  real lights and cameras your program can change, names starting `col_` and
+  `hit_` make objects solid, and the properties you give objects are read
+  with `EntityProperty`. `neptune build` packs the prefabs such a scene names.
+* **A new example** – `examples/editorlevel.nb` rolls a ball around a level
+  loaded from a scene file.
+* **Play runs your level** – the editor's Play button now saves the level and
+  runs it with `neptune`. If the game folder has a `main.nb` it runs your
+  game, which can read the level's name from `CommandLine()`. "Look Around"
+  needs no program at all: it flies you through the level with W A S D and
+  the mouse. `neptune-editor mygame level.rgs --play` opens a level and plays
+  it at once.
+* **What it cannot do yet** – there are no Neptune buttons for solid objects
+  and properties, and scenes that use model or texture files have not been
+  tested. Levels from Blender work as before.
+
 ## Neptune IDE: rename, replace across files and smaller fixes
 
 * **Rename Symbol (Ctrl+R)** – renames a variable, function, array, type,

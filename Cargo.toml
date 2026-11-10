@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/neptune-lang", "crates/neptune-vm", "crates/neptune-runtime", "crates/neptune-cli", "crates/neptune-ide", "sdk/rust", "sdk/examples/rust-hello"]
+members = ["crates/neptune-lang", "crates/neptune-vm", "crates/neptune-runtime", "crates/neptune-cli", "crates/neptune-ide", "crates/neptune-editor", "sdk/rust", "sdk/examples/rust-hello"]
 
 [workspace.package]
 version = "0.1.0"

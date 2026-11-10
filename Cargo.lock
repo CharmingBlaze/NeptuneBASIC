@@ -2220,6 +2220,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fyrox-build-tools"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6b0bd15ea5386c0a51b55b6dd75c0e51cef12c7060a892510472aa461d90cb4"
+dependencies = [
+ "cargo_metadata",
+ "clap",
+ "fyrox-core",
+ "fyrox-resource",
+ "fyrox-ui",
+ "open",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fyrox-core"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2470,6 +2486,31 @@ dependencies = [
  "strum_macros 0.27.2",
  "sysinfo",
  "uuid",
+]
+
+[[package]]
+name = "fyroxed_base"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5f26f07790d71b959b5280927dea84251cc0820b9126affa4c2a80ad62b84fa"
+dependencies = [
+ "bitflags 2.13.2",
+ "cargo_metadata",
+ "fyrox",
+ "fyrox-build-tools",
+ "image",
+ "imageproc",
+ "notify",
+ "open",
+ "opener",
+ "ron",
+ "rust-fuzzy-search",
+ "serde",
+ "serde_json",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
+ "toml 0.9.12+spec-1.1.0",
+ "toml_edit 0.23.10+spec-1.0.0",
 ]
 
 [[package]]
@@ -4314,6 +4355,13 @@ dependencies = [
  "neptune-lang",
  "neptune-runtime",
  "neptune-vm",
+]
+
+[[package]]
+name = "neptune-editor"
+version = "0.1.0"
+dependencies = [
+ "fyroxed_base",
 ]
 
 [[package]]

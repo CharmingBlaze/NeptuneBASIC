@@ -241,8 +241,9 @@ The add-on only saves clicks. With *File > Export > glTF 2.0*, use these:
 | Mesh > Apply Modifiers | on |
 | Lighting > Lighting Mode | Standard |
 
-`LoadLevelFile` also opens FBX files and Fyrox scenes, as `LoadMesh` does, but
-only glTF carries properties, lights and cameras into your game.
+`LoadLevelFile` also opens FBX files, as `LoadMesh` does, but they carry no
+properties, lights or cameras into your game. Scenes saved by Neptune Level
+Editor (`.rgs`) do: see [EDITOR.md](EDITOR.md).
 
 ## When something looks wrong
 

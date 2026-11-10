@@ -848,7 +848,7 @@ SetAnimKey: Stores entity's current position, rotation and/or scale (chosen by p
 LoaderMatrix: Sets the matrix applied to models loaded from files with file_extension; the three rows xx,xy,xz / yx,yy,yz / zx,zy,zz are the new X, Y and Z axes.
 LoadAnimSeq: Loads the animations from another model file and adds them to the animated model entity (retargeted to its skeleton); returns the number of the first new sequence, or -1 on failure.
 LoadMesh: Loads a glTF (.gltf/.glb), FBX or saved scene file as a single entity and returns its handle, or 0 on failure; parent is optional. Older formats (.b3d, .x, .3ds) are not supported.
-LoadLevelFile: (ext) Loads a level made in Blender or any glTF tool as one entity, with its lights, cameras, custom properties, solid objects and prefabs; returns 0 on failure. parent is optional. With collision_type, col_ and hit_ objects get that EntityType instead of becoming physics bodies. See docs/BLENDER.md.
+LoadLevelFile: (ext) Loads a level made in Blender or any glTF tool, or a scene (.rgs) saved by Neptune Level Editor, as one entity, with its lights, cameras, custom properties, solid objects and prefabs; returns 0 on failure. parent is optional. With collision_type, col_ and hit_ objects get that EntityType instead of becoming physics bodies. See docs/BLENDER.md and docs/EDITOR.md.
 CountLevelObjects: (ext) Returns how many objects of level have custom properties, or only those whose type property is type if it is given.
 LevelObject: (ext) Returns object number index (from 1) of level, counting as CountLevelObjects does.
 EntityProperty: (ext) Returns a custom property of entity as text, or fallback if it does not have it. Names ignore capitals.

@@ -16,7 +16,7 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | Entity table, `Host3D`, `Kind` | `crates/neptune-runtime/src/world.rs` |
 | Blitz↔Fyrox coordinate mirror | `crates/neptune-runtime/src/transform.rs` |
 | Feature modules | runtime `collision`, `pick`, `mesh`, `model`, `anim`, `texture`, `material`, `classic` (fixed-function shader), `sprite`, `terrain`, `physics`, `sound`, `quality`, `buffer`, `draw2d`, `image2d`, `input`, `joy` (gamepads), `keyanim`, `mirror`, `screenshot`, `primitive` |
-| Blender levels (`LoadLevelFile`, custom properties) | runtime `level.rs`; add-on in `tools/blender`; guide `docs/BLENDER.md` |
+| Blender levels and editor scenes (`LoadLevelFile`, custom properties) | runtime `level.rs` (glTF is read from the file's JSON, `.rgs` from the loaded scene's nodes); add-on in `tools/blender`; guides `docs/BLENDER.md`, `docs/EDITOR.md` |
 | 2D tool import | runtime `tiled.rs` (Tiled maps and the shared `MapDef`), `mapformats.rs` (LDtk, Ogmo, Sprite Fusion, Pyxel Edit, Aseprite tilemaps, Tiled worlds), `tilegrid.rs` (grid shapes), `inflate.rs`, `spritesheet.rs` (Aseprite, TexturePacker); guide `docs/TOOLS2D.md` |
 | Character controllers (`Char*`) | runtime `charcontrol.rs` (the rules, tested without the engine), `character.rs` (3D and 2D physics); guide `docs/CHARACTERS.md` |
 | Retained GUI (`Gui*`) | runtime `gui.rs` (core, DPI via `px`), `gui_lists.rs`, `gui_dialogs.rs`, `gui_editors.rs` |
@@ -32,6 +32,7 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | Stored entities (`StoreEntity`): out of the scene graph, so `ent()` fails and `entities()` skips them | runtime `store.rs` |
 | VS Code extension | `editors/vscode` (regenerate grammar with `python tools/gen_grammar.py`) |
 | IDE (egui, talks to `neptune lsp`/`dap`, never links Fyrox) | `crates/neptune-ide/src`: `editor.rs` (widget), `buffer.rs` (text, carets, undo), `lang.rs` (tokens, blocks), `app.rs` (state, actions), `view.rs`/`panels.rs`/`dialogs.rs` (drawing), `actions.rs` (menu and key table); guide `docs/IDE.md` |
+| Level editor (Fyrox's `fyroxed_base` as a library; its own program, so `neptune` and the IDE never link it) | `crates/neptune-editor/src`: `main.rs` (start-up, window title, `--play`), `theme.rs` (the IDE's colours as Fyrox style brushes; keep in step with the IDE's `theme.rs`), `play.rs` (Play's build profiles, which call `neptune check` and `neptune run`), `preview.nb` (the "Look Around" program); guide `docs/EDITOR.md` |
 | Language tests | `crates/neptune-vm/tests/language.rs` |
 | What's done / to do | `docs/STATUS.md` |
 | Command reference (generated) | `docs/COMMANDS.md` from `docs/commands.txt` (`tools/gen_reference.py`) |

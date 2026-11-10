@@ -120,6 +120,7 @@ neptune run examples/games/orbrun.nb
 * [Sound: playing, 3D sound, mixing and effects](docs/SOUND.md)
 * [Character controllers for 3D and 2D](docs/CHARACTERS.md)
 * [Making levels in Blender](docs/BLENDER.md)
+* [Neptune Level Editor](docs/EDITOR.md) (early version)
 * [2D levels and sprites from Tiled and Aseprite](docs/TOOLS2D.md)
 * [Changelog](CHANGELOG.md): what changed, commit by commit
 * [Architecture](docs/ARCHITECTURE.md)

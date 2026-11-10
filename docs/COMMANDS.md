@@ -11092,7 +11092,7 @@ PositionEntity fox, 0, 0, 5
 
 `LoadLevelFile(file$, [parent%=0], [collision_type%=0])` → integer
 
-**(ext)** Loads a level made in Blender or any glTF tool as one entity, with its lights, cameras, custom properties, solid objects and prefabs; returns 0 on failure. parent is optional. With collision_type, col_ and hit_ objects get that EntityType instead of becoming physics bodies. See docs/BLENDER.md.
+**(ext)** Loads a level made in Blender or any glTF tool, or a scene (.rgs) saved by Neptune Level Editor, as one entity, with its lights, cameras, custom properties, solid objects and prefabs; returns 0 on failure. parent is optional. With collision_type, col_ and hit_ objects get that EntityType instead of becoming physics bodies. See docs/BLENDER.md and docs/EDITOR.md.
 
 ```basic
 ; a whole level: shapes, lights, solid objects and crates that fall

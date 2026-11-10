@@ -1,0 +1,15 @@
+[package]
+name = "neptune-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "neptune-editor"
+path = "src/main.rs"
+
+# The level editor is Fyrox's own scene editor, used as a library, with
+# Neptune's colours and tools on top. It is a program of its own so that
+# `neptune` and Neptune IDE do not build or link it.
+[dependencies]
+fyroxed_base = "1.0.1"
