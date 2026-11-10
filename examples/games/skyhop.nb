@@ -1,0 +1,352 @@
+; SKY HOP - a 3D platformer over a bottomless drop.
+; Run from the repository root: neptune run examples/games/skyhop.nb
+;
+; W A S D move, Space jumps (tap again in the air for a second jump, hold
+; for a higher one), Esc quits. Reach the gold platform.
+;
+; Mechanics shown (each is explained in docs/GAMES3D.md):
+;   running with acceleration, jumps that feel fair (coyote time, a jump
+;   buffer, height by how long you hold), double jump, moving platforms
+;   that carry you, platforms that crumble, springs, checkpoints, falling
+;   and coming back, a shadow that shows where you will land, a level
+;   written as a table of data, and squash and stretch.
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "Sky Hop"
+
+Const RUN_SPEED# = 8, GROUND_GRIP# = 60, AIR_GRIP# = 22
+Const GRAVITY# = 26, JUMP_SPEED# = 10.5, DOUBLE_JUMP_SPEED# = 9, SPRING_SPEED# = 18
+Const COYOTE_TIME# = 0.1, JUMP_BUFFER# = 0.12, KILL_Y# = -14
+Const CRUMBLE_TIME# = 0.7, CRUMBLE_RETURN# = 2.5
+
+Const TYPE_PLAYER = 1, TYPE_PLATFORM = 2
+Const KIND_SOLID = 0, KIND_SLIDE = 1, KIND_LIFT = 2, KIND_CRUMBLE = 3, KIND_SPRING = 4, KIND_CHECK = 5, KIND_GOAL = 6
+
+BindKey "forward", KEY_W : BindKey "forward", KEY_UP
+BindKey "back", KEY_S : BindKey "back", KEY_DOWN
+BindKey "left", KEY_A : BindKey "left", KEY_LEFT
+BindKey "right", KEY_D : BindKey "right", KEY_RIGHT
+BindKey "jump", KEY_SPACE
+
+Global camera = CreateCamera()
+CameraRange camera, 0.2, 300
+CameraClsColor camera, 140, 200, 245
+CameraFogMode camera, 1
+CameraFogColor camera, 140, 200, 245
+CameraFogRange camera, 40, 140
+sun = CreateLight(1)
+RotateEntity sun, 60, 20, 0
+LightShadows sun, True
+AmbientLight 100, 105, 120
+
+; ---- the level is a table ---------------------------------------------
+; x, y (top surface), z, width, depth, kind. To add a platform, add a line.
+Data 0,   0,    0,  8, 8, KIND_CHECK
+Data 0,   0.5,  8,  4, 4, KIND_SOLID
+Data 3,   1.2, 14,  3, 3, KIND_SOLID
+Data -2,  2,   19,  3, 3, KIND_CRUMBLE
+Data -2,  2,   25,  3, 3, KIND_SLIDE
+Data 0,   3,   32,  6, 6, KIND_CHECK
+Data 0,   3,   38,  3, 3, KIND_SPRING
+Data 0,   7.5, 44,  4, 4, KIND_SOLID
+Data 5,   7.5, 50,  3, 3, KIND_LIFT
+Data 0,   10,  56,  3, 3, KIND_CRUMBLE
+Data 0,   10,  63,  8, 8, KIND_GOAL
+Const PLATFORM_COUNT = 11
+
+; x, y, z of each star
+Data 0, 2, 8,   3, 3, 14,   -2, 4, 19,   2, 4, 25,   0, 12, 38,   5, 11, 50
+Const STAR_COUNT = 6
+
+Type Platform
+    Field ent, kind
+    Field baseX#, baseY#, baseZ#
+    Field dx#, dy#, dz#   ; how far it moved this frame
+    Field timer#, phase#, gone
+End Type
+
+Function AddPlatform(x#, y#, z#, w#, d#, kind)
+    p.Platform = New Platform
+    p\ent = CreateCube()
+    ScaleEntity p\ent, w / 2, 0.3, d / 2
+    PositionEntity p\ent, x, y - 0.3, z
+    EntityType p\ent, TYPE_PLATFORM
+    EntityPickMode p\ent, 2
+    p\kind = kind
+    p\baseX = x : p\baseY = y - 0.3 : p\baseZ = z
+    Select kind
+        Case KIND_SOLID   : EntityColor p\ent, 120, 170, 120
+        Case KIND_SLIDE   : EntityColor p\ent, 110, 140, 230
+        Case KIND_LIFT    : EntityColor p\ent, 110, 200, 230
+        Case KIND_CRUMBLE : EntityColor p\ent, 200, 140, 90
+        Case KIND_SPRING  : EntityColor p\ent, 240, 90, 170
+        Case KIND_CHECK   : EntityColor p\ent, 235, 235, 245
+        Case KIND_GOAL    : EntityColor p\ent, 250, 205, 60
+    End Select
+End Function
+
+For i = 1 To PLATFORM_COUNT
+    Read x#, y#, z#, w#, d#, kind
+    AddPlatform x, y, z, w, d, kind
+Next
+
+Dim stars(STAR_COUNT)
+For i = 1 To STAR_COUNT
+    Read x, y, z
+    stars(i) = CreateSphere(8)
+    ScaleEntity stars(i), 0.4, 0.4, 0.4
+    PositionEntity stars(i), x, y, z
+    EntityColor stars(i), 255, 220, 60
+    EntityEmissive stars(i), 255, 200, 40, 1
+Next
+
+; ---- the hero ---------------------------------------------------------
+Global hero = CreatePivot()
+EntityType hero, TYPE_PLAYER
+EntityRadius hero, 0.45, 0.8
+Collisions TYPE_PLAYER, TYPE_PLATFORM, 2, 3
+
+; The look is a child of the collision shape, so stretching it for effect
+; cannot change what the hero bumps into.
+Global look = CreateCylinder(12, True, hero)
+ScaleEntity look, 0.45, 0.7, 0.45
+EntityColor look, 240, 90, 70
+head = CreateSphere(10, look)
+ScaleEntity head, 1, 0.55, 1
+PositionEntity head, 0, 1.3, 0
+EntityColor head, 250, 210, 170
+
+; A dark disc on whatever is under the hero. In 3D it is hard to judge where
+; you will land, and this answers the question.
+Global shadow = CreateCylinder(16)
+ScaleEntity shadow, 0.5, 0.01, 0.5
+EntityColor shadow, 20, 20, 30
+EntityAlpha shadow, 0.5
+
+Global velX#, velY#, velZ#, onGround, standingOn, coyote#, buffer#, usedDouble, jumping
+Global squash# = 1, spawnX#, spawnY#, spawnZ#, starsGot, falls, won, startTime
+
+Function Respawn()
+    PositionEntity hero, spawnX, spawnY, spawnZ
+    ResetEntity hero
+    velX = 0 : velY = 0 : velZ = 0
+End Function
+
+Function SetCheckpoint(p.Platform)
+    spawnX = p\baseX
+    spawnY = p\baseY + 2
+    spawnZ = p\baseZ
+End Function
+
+; ---- each part of a frame ---------------------------------------------
+Function UpdatePlatforms(dt#, seconds#)
+    For p.Platform = Each Platform
+        oldX# = EntityX(p\ent) : oldY# = EntityY(p\ent) : oldZ# = EntityZ(p\ent)
+        Select p\kind
+            Case KIND_SLIDE
+                PositionEntity p\ent, p\baseX + Sin(seconds * 70) * 4.5, p\baseY, p\baseZ
+            Case KIND_LIFT
+                PositionEntity p\ent, p\baseX, p\baseY + Sin(seconds * 60) * 2.2, p\baseZ
+            Case KIND_CRUMBLE
+                If p\timer > 0
+                    p\timer = p\timer - dt
+                    If p\gone = 0
+                        ; it shakes as a warning, then falls
+                        PositionEntity p\ent, p\baseX + Rnd(-0.06, 0.06), p\baseY, p\baseZ
+                        If p\timer <= 0
+                            p\gone = 1
+                            p\timer = CRUMBLE_RETURN
+                            HideEntity p\ent
+                        End If
+                    ElseIf p\timer <= 0
+                        p\gone = 0
+                        PositionEntity p\ent, p\baseX, p\baseY, p\baseZ
+                        ShowEntity p\ent
+                    End If
+                End If
+        End Select
+        p\dx = EntityX(p\ent) - oldX
+        p\dy = EntityY(p\ent) - oldY
+        p\dz = EntityZ(p\ent) - oldZ
+    Next
+End Function
+
+Function CarryHero()
+    ; Standing on something moving? Move by exactly as much as it just moved.
+    If onGround = False Then Return
+    For p.Platform = Each Platform
+        If p\ent = standingOn
+            TranslateEntity hero, p\dx, p\dy, p\dz
+            Return
+        End If
+    Next
+End Function
+
+Function MoveHero(dt#)
+    ; Where we want to go. The camera always looks along +Z here.
+    wantX# = (ActionValue("right") - ActionValue("left")) * RUN_SPEED
+    wantZ# = (ActionValue("forward") - ActionValue("back")) * RUN_SPEED
+
+    ; Speed changes towards the target by a limited amount each frame, which
+    ; gives weight. Grip is lower in the air, so a jump commits you a little.
+    grip# = AIR_GRIP
+    If onGround Then grip = GROUND_GRIP
+    velX = Approach(velX, wantX, grip * dt)
+    velZ = Approach(velZ, wantZ, grip * dt)
+
+    ; Coyote time: you can still jump just after running off an edge.
+    ; Jump buffer: a press just before landing still counts on landing.
+    ; Both forgive being a few frames off, and that is what feels fair.
+    If onGround
+        coyote = COYOTE_TIME
+        usedDouble = False
+    Else
+        coyote = coyote - dt
+    End If
+    buffer = buffer - dt
+    If ActionHit("jump") Then buffer = JUMP_BUFFER
+
+    If buffer > 0
+        If coyote > 0
+            velY = JUMP_SPEED
+            coyote = 0 : buffer = 0 : jumping = True
+            squash = 1.35
+        ElseIf usedDouble = False
+            velY = DOUBLE_JUMP_SPEED
+            usedDouble = True : buffer = 0 : jumping = True
+            squash = 1.25
+        End If
+    End If
+
+    ; Let go early and the rise is cut short: tap small, hold big.
+    If jumping And velY > 0 And ActionDown("jump") = False
+        velY = velY * 0.5
+        jumping = False
+    End If
+    If velY <= 0 Then jumping = False
+
+    velY = velY - GRAVITY * dt
+    TranslateEntity hero, velX * dt, velY * dt, velZ * dt
+
+    ; face the way you are moving
+    If velX * velX + velZ * velZ > 1 Then RotateEntity look, 0, VectorYaw(velX, 0, velZ), 0
+End Function
+
+Function Approach#(value#, target#, amount#)
+    If value < target Then Return Min(value + amount, target)
+    Return Max(value - amount, target)
+End Function
+
+; After UpdateWorld: what are we touching, and what does touching it do?
+Function ReadCollisions()
+    wasOnGround = onGround
+    onGround = False
+    standingOn = 0
+    For i = 1 To CountCollisions(hero)
+        If CollisionNY(hero, i) > 0.7
+            onGround = True
+            standingOn = CollisionEntity(hero, i)
+        ElseIf CollisionNY(hero, i) < -0.7 And velY > 0
+            velY = 0
+        End If
+    Next
+    If onGround = False Then Return
+    If velY < 0
+        If wasOnGround = False And velY < -6 Then squash = 0.7 ; a hard landing
+        velY = 0
+    End If
+    For p.Platform = Each Platform
+        If p\ent = standingOn
+            Select p\kind
+                Case KIND_CRUMBLE
+                    If p\timer <= 0 And p\gone = 0 Then p\timer = CRUMBLE_TIME
+                Case KIND_SPRING
+                    velY = SPRING_SPEED
+                    onGround = False
+                    jumping = False
+                    squash = 1.5
+                Case KIND_CHECK
+                    SetCheckpoint p
+                Case KIND_GOAL
+                    won = True
+            End Select
+            Return
+        End If
+    Next
+End Function
+
+Function UpdateShadow()
+    ; a line straight down from the hero; the disc goes where it lands
+    If LinePick(EntityX(hero), EntityY(hero), EntityZ(hero), 0, -60, 0)
+        ShowEntity shadow
+        PositionEntity shadow, PickedX(), PickedY() + 0.03, PickedZ()
+    Else
+        HideEntity shadow
+    End If
+End Function
+
+Function UpdateStars(dt#)
+    For i = 1 To STAR_COUNT
+        If stars(i)
+            TurnEntity stars(i), 0, 150 * dt, 0
+            If EntityDistance(hero, stars(i)) < 1.4
+                FreeEntity stars(i)
+                stars(i) = 0
+                starsGot = starsGot + 1
+            End If
+        End If
+    Next
+End Function
+
+Function UpdateSquash(dt#)
+    ; Stretch one way and squeeze the others, then ease back. It takes few
+    ; lines, and it is a large part of what makes a jump feel lively.
+    squash = squash + (1 - squash) * Clamp(9 * dt, 0, 1)
+    ScaleEntity look, 0.45 / Sqr(squash), 0.7 * squash, 0.45 / Sqr(squash)
+End Function
+
+Function MoveCamera(dt#)
+    k# = Clamp(6 * dt, 0, 1)
+    cx# = EntityX(camera) + (EntityX(hero) - EntityX(camera)) * k
+    cy# = EntityY(camera) + (EntityY(hero) + 6 - EntityY(camera)) * k
+    cz# = EntityZ(camera) + (EntityZ(hero) - 12 - EntityZ(camera)) * k
+    PositionEntity camera, cx, cy, cz
+    RotateEntity camera, 22, 0, 0
+End Function
+
+Function DrawHUD()
+    Color 30, 40, 70
+    Text 20, 16, "Stars " + starsGot + " / " + STAR_COUNT + "    Falls " + falls
+    If won Then Text GraphicsWidth() / 2, 200, "You made it to the top! Esc to quit.", True, True
+End Function
+
+; ---- start and run -----------------------------------------------------
+spawnX = 0 : spawnY = 2 : spawnZ = 0
+Respawn
+PositionEntity camera, 0, 8, -12
+
+lastTime = MilliSecs()
+startTime = lastTime
+While Not KeyHit(KEY_ESCAPE)
+    now = MilliSecs()
+    dt# = Clamp((now - lastTime) / 1000.0, 0, 0.05)
+    lastTime = now
+
+    UpdatePlatforms dt, (now - startTime) / 1000.0
+    CarryHero
+    If won = False Then MoveHero dt Else velY = velY - GRAVITY * dt : TranslateEntity hero, 0, velY * dt, 0
+    UpdateWorld
+    ReadCollisions
+    UpdateStars dt
+    UpdateSquash dt
+    If EntityY(hero) < KILL_Y
+        falls = falls + 1
+        Respawn
+    End If
+    UpdateShadow
+    MoveCamera dt
+    RenderWorld
+    DrawHUD
+    Flip
+Wend
+End

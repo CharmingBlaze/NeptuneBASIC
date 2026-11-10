@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use neptune_vm::debug::{StepKind, StopReason};
+use neptune_vm::debug::{BreakpointSpec, StepKind, StopReason};
 use neptune_vm::{base_env, NoHost, Output, Status, Vm};
 
 fn debug_vm(src: &str) -> (Vm, Arc<AtomicBool>) {
@@ -49,6 +49,111 @@ a = Add(1)
 b = Add(2)
 Print b
 ";
+
+const LOOP: &str = "Type Thing
+    Field x
+End Type
+Global t.Thing = New Thing
+t\\x = 7
+Global name$ = \"bob\"
+Dim grid(5)
+For i = 1 To 10
+    grid(i Mod 5) = i
+Next
+Print \"done\"
+";
+
+fn when(line: u32, condition: &str) -> BreakpointSpec {
+    BreakpointSpec { line, condition: Some(condition.into()), hit_condition: None }
+}
+
+fn hits(line: u32, rule: &str) -> BreakpointSpec {
+    BreakpointSpec { line, condition: None, hit_condition: Some(rule.into()) }
+}
+
+/// The values of `i` at which a breakpoint on the loop body stops.
+fn stops(spec: BreakpointSpec) -> Vec<String> {
+    let (mut vm, _) = debug_vm(LOOP);
+    assert_eq!(vm.debug_set_breakpoint_specs(0, &[spec]), vec![Ok(9)]);
+    let mut seen = Vec::new();
+    while run(&mut vm).is_some() {
+        seen.push(global(&vm, "i"));
+        vm.debug_continue();
+    }
+    assert_eq!(vm.core.take_output(), "done\n");
+    seen
+}
+
+#[test]
+fn a_condition_decides_whether_a_breakpoint_stops() {
+    assert_eq!(stops(when(9, "i = 4")), ["4"]);
+    assert_eq!(stops(when(9, "i > 8")), ["9", "10"]);
+    assert_eq!(stops(when(9, "i Mod 5 = 0 And t\\x = 7")), ["5", "10"]);
+    assert_eq!(stops(when(9, "(i + 1) * 2 = 8 Or i >= 10")), ["3", "10"]);
+    assert_eq!(stops(when(9, "Not i <> 2")), ["2"]);
+    assert_eq!(stops(when(9, "name = \"bob\" And i < 2")), ["1"]);
+    assert_eq!(stops(when(9, "i * 0.5 = 1.5")), ["3"]);
+    assert_eq!(stops(when(9, "$a = i")), ["10"]);
+    assert_eq!(stops(when(9, "t <> Null And i = 1")), ["1"]);
+    // the array is only read when the index is good, and indices can be sums
+    assert_eq!(stops(when(9, "i > 1 And i < 7 AndAlso grid(i - 1) = i - 1 AndAlso i = 5")), ["5"]);
+    assert!(stops(when(9, "False")).is_empty());
+}
+
+#[test]
+fn hit_counts_pick_which_hits_stop() {
+    assert_eq!(stops(hits(9, "3")), ["3"]);
+    assert_eq!(stops(hits(9, ">=9")), ["9", "10"]);
+    assert_eq!(stops(hits(9, ">9")), ["10"]);
+    assert_eq!(stops(hits(9, "<2")), ["1"]);
+    assert_eq!(stops(hits(9, "%4")), ["4", "8"]);
+}
+
+#[test]
+fn hits_only_count_when_the_condition_holds() {
+    let spec = BreakpointSpec { line: 9, condition: Some("i > 5".into()), hit_condition: Some("2".into()) };
+    assert_eq!(stops(spec), ["7"]);
+}
+
+#[test]
+fn a_bad_hit_count_is_refused() {
+    let (mut vm, _) = debug_vm(LOOP);
+    let placed = vm.debug_set_breakpoint_specs(0, &[hits(9, "often"), hits(9, "%0")]);
+    assert!(placed.iter().all(Result::is_err));
+    assert_eq!(run(&mut vm), None);
+}
+
+#[test]
+fn a_condition_that_fails_stops_and_says_why() {
+    let (mut vm, _) = debug_vm(LOOP);
+    vm.debug_set_breakpoint_specs(0, &[when(9, "nothing > 1")]);
+    assert_eq!(run(&mut vm), Some(StopReason::Condition("'nothing' is not a variable here".into())));
+    assert_eq!(line(&vm), 9);
+    // going on does not stop on the same statement again
+    vm.debug_set_breakpoints(0, &[]);
+    vm.debug_continue();
+    assert_eq!(run(&mut vm), None);
+}
+
+#[test]
+fn andalso_does_not_read_its_unused_side() {
+    let (vm, _) = debug_vm("Global a = 0\n");
+    assert_eq!(vm.debug_condition(0, "False AndAlso nothing\\x = 1"), Ok(false));
+    assert_eq!(vm.debug_condition(0, "True OrElse 1 / 0"), Ok(true));
+    assert!(vm.debug_condition(0, "1 / 0").is_err());
+    assert!(vm.debug_condition(0, "1 2").is_err());
+}
+
+#[test]
+fn a_step_still_stops_on_a_line_whose_condition_is_false() {
+    let (mut vm, _) = debug_vm("For i = 1 To 3\n    a = i\n    b = i\nNext\n");
+    vm.debug_set_breakpoint_specs(0, &[when(2, "i = 2"), when(3, "False")]);
+    assert_eq!(run(&mut vm), Some(StopReason::Breakpoint));
+    assert_eq!(line(&vm), 2);
+    vm.debug_step(StepKind::Over);
+    assert_eq!(run(&mut vm), Some(StopReason::Step));
+    assert_eq!(line(&vm), 3);
+}
 
 #[test]
 fn breakpoints_stop_and_move_to_the_next_statement() {

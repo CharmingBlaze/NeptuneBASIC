@@ -78,6 +78,13 @@ watch expressions. Type an expression in the Watch column to add one;
 right-click it to remove it. Debug Enabled, in the Program menu and on the
 toolbar, decides whether F5 uses the debugger, as it did in Blitz.
 
+Right-click the margin (or use Debug > Breakpoint Condition...) to stop only
+when something is true, such as `lives < 2 And player\x > 10`, or only on
+certain hits: `5` for the fifth, `>=5` from the fifth on, `%5` for every fifth.
+A breakpoint with a condition has a hole in its mark, and the Breakpoints list
+shows the rule; right-click a row there to change it. If a condition cannot be
+worked out, the program stops there and the Debug tab says why.
+
 ## Settings
 
 Ctrl+, opens them: four colour themes (one is Blitz's own blue), font size,

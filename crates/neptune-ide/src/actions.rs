@@ -81,6 +81,7 @@ pub enum Action {
     StepIn,
     StepOut,
     ToggleBreakpoint,
+    EditBreakpoint,
     ClearBreakpoints,
     QuickHelp,
     Reference,
@@ -190,6 +191,7 @@ table! {
     StepIn, "Debug", "Step Into", NONE + F11;
     StepOut, "Debug", "Step Out", SHIFT + F11;
     ToggleBreakpoint, "Debug", "Toggle Breakpoint", NONE + F9;
+    EditBreakpoint, "Debug", "Breakpoint Condition...";
     ClearBreakpoints, "Debug", "Remove All Breakpoints";
     QuickHelp, "Help", "Quick Help for Word at Caret", NONE + F1;
     Reference, "Help", "Command Reference";

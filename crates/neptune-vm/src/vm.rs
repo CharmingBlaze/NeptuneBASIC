@@ -12,7 +12,7 @@ use neptune_lang::sema::{float_to_int, format_float, str_to_float, str_to_int};
 
 use crate::debug::{DebugState, StopReason};
 use crate::stdlib::{self, Core};
-use crate::value::{Heap, ObjRef, Value, NO_OBJECT};
+use crate::value::{Heap, Value, NO_OBJECT};
 
 /// A vector's storage and an index checked against it.
 type VectorSlot = (Rc<RefCell<Vec<Value>>>, usize);
@@ -114,18 +114,62 @@ pub(crate) struct Frame {
     pub(crate) func: u32,
     pub(crate) pc: u32,
     pub(crate) base: u32,
-    gosub: Vec<u32>,
+    gosub: Vec<GosubCall>,
+}
+
+struct GosubCall {
+    ret: u32,
+    /// Error handlers active at the `Gosub`, restored by its `Return`.
+    handlers: usize,
 }
 
 struct Handler {
     frame: usize,
     stack_len: usize,
     pc: u32,
+    /// `Gosub`s active in `frame` at the `Try`, restored when it catches.
+    gosubs: usize,
 }
 
 pub(crate) struct DimArray {
     pub(crate) dims: Vec<usize>,
-    pub(crate) data: Vec<Value>,
+    pub(crate) data: ArrayData,
+}
+
+/// Elements of a `Dim` array. Integer and float arrays hold plain numbers
+/// (4 bytes each instead of a whole [`Value`]), which is what large arrays
+/// such as maps and grids are made of.
+pub(crate) enum ArrayData {
+    Int(Vec<i32>),
+    Float(Vec<f32>),
+    Other(Vec<Value>),
+}
+
+impl ArrayData {
+    fn new(kind: ValKind, len: usize) -> ArrayData {
+        match kind {
+            ValKind::Int => ArrayData::Int(vec![0; len]),
+            ValKind::Float => ArrayData::Float(vec![0.0; len]),
+            _ => ArrayData::Other(vec![Value::default_for(kind); len]),
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            ArrayData::Int(d) => d.len(),
+            ArrayData::Float(d) => d.len(),
+            ArrayData::Other(d) => d.len(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn get(&self, i: usize) -> Value {
+        match self {
+            ArrayData::Int(d) => Value::Int(d[i]),
+            ArrayData::Float(d) => Value::Float(d[i]),
+            ArrayData::Other(d) => d[i].clone(),
+        }
+    }
 }
 
 const MAX_FRAMES: usize = 100_000;
@@ -133,7 +177,10 @@ const MAX_ARRAY: usize = 1 << 28;
 
 pub struct Vm {
     pub(crate) prog: Rc<Program>,
+    /// Value stack. All of it is allocated; the values in use are the first
+    /// `sp`, and the rest is room that instructions write into directly.
     pub(crate) stack: Vec<Value>,
+    pub(crate) sp: usize,
     pub(crate) frames: Vec<Frame>,
     pub(crate) globals: Vec<Value>,
     pub(crate) arrays: Vec<DimArray>,
@@ -145,6 +192,243 @@ pub struct Vm {
     pub core: Core,
     finished: bool,
     pub(crate) debug: Option<Box<DebugState>>,
+}
+
+/// Same for every copy of a program, so `StartNetGame` only finds those.
+/// Based on what the program does, not where its lines are.
+fn program_id(prog: &Program) -> u64 {
+    let code: Vec<&Vec<Op>> = prog.functions.iter().map(|f| &f.code).collect();
+    format!("{code:?}{:?}", prog.strings).bytes().fold(0xcbf2_9ce4_8422_2325, |h: u64, b| (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3))
+}
+
+/// Defines the interpreter's helper macros inside a function. They work on
+/// the function's own variables (`sp`, `pc`, ...), so that these stay in
+/// processor registers; `$d` stands for a dollar sign.
+macro_rules! vm_macros {
+    ($d:tt, $self:ident, $sp:ident, $pc:ident, $base:ident, $fi:ident) => {
+        macro_rules! leave {
+            ($d r:expr) => {{
+                $self.$sp = $sp;
+                return $d r;
+            }};
+        }
+        macro_rules! fail {
+            ($d e:expr) => {{
+                $self.frames[$fi].$pc = ($pc - 1) as u32;
+                $self.$sp = $sp;
+                return Err($d e.into());
+            }};
+        }
+        macro_rules! tri {
+            ($d e:expr) => {
+                match $d e {
+                    Ok(v) => v,
+                    Err(e) => fail!(e),
+                }
+            };
+        }
+        // writes a number into a slot, field or variable
+        macro_rules! set_i {
+            ($d dst:expr, $d v:expr) => {{
+                let v: i32 = $d v;
+                match &mut $d dst {
+                    Value::Int(x) => *x = v,
+                    x => *x = Value::Int(v),
+                }
+            }};
+        }
+        macro_rules! set_f {
+            ($d dst:expr, $d v:expr) => {{
+                let v: f32 = $d v;
+                match &mut $d dst {
+                    Value::Float(x) => *x = v,
+                    x => *x = Value::Float(v),
+                }
+            }};
+        }
+        macro_rules! room {
+            () => {
+                if $sp >= $self.stack.len() {
+                    $self.grow_stack($sp);
+                }
+            };
+        }
+        macro_rules! push {
+            ($d v:expr) => {{
+                let v: Value = $d v;
+                room!();
+                $self.stack[$sp] = v;
+                $sp += 1;
+            }};
+        }
+        macro_rules! push_i {
+            ($d v:expr) => {{
+                let v: i32 = $d v;
+                room!();
+                set_i!($self.stack[$sp], v);
+                $sp += 1;
+            }};
+        }
+        macro_rules! push_f {
+            ($d v:expr) => {{
+                let v: f32 = $d v;
+                room!();
+                set_f!($self.stack[$sp], v);
+                $sp += 1;
+            }};
+        }
+        // pushes a copy of the value behind a reference
+        macro_rules! push_copy {
+            ($d r:expr) => {
+                match $d r {
+                    Value::Int(v) => push_i!(*v),
+                    Value::Float(v) => push_f!(*v),
+                    v => push!(v.clone()),
+                }
+            };
+        }
+        macro_rules! pop {
+            () => {{
+                $sp -= 1;
+                std::mem::take(&mut $self.stack[$sp])
+            }};
+        }
+        macro_rules! pop_i {
+            () => {{
+                $sp -= 1;
+                match &$self.stack[$sp] {
+                    Value::Int(v) => *v,
+                    _ => std::mem::take(&mut $self.stack[$sp]).int(),
+                }
+            }};
+        }
+        macro_rules! pop_f {
+            () => {{
+                $sp -= 1;
+                match &$self.stack[$sp] {
+                    Value::Float(v) => *v,
+                    _ => std::mem::take(&mut $self.stack[$sp]).float(),
+                }
+            }};
+        }
+        macro_rules! pop_s {
+            () => {{
+                $sp -= 1;
+                match std::mem::take(&mut $self.stack[$sp]) {
+                    Value::Str(s) => s,
+                    v => v.str(),
+                }
+            }};
+        }
+        macro_rules! pop_obj {
+            () => {{
+                $sp -= 1;
+                $self.heap.live_ref(&$self.stack[$sp]).ok_or(NO_OBJECT)
+            }};
+        }
+        // moves the value in stack slot `$d from` (just popped) to `$d dst`
+        macro_rules! move_to {
+            ($d from:expr, $d dst:expr) => {
+                match &$self.stack[$d from] {
+                    Value::Int(v) => set_i!($d dst, *v),
+                    Value::Float(v) => set_f!($d dst, *v),
+                    _ => {
+                        let v = std::mem::take(&mut $self.stack[$d from]);
+                        $d dst = v;
+                    }
+                }
+            };
+        }
+        macro_rules! top {
+            () => {
+                $self.stack[$sp - 1]
+            };
+        }
+        // pops the indices of an array access
+        macro_rules! array_index {
+            ($d array:expr, $d dims:expr) => {
+                if $d dims == 1 {
+                    let i = pop_i!();
+                    $self.array_index1($d array, i)
+                } else {
+                    let mut idx = [0i32; 8];
+                    for k in (0..$d dims as usize).rev() {
+                        idx[k.min(7)] = pop_i!();
+                    }
+                    $self.array_index_n($d array, &idx)
+                }
+            };
+        }
+        macro_rules! push_elem {
+            ($d array:expr, $d i:expr) => {
+                match &$self.arrays[$d array as usize].data {
+                    ArrayData::Int(d) => push_i!(d[$d i]),
+                    ArrayData::Float(d) => push_f!(d[$d i]),
+                    ArrayData::Other(d) => push!(d[$d i].clone()),
+                }
+            };
+        }
+        macro_rules! int_bin {
+            (|$d a:ident, $d b:ident| $d body:expr) => {{
+                let $d b = pop_i!();
+                int_with!($d b, |$d a, $d b| $d body)
+            }};
+        }
+        // the same with the right operand given instead of popped
+        macro_rules! int_with {
+            ($d b:expr, |$d a:ident, $d bb:ident| $d body:expr) => {{
+                let $d bb: i32 = $d b;
+                match &mut top!() {
+                    Value::Int($d a) => {
+                        *$d a = {
+                            let $d a = *$d a;
+                            $d body
+                        }
+                    }
+                    _ => unreachable!("typed int op on non-int"),
+                }
+            }};
+        }
+        macro_rules! float_with {
+            ($d b:expr, |$d a:ident, $d bb:ident| $d body:expr) => {{
+                let $d bb: f32 = $d b;
+                let $d a = match &top!() {
+                    Value::Float(v) => *v,
+                    v => v.float(),
+                };
+                set_f!(top!(), $d body);
+            }};
+        }
+        macro_rules! local_i {
+            ($d s:expr) => {
+                match &$self.stack[$base + $d s as usize] {
+                    Value::Int(v) => *v,
+                    v => v.int(),
+                }
+            };
+        }
+        macro_rules! local_f {
+            ($d s:expr) => {
+                match &$self.stack[$base + $d s as usize] {
+                    Value::Float(v) => *v,
+                    v => v.float(),
+                }
+            };
+        }
+        macro_rules! float_bin {
+            (|$d a:ident, $d b:ident| $d body:expr) => {{
+                let $d b = pop_f!();
+                float_with!($d b, |$d a, $d b| $d body)
+            }};
+        }
+    };
+}
+
+/// How a rarely used instruction ended.
+enum Cold {
+    /// Carry on at this `pc` with this `sp`.
+    Next(usize, usize),
+    Leave(Status),
 }
 
 impl Vm {
@@ -161,10 +445,11 @@ impl Vm {
         );
         let prog = Rc::new(prog);
         let mut vm = Vm {
-            stack: Vec::with_capacity(1024),
+            stack: vec![Value::Null; 1024],
+            sp: 0,
             frames: Vec::new(),
             globals: prog.globals.iter().map(|(_, k)| Value::default_for(*k)).collect(),
-            arrays: prog.arrays.iter().map(|_| DimArray { dims: vec![], data: vec![] }).collect(),
+            arrays: prog.arrays.iter().map(|a| DimArray { dims: vec![], data: ArrayData::new(a.elem, 0) }).collect(),
             heap: Heap::new(prog.types.len()),
             handlers: Vec::new(),
             data_ptr: 0,
@@ -175,6 +460,7 @@ impl Vm {
             debug: None,
             prog,
         };
+        vm.core.program_id = program_id(&vm.prog);
         let main = vm.prog.main;
         vm.enter(main, 0);
         vm
@@ -190,9 +476,20 @@ impl Vm {
 
     fn enter(&mut self, func: u32, n_args: usize) {
         let f = &self.prog.functions[func as usize];
-        let base = self.stack.len() - n_args;
-        for k in &f.locals[f.n_params as usize..] {
-            self.stack.push(Value::default_for(*k));
+        let base = self.sp - n_args;
+        let locals = &f.locals[f.n_params as usize..];
+        if self.sp + locals.len() > self.stack.len() {
+            let need = (self.sp + locals.len()).max(self.stack.len() * 2);
+            self.stack.resize(need, Value::Null);
+        }
+        for k in locals {
+            let slot = &mut self.stack[self.sp];
+            match (k, &mut *slot) {
+                // the usual case, an integer over an old integer: one small write
+                (ValKind::Int | ValKind::Variant, Value::Int(x)) => *x = 0,
+                _ => *slot = Value::default_for(*k),
+            }
+            self.sp += 1;
         }
         self.frames.push(Frame { func, pc: 0, base: base as u32, gosub: Vec::new() });
     }
@@ -221,8 +518,14 @@ impl Vm {
                 Err(msg) => {
                     if let Some(h) = self.handlers.pop() {
                         self.frames.truncate(h.frame + 1);
-                        self.stack.truncate(h.stack_len);
-                        self.stack.push(Value::Str(msg.into()));
+                        self.frames[h.frame].gosub.truncate(h.gosubs);
+                        self.release(h.stack_len.min(self.sp), self.sp);
+                        self.sp = h.stack_len;
+                        if self.sp >= self.stack.len() {
+                            self.grow_stack(self.sp);
+                        }
+                        self.stack[self.sp] = Value::Str(msg.into());
+                        self.sp += 1;
                         self.frames[h.frame].pc = h.pc;
                         continue;
                     }
@@ -251,7 +554,7 @@ impl Vm {
             .rev()
             .flat_map(|(i, fr)| {
                 let pc = if i == top { fr.pc } else { fr.pc.saturating_sub(1) };
-                std::iter::once((fr.func, pc)).chain(fr.gosub.iter().rev().map(move |r| (fr.func, r.saturating_sub(1))))
+                std::iter::once((fr.func, pc)).chain(fr.gosub.iter().rev().map(move |g| (fr.func, g.ret.saturating_sub(1))))
             })
             .collect();
         let site = |&(f, pc): &(u32, u32)| {
@@ -269,50 +572,41 @@ impl Vm {
         RuntimeError { message, location, function, callers, omitted }
     }
 
-    #[inline]
-    fn pop(&mut self) -> Value {
-        self.stack.pop().expect("stack underflow")
-    }
-    #[inline]
-    fn pop_i(&mut self) -> i32 {
-        match self.stack.pop() {
-            Some(Value::Int(v)) => v,
-            Some(v) => v.int(),
-            None => panic!("stack underflow"),
-        }
-    }
-    #[inline]
-    fn pop_f(&mut self) -> f32 {
-        match self.stack.pop() {
-            Some(Value::Float(v)) => v,
-            Some(v) => v.float(),
-            None => panic!("stack underflow"),
-        }
-    }
-    #[inline]
-    fn pop_s(&mut self) -> Rc<str> {
-        match self.stack.pop() {
-            Some(Value::Str(s)) => s,
-            Some(v) => v.str(),
-            None => panic!("stack underflow"),
-        }
-    }
-    #[inline]
-    fn top(&mut self) -> &mut Value {
-        self.stack.last_mut().expect("stack underflow")
+    /// Makes room for another value at `sp`.
+    #[cold]
+    #[inline(never)]
+    fn grow_stack(&mut self, sp: usize) {
+        let need = (sp + 1).max(self.stack.len() * 2);
+        self.stack.resize(need, Value::Null);
     }
 
-    fn pop_obj(&mut self) -> Result<ObjRef, String> {
-        let v = self.pop();
-        self.heap.live_ref(&v).ok_or_else(|| NO_OBJECT.to_string())
+    /// Lets go of the strings and arrays in stack slots `from..to`, which
+    /// are no longer in use. Numbers are left: they hold nothing.
+    #[inline]
+    fn release(&mut self, from: usize, to: usize) {
+        for v in &mut self.stack[from..to] {
+            if matches!(v, Value::Str(_) | Value::Vector(_)) {
+                *v = Value::Null;
+            }
+        }
     }
 
-    fn array_index(&mut self, array: u32, dims: u8) -> Result<usize, String> {
+    /// Index into a one-dimensional array (by far the most common kind).
+    #[inline]
+    fn array_index1(&self, array: u32, i: i32) -> Result<usize, String> {
+        let a = &self.arrays[array as usize];
+        // a negative index is a huge unsigned one, so one test covers both ends
+        if a.dims.len() == 1 && (i as u32 as usize) < a.dims[0] {
+            return Ok(i as u32 as usize);
+        }
         let mut idx = [0i32; 8];
-        let n = dims as usize;
-        for k in (0..n).rev() {
-            idx[k.min(7)] = self.pop_i();
-        }
+        idx[0] = i;
+        self.array_index_n(array, &idx)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn array_index_n(&self, array: u32, idx: &[i32; 8]) -> Result<usize, String> {
         let a = &self.arrays[array as usize];
         if a.dims.is_empty() {
             return Err(format!("array '{}' used before Dim", self.prog.arrays[array as usize].name));
@@ -341,163 +635,185 @@ impl Vm {
         }
     }
 
+    #[allow(unused_macros)]
     fn exec<const DEBUG: bool>(&mut self, host: &mut dyn Host, prog: &Program) -> Result<Status, String> {
         let mut fi = self.frames.len() - 1;
         let mut code: &[Op] = &prog.functions[self.frames[fi].func as usize].code;
         let mut pc = self.frames[fi].pc as usize;
         let mut base = self.frames[fi].base as usize;
 
-        macro_rules! fail {
-            ($e:expr) => {{
-                self.frames[fi].pc = (pc - 1) as u32;
-                return Err($e.into());
-            }};
-        }
-        macro_rules! tri {
-            ($e:expr) => {
-                match $e {
-                    Ok(v) => v,
-                    Err(e) => fail!(e),
-                }
-            };
-        }
-        macro_rules! int_bin {
-            (|$a:ident, $b:ident| $body:expr) => {{
-                let $b = self.pop_i();
-                match self.top() {
-                    Value::Int($a) => {
-                        let $a = *$a;
-                        *self.top() = Value::Int($body);
-                    }
-                    _ => unreachable!("typed int op on non-int"),
-                }
-            }};
-        }
-        macro_rules! float_bin {
-            (|$a:ident, $b:ident| $body:expr) => {{
-                let $b = self.pop_f();
-                let $a = match self.top() {
-                    Value::Float(v) => *v,
-                    v => v.float(),
-                };
-                *self.top() = Value::Float($body);
-            }};
-        }
+        // The top of the value stack is kept in a local, and instructions read
+        // and write stack slots in place. Numbers are read and written as
+        // numbers (4 bytes) rather than moved as whole values: the processor
+        // forwards a small write to a small read, but stalls on a whole-value
+        // read of a slot that was just written in part.
+        let mut sp = self.sp;
+        vm_macros!($, self, sp, pc, base, fi);
 
         loop {
             if DEBUG {
                 let func = self.frames[fi].func;
                 if self.debug.as_mut().expect("debugger").check(func, fi + 1, pc as u32) {
                     self.frames[fi].pc = pc as u32;
-                    return Ok(Status::Paused);
+                    self.sp = sp;
+                    if self.debug_decide(fi + 1, pc as u32) {
+                        leave!(Ok(Status::Paused));
+                    }
                 }
             }
-            let op = code[pc];
+            // matched in place: the operands are read straight from the code
+            let op = &code[pc];
             pc += 1;
-            match op {
-                Op::PushInt(v) => self.stack.push(Value::Int(v)),
-                Op::PushFloat(v) => self.stack.push(Value::Float(v)),
-                Op::PushStr(i) => self.stack.push(Value::Str(prog.strings[i as usize].clone())),
-                Op::PushNull => self.stack.push(Value::Null),
+            match *op {
+                Op::PushInt(v) => push_i!(v),
+                Op::PushFloat(v) => push_f!(v),
+                Op::PushStr(i) => push!(Value::Str(prog.strings[i as usize].clone())),
+                Op::PushNull => push!(Value::Null),
                 Op::Pop => {
-                    self.stack.pop();
+                    sp -= 1;
+                    self.release(sp, sp + 1);
                 }
-                Op::Dup => {
-                    let v = self.top().clone();
-                    self.stack.push(v);
-                }
-                Op::LoadLocal(s) => {
-                    let v = self.stack[base + s as usize].clone();
-                    self.stack.push(v);
-                }
+                Op::Dup => push_copy!(&self.stack[sp - 1]),
+                Op::LoadLocal(s) => push_copy!(&self.stack[base + s as usize]),
                 Op::StoreLocal(s) => {
-                    let v = self.pop();
-                    self.stack[base + s as usize] = v;
+                    sp -= 1;
+                    move_to!(sp, self.stack[base + s as usize]);
                 }
-                Op::LoadGlobal(g) => {
-                    let v = self.globals[g as usize].clone();
-                    self.stack.push(v);
-                }
+                Op::LoadGlobal(g) => push_copy!(&self.globals[g as usize]),
                 Op::StoreGlobal(g) => {
-                    let v = self.pop();
-                    self.globals[g as usize] = v;
+                    sp -= 1;
+                    move_to!(sp, self.globals[g as usize]);
                 }
                 Op::IncLocalI(s, d) => {
                     if let Value::Int(v) = &mut self.stack[base + s as usize] {
                         *v = v.wrapping_add(d);
                     }
                 }
+                Op::LoadLocal2(a, b) => {
+                    push_copy!(&self.stack[base + a as usize]);
+                    push_copy!(&self.stack[base + b as usize]);
+                }
+                Op::AddIL(s) => int_with!(local_i!(s), |a, b| a.wrapping_add(b)),
+                Op::SubIL(s) => int_with!(local_i!(s), |a, b| a.wrapping_sub(b)),
+                Op::MulIL(s) => int_with!(local_i!(s), |a, b| a.wrapping_mul(b)),
+                Op::AddIK(k) => int_with!(k, |a, b| a.wrapping_add(b)),
+                Op::MulIK(k) => int_with!(k, |a, b| a.wrapping_mul(b)),
+                Op::DivIK(k) => int_with!(k, |a, b| a.wrapping_div(b)),
+                Op::ModIK(k) => int_with!(k, |a, b| a.wrapping_rem(b)),
+                Op::AddFL(s) => float_with!(local_f!(s), |a, b| a + b),
+                Op::SubFL(s) => float_with!(local_f!(s), |a, b| a - b),
+                Op::MulFL(s) => float_with!(local_f!(s), |a, b| a * b),
+                Op::DivFL(s) => float_with!(local_f!(s), |a, b| a / b),
+                Op::AddFK(k) => float_with!(k, |a, b| a + b),
+                Op::MulFK(k) => float_with!(k, |a, b| a * b),
+                Op::DivFK(k) => float_with!(k, |a, b| a / b),
+                Op::LoadLocalField(s, i) => {
+                    let Some(r) = self.heap.live_ref(&self.stack[base + s as usize]) else { fail!(NO_OBJECT) };
+                    push_copy!(self.heap.field(r, i));
+                }
+                Op::LoadArrayL { array, slot } => {
+                    let i = local_i!(slot);
+                    let i = tri!(self.array_index1(array, i));
+                    push_elem!(array, i);
+                }
+                Op::JumpCmpI(c, t) => {
+                    let b = pop_i!();
+                    let a = pop_i!();
+                    if cmp_i(c, a, b) {
+                        pc = t as usize;
+                    }
+                }
+                Op::JumpCmpF(c, t) => {
+                    let b = pop_f!();
+                    let a = pop_f!();
+                    if cmp(c, &a, &b) {
+                        pc = t as usize;
+                    }
+                }
+                Op::JumpNotCmpF(c, t) => {
+                    let b = pop_f!();
+                    let a = pop_f!();
+                    if !cmp(c, &a, &b) {
+                        pc = t as usize;
+                    }
+                }
+                Op::JumpCmpIL { c, slot, target } => {
+                    let b = local_i!(slot);
+                    let a = pop_i!();
+                    if cmp_i(c, a, b) {
+                        pc = target as usize;
+                    }
+                }
+                Op::JumpCmpIK { c, k, target } => {
+                    let a = pop_i!();
+                    if cmp_i(c, a, k) {
+                        pc = target as usize;
+                    }
+                }
+                Op::JumpCmpILL { c, a, b, target } => {
+                    let (a, b) = (local_i!(a), local_i!(b));
+                    if cmp_i(c, a, b) {
+                        pc = target as usize;
+                    }
+                }
+                Op::JumpCmpILK { c, slot, k, target } => {
+                    let a = local_i!(slot);
+                    if cmp_i(c, a, k) {
+                        pc = target as usize;
+                    }
+                }
+                Op::IncLocalJump { slot, d, target } => {
+                    if let Value::Int(v) = &mut self.stack[base + slot as usize] {
+                        *v = v.wrapping_add(d as i32);
+                    }
+                    pc = target as usize;
+                }
                 Op::LoadField(i) => {
-                    let r = tri!(self.pop_obj());
-                    let v = self.heap.field(r, i).clone();
-                    self.stack.push(v);
+                    let r = tri!(pop_obj!());
+                    push_copy!(self.heap.field(r, i));
                 }
                 Op::StoreField(i) => {
-                    let v = self.pop();
-                    let r = tri!(self.pop_obj());
-                    *self.heap.field_mut(r, i) = v;
-                }
-                Op::DimArray { array, dims } => {
-                    let mut sizes = vec![0usize; dims as usize];
-                    for k in (0..dims as usize).rev() {
-                        let n = self.pop_i();
-                        if n < 0 {
-                            fail!(format!("negative array size {n}"));
-                        }
-                        sizes[k] = n as usize + 1;
-                    }
-                    let total = sizes.iter().try_fold(1usize, |a, &d| a.checked_mul(d)).filter(|&t| t <= MAX_ARRAY);
-                    let Some(total) = total else { fail!("array too large") };
-                    let k = prog.arrays[array as usize].elem;
-                    self.arrays[array as usize] = DimArray { dims: sizes, data: vec![Value::default_for(k); total] };
+                    // [obj, value]
+                    sp -= 1;
+                    let r = tri!(pop_obj!());
+                    move_to!(sp + 1, *self.heap.field_mut(r, i));
                 }
                 Op::LoadArray { array, dims } => {
-                    let i = tri!(self.array_index(array, dims));
-                    let v = self.arrays[array as usize].data[i].clone();
-                    self.stack.push(v);
+                    let i = tri!(array_index!(array, dims));
+                    push_elem!(array, i);
                 }
                 Op::StoreArray { array, dims } => {
-                    let v = self.pop();
-                    let i = tri!(self.array_index(array, dims));
-                    self.arrays[array as usize].data[i] = v;
+                    // [indices.., value]
+                    sp -= 1;
+                    let at = sp;
+                    let i = tri!(array_index!(array, dims));
+                    match &mut self.arrays[array as usize].data {
+                        ArrayData::Int(d) => {
+                            d[i] = match &self.stack[at] {
+                                Value::Int(v) => *v,
+                                v => v.int(),
+                            }
+                        }
+                        ArrayData::Float(d) => {
+                            d[i] = match &self.stack[at] {
+                                Value::Float(v) => *v,
+                                v => v.float(),
+                            }
+                        }
+                        ArrayData::Other(d) => d[i] = std::mem::take(&mut self.stack[at]),
+                    }
                 }
-                Op::NewVector { len, elem } => {
-                    self.stack.push(Value::Vector(Rc::new(RefCell::new(vec![Value::default_for(elem); len as usize]))));
-                }
-                Op::VectorLen => {
-                    let v = self.pop();
-                    let n = match &v {
-                        Value::Vector(vec) => vec.borrow().len() as i32,
-                        _ => 0,
-                    };
-                    self.stack.push(Value::Int(n));
-                }
-                Op::LoadVector => {
-                    let i = self.pop_i();
-                    let v = self.pop();
-                    let (vec, i) = tri!(Self::vector_index(&v, i));
-                    let x = vec.borrow()[i].clone();
-                    self.stack.push(x);
-                }
-                Op::StoreVector => {
-                    let x = self.pop();
-                    let i = self.pop_i();
-                    let v = self.pop();
-                    let (vec, i) = tri!(Self::vector_index(&v, i));
-                    vec.borrow_mut()[i] = x;
-                }
-
                 Op::AddI => int_bin!(|a, b| a.wrapping_add(b)),
                 Op::SubI => int_bin!(|a, b| a.wrapping_sub(b)),
                 Op::MulI => int_bin!(|a, b| a.wrapping_mul(b)),
                 Op::DivI => {
-                    if matches!(self.stack.last(), Some(Value::Int(0))) {
+                    if matches!(top!(), Value::Int(0)) {
                         fail!("Integer divide by zero");
                     }
                     int_bin!(|a, b| a.wrapping_div(b))
                 }
                 Op::ModI => {
-                    if matches!(self.stack.last(), Some(Value::Int(0))) {
+                    if matches!(top!(), Value::Int(0)) {
                         fail!("Integer divide by zero");
                     }
                     int_bin!(|a, b| a.wrapping_rem(b))
@@ -509,22 +825,22 @@ impl Vm {
                 Op::ShrI => int_bin!(|a, b| (a as u32).wrapping_shr(b as u32) as i32),
                 Op::SarI => int_bin!(|a, b| a.wrapping_shr(b as u32)),
                 Op::NegI => {
-                    if let Value::Int(v) = self.top() {
+                    if let Value::Int(v) = &mut top!() {
                         *v = v.wrapping_neg();
                     }
                 }
                 Op::BitNotI => {
-                    if let Value::Int(v) = self.top() {
+                    if let Value::Int(v) = &mut top!() {
                         *v = !*v;
                     }
                 }
                 Op::AbsI => {
-                    if let Value::Int(v) = self.top() {
+                    if let Value::Int(v) = &mut top!() {
                         *v = v.wrapping_abs();
                     }
                 }
                 Op::SgnI => {
-                    if let Value::Int(v) = self.top() {
+                    if let Value::Int(v) = &mut top!() {
                         *v = v.signum();
                     }
                 }
@@ -535,155 +851,65 @@ impl Vm {
                 Op::ModF => float_bin!(|a, b| a % b),
                 Op::PowF => float_bin!(|a, b| a.powf(b)),
                 Op::NegF => {
-                    if let Value::Float(v) = self.top() {
+                    if let Value::Float(v) = &mut top!() {
                         *v = -*v;
                     }
                 }
                 Op::AbsF => {
-                    if let Value::Float(v) = self.top() {
+                    if let Value::Float(v) = &mut top!() {
                         *v = v.abs();
                     }
                 }
                 Op::SgnF => {
-                    if let Value::Float(v) = self.top() {
+                    if let Value::Float(v) = &mut top!() {
                         *v = if *v > 0.0 { 1.0 } else if *v < 0.0 { -1.0 } else { 0.0 };
                     }
                 }
-                Op::Concat => {
-                    let b = self.pop_s();
-                    let a = self.pop_s();
-                    let mut s = String::with_capacity(a.len() + b.len());
-                    s.push_str(&a);
-                    s.push_str(&b);
-                    self.stack.push(Value::Str(s.into()));
-                }
                 Op::NotI => {
-                    let v = self.pop_i();
-                    self.stack.push(Value::Int((v == 0) as i32));
+                    let v = pop_i!();
+                    push_i!((v == 0) as i32);
                 }
                 Op::NotF => {
-                    let v = self.pop_f();
-                    self.stack.push(Value::Int((v == 0.0) as i32));
-                }
-                Op::NotS => {
-                    let v = self.pop_s();
-                    self.stack.push(Value::Int(v.is_empty() as i32));
+                    let v = pop_f!();
+                    push_i!((v == 0.0) as i32);
                 }
                 Op::NotO => {
-                    let v = self.pop();
+                    let v = pop!();
                     let dead = self.heap.live_ref(&v).is_none();
-                    self.stack.push(Value::Int(dead as i32));
-                }
-                Op::NotV => {
-                    let v = self.pop();
-                    let z = match &v {
-                        Value::Int(i) => *i == 0,
-                        Value::Float(f) => *f == 0.0,
-                        Value::Str(s) => s.is_empty(),
-                        Value::Obj(_) => self.heap.live_ref(&v).is_none(),
-                        Value::Null => true,
-                        Value::Vector(_) => false,
-                    };
-                    self.stack.push(Value::Int(z as i32));
+                    push_i!(dead as i32);
                 }
                 Op::CmpI(c) => {
-                    let b = self.pop_i();
-                    let a = self.pop_i();
-                    self.stack.push(Value::Int(cmp(c, &a, &b) as i32));
+                    let b = pop_i!();
+                    let a = pop_i!();
+                    push_i!(cmp_i(c, a, b) as i32);
                 }
                 Op::CmpF(c) => {
-                    let b = self.pop_f();
-                    let a = self.pop_f();
-                    self.stack.push(Value::Int(cmp(c, &a, &b) as i32));
-                }
-                Op::CmpS(c) => {
-                    let b = self.pop_s();
-                    let a = self.pop_s();
-                    self.stack.push(Value::Int(cmp(c, &*a, &*b) as i32));
+                    let b = pop_f!();
+                    let a = pop_f!();
+                    push_i!(cmp(c, &a, &b) as i32);
                 }
                 Op::CmpO(eq) => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = pop!();
+                    let a = pop!();
                     let same = self.heap.live_ref(&a) == self.heap.live_ref(&b);
-                    self.stack.push(Value::Int((same == eq) as i32));
-                }
-                Op::BinV(o) => {
-                    let b = self.pop();
-                    let a = self.pop();
-                    let r = tri!(variant_bin(o, &a, &b));
-                    self.stack.push(r);
-                }
-                Op::NegV => {
-                    let v = self.pop();
-                    let r = match v {
-                        Value::Int(i) => Value::Int(i.wrapping_neg()),
-                        Value::Float(f) => Value::Float(-f),
-                        Value::Str(s) => Value::Float(-str_to_float(&s)),
-                        _ => fail!("cannot negate a non-numeric value"),
-                    };
-                    self.stack.push(r);
-                }
-                Op::CmpV(c) => {
-                    let b = self.pop();
-                    let a = self.pop();
-                    let r = tri!(variant_cmp(c, &a, &b, &self.heap));
-                    self.stack.push(Value::Int(r as i32));
+                    push_i!((same == eq) as i32);
                 }
                 Op::IToF => {
-                    let v = self.pop_i();
-                    self.stack.push(Value::Float(v as f32));
+                    let v = pop_i!();
+                    push_f!(v as f32);
                 }
                 Op::FToI => {
-                    let v = self.pop_f();
-                    self.stack.push(Value::Int(float_to_int(v)));
+                    let v = pop_f!();
+                    push_i!(float_to_int(v));
                 }
-                Op::IToS => {
-                    let v = self.pop_i();
-                    self.stack.push(Value::Str(v.to_string().into()));
-                }
-                Op::FToS => {
-                    let v = self.pop_f();
-                    self.stack.push(Value::Str(format_float(v).into()));
-                }
-                Op::SToI => {
-                    let v = self.pop_s();
-                    self.stack.push(Value::Int(str_to_int(&v)));
-                }
-                Op::SToF => {
-                    let v = self.pop_s();
-                    self.stack.push(Value::Float(str_to_float(&v)));
-                }
-                Op::FromVariant(k) => {
-                    let v = self.pop();
-                    let r = match k {
-                        ValKind::Int => match v {
-                            Value::Int(_) => v,
-                            Value::Float(_) | Value::Str(_) => Value::Int(v.int()),
-                            _ => fail!(format!("cannot convert {} to Int", v.type_name())),
-                        },
-                        ValKind::Float => match v {
-                            Value::Float(_) => v,
-                            Value::Int(_) | Value::Str(_) => Value::Float(v.float()),
-                            _ => fail!(format!("cannot convert {} to Float", v.type_name())),
-                        },
-                        ValKind::Str => match v {
-                            Value::Str(_) => v,
-                            Value::Int(_) | Value::Float(_) => Value::Str(v.str()),
-                            _ => fail!(format!("cannot convert {} to String", v.type_name())),
-                        },
-                        _ => v,
-                    };
-                    self.stack.push(r);
-                }
-
                 Op::Jump(t) => pc = t as usize,
                 Op::JumpIfZero(t) => {
-                    if self.pop_i() == 0 {
+                    if pop_i!() == 0 {
                         pc = t as usize;
                     }
                 }
                 Op::JumpIfNotZero(t) => {
-                    if self.pop_i() != 0 {
+                    if pop_i!() != 0 {
                         pc = t as usize;
                     }
                 }
@@ -693,36 +919,43 @@ impl Vm {
                     }
                     self.frames[fi].pc = pc as u32;
                     let n = prog.functions[f as usize].n_params as usize;
+                    self.sp = sp;
                     self.enter(f, n);
+                    sp = self.sp;
                     fi = self.frames.len() - 1;
                     code = &prog.functions[f as usize].code;
                     pc = 0;
                     base = self.frames[fi].base as usize;
                 }
                 Op::Return => {
-                    let v = self.pop();
-                    self.stack.truncate(base);
+                    // the result moves down to where the frame began
+                    sp -= 1;
+                    let (result, frame) = (sp, base);
+                    self.release(frame, result);
                     self.frames.pop();
                     while self.handlers.last().is_some_and(|h| h.frame >= fi) {
                         self.handlers.pop();
                     }
                     if self.frames.is_empty() {
-                        return Ok(Status::Finished);
+                        leave!(Ok(Status::Finished));
                     }
                     fi -= 1;
                     let fr = &self.frames[fi];
                     code = &prog.functions[fr.func as usize].code;
                     pc = fr.pc as usize;
                     base = fr.base as usize;
-                    self.stack.push(v);
+                    if result != frame {
+                        move_to!(result, self.stack[frame]);
+                    }
+                    sp = frame + 1;
                 }
                 Op::CallNative { id, argc } => {
-                    let start = self.stack.len() - argc as usize;
+                    let start = sp - argc as usize;
                     let mut ctx = NativeCtx::default();
                     let r = if id < self.n_core {
-                        stdlib::call(id, &self.stack[start..], &mut self.core, &mut ctx)
+                        stdlib::call(id, &self.stack[start..sp], &mut self.core, &mut ctx)
                     } else {
-                        host.call(id - self.n_core, &self.stack[start..], &mut ctx)
+                        host.call(id - self.n_core, &self.stack[start..sp], &mut ctx)
                     };
                     if ctx.retry_requested {
                         // leave the arguments on the stack and run this call again
@@ -730,113 +963,281 @@ impl Vm {
                         if DEBUG {
                             self.debug.as_mut().expect("debugger").skip = Some((fi + 1, (pc - 1) as u32));
                         }
-                        return Ok(Status::Yielded);
+                        leave!(Ok(Status::Yielded));
                     }
                     let v = tri!(r);
-                    self.stack.truncate(start);
+                    self.release(start, sp);
+                    sp = start;
                     if self.native_returns[id as usize] {
-                        self.stack.push(v);
+                        push!(v);
                     }
                     if ctx.end_requested {
                         self.frames[fi].pc = pc as u32;
-                        return Ok(Status::Finished);
+                        leave!(Ok(Status::Finished));
                     }
                     if ctx.yield_requested {
                         self.frames[fi].pc = pc as u32;
-                        return Ok(Status::Yielded);
+                        leave!(Ok(Status::Yielded));
                     }
                 }
-                Op::Gosub(t) => {
-                    self.frames[fi].gosub.push(pc as u32);
-                    pc = t as usize;
-                }
-                Op::GosubReturn => match self.frames[fi].gosub.pop() {
-                    Some(r) => pc = r as usize,
-                    None => return Ok(Status::Finished),
-                },
-
-                Op::New(t) => {
-                    let r = self.heap.alloc(t, &prog.types[t as usize]);
-                    self.stack.push(Value::Obj(r));
-                }
-                Op::Delete => {
-                    let v = self.pop();
-                    if let Some(r) = self.heap.live_ref(&v) {
-                        self.heap.delete(r);
-                    }
-                }
-                Op::DeleteEach(t) => self.heap.delete_each(t),
                 Op::First(t) => {
                     let v = self.heap.first(t).map_or(Value::Null, Value::Obj);
-                    self.stack.push(v);
-                }
-                Op::Last(t) => {
-                    let v = self.heap.last(t).map_or(Value::Null, Value::Obj);
-                    self.stack.push(v);
+                    push!(v);
                 }
                 Op::After => {
-                    let r = tri!(self.pop_obj());
+                    let r = tri!(pop_obj!());
                     let v = self.heap.after(r).map_or(Value::Null, Value::Obj);
-                    self.stack.push(v);
+                    push!(v);
                 }
-                Op::Before => {
-                    let r = tri!(self.pop_obj());
-                    let v = self.heap.before(r).map_or(Value::Null, Value::Obj);
-                    self.stack.push(v);
-                }
-                Op::Insert { before } => {
-                    let t = tri!(self.pop_obj());
-                    let o = tri!(self.pop_obj());
-                    tri!(self.heap.insert(o, t, before));
-                }
-                Op::ToHandle => {
-                    let v = self.pop();
-                    let h = match self.heap.live_ref(&v) {
-                        Some(r) => self.heap.handle(r),
-                        None => 0,
-                    };
-                    self.stack.push(Value::Int(h));
-                }
-                Op::FromHandle(t) => {
-                    let h = self.pop_i();
-                    let v = self.heap.from_handle(h, t).map_or(Value::Null, Value::Obj);
-                    self.stack.push(v);
-                }
-                Op::Read(k) => {
-                    let Some(c) = prog.data.get(self.data_ptr) else { fail!("Out of data") };
-                    self.data_ptr += 1;
-                    let v = Value::from_const(c);
-                    let v = match k {
-                        ValKind::Int => Value::Int(v.int()),
-                        ValKind::Float => Value::Float(v.float()),
-                        ValKind::Str => Value::Str(v.str()),
-                        _ => v,
-                    };
-                    self.stack.push(v);
-                }
-                Op::Restore(i) => self.data_ptr = i as usize,
-                Op::TryBegin { handler } => {
-                    self.handlers.push(Handler { frame: fi, stack_len: self.stack.len(), pc: handler });
-                }
-                Op::TryEnd => {
-                    self.handlers.pop();
-                }
-                Op::Throw => {
-                    let m = self.pop_s();
-                    fail!(m.to_string());
-                }
-                Op::Stop if DEBUG => {
-                    self.frames[fi].pc = pc as u32;
-                    self.debug.as_mut().expect("debugger").stop = Some(StopReason::Stop);
-                    return Ok(Status::Paused);
-                }
-                Op::End | Op::Stop => {
-                    self.frames[fi].pc = (pc - 1) as u32;
-                    return Ok(Status::Finished);
-                }
+                // everything else is kept out of this function: the smaller
+                // the loop, the more of its variables stay in registers
+                _ => match self.exec_cold::<DEBUG>(*op, fi, pc, base, sp, prog)? {
+                    Cold::Next(p, s) => {
+                        pc = p;
+                        sp = s;
+                    }
+                    Cold::Leave(status) => return Ok(status),
+                },
             }
         }
     }
+
+    /// The instructions that are not worth a place in the main loop.
+    #[inline(never)]
+    #[allow(unused_assignments, unused_mut, unused_variables, unused_macros)]
+    fn exec_cold<const DEBUG: bool>(&mut self, op: Op, fi: usize, mut pc: usize, base: usize, mut sp: usize, prog: &Program) -> Result<Cold, String> {
+        vm_macros!($, self, sp, pc, base, fi);
+        match op {
+            Op::DimArray { array, dims } => {
+                let mut sizes = vec![0usize; dims as usize];
+                for k in (0..dims as usize).rev() {
+                    let n = pop_i!();
+                    if n < 0 {
+                        fail!(format!("negative array size {n}"));
+                    }
+                    sizes[k] = n as usize + 1;
+                }
+                let total = sizes.iter().try_fold(1usize, |a, &d| a.checked_mul(d)).filter(|&t| t <= MAX_ARRAY);
+                let Some(total) = total else { fail!("array too large") };
+                let k = prog.arrays[array as usize].elem;
+                self.arrays[array as usize] = DimArray { dims: sizes, data: ArrayData::new(k, total) };
+            }
+            Op::NewVector { len, elem } => {
+                push!(Value::Vector(Rc::new(RefCell::new(vec![Value::default_for(elem); len as usize]))));
+            }
+            Op::VectorLen => {
+                let v = pop!();
+                let n = match &v {
+                    Value::Vector(vec) => vec.borrow().len() as i32,
+                    _ => 0,
+                };
+                push_i!(n);
+            }
+            Op::LoadVector => {
+                let i = pop_i!();
+                let v = pop!();
+                let (vec, i) = tri!(Self::vector_index(&v, i));
+                let x = vec.borrow()[i].clone();
+                push!(x);
+            }
+            Op::StoreVector => {
+                let x = pop!();
+                let i = pop_i!();
+                let v = pop!();
+                let (vec, i) = tri!(Self::vector_index(&v, i));
+                vec.borrow_mut()[i] = x;
+            }
+            Op::Concat => {
+                let b = pop_s!();
+                let a = pop_s!();
+                let mut s = String::with_capacity(a.len() + b.len());
+                s.push_str(&a);
+                s.push_str(&b);
+                push!(Value::Str(s.into()));
+            }
+            Op::NotS => {
+                let v = pop_s!();
+                push_i!(v.is_empty() as i32);
+            }
+            Op::NotV => {
+                let v = pop!();
+                let z = match &v {
+                    Value::Int(i) => *i == 0,
+                    Value::Float(f) => *f == 0.0,
+                    Value::Str(s) => s.is_empty(),
+                    Value::Obj(_) => self.heap.live_ref(&v).is_none(),
+                    Value::Null => true,
+                    Value::Vector(_) => false,
+                };
+                push_i!(z as i32);
+            }
+            Op::CmpS(c) => {
+                let b = pop_s!();
+                let a = pop_s!();
+                push_i!(cmp(c, &*a, &*b) as i32);
+            }
+            Op::BinV(o) => {
+                let b = pop!();
+                let a = pop!();
+                let r = tri!(variant_bin(o, &a, &b));
+                push!(r);
+            }
+            Op::NegV => {
+                let v = pop!();
+                let r = match v {
+                    Value::Int(i) => Value::Int(i.wrapping_neg()),
+                    Value::Float(f) => Value::Float(-f),
+                    Value::Str(s) => Value::Float(-str_to_float(&s)),
+                    _ => fail!("cannot negate a non-numeric value"),
+                };
+                push!(r);
+            }
+            Op::CmpV(c) => {
+                let b = pop!();
+                let a = pop!();
+                let r = tri!(variant_cmp(c, &a, &b, &self.heap));
+                push_i!(r as i32);
+            }
+            Op::IToS => {
+                let v = pop_i!();
+                push!(Value::Str(v.to_string().into()));
+            }
+            Op::FToS => {
+                let v = pop_f!();
+                push!(Value::Str(format_float(v).into()));
+            }
+            Op::SToI => {
+                let v = pop_s!();
+                push_i!(str_to_int(&v));
+            }
+            Op::SToF => {
+                let v = pop_s!();
+                push_f!(str_to_float(&v));
+            }
+            Op::FromVariant(k) => {
+                let v = pop!();
+                let r = match k {
+                    ValKind::Int => match v {
+                        Value::Int(_) => v,
+                        Value::Float(_) | Value::Str(_) => Value::Int(v.int()),
+                        _ => fail!(format!("cannot convert {} to Int", v.type_name())),
+                    },
+                    ValKind::Float => match v {
+                        Value::Float(_) => v,
+                        Value::Int(_) | Value::Str(_) => Value::Float(v.float()),
+                        _ => fail!(format!("cannot convert {} to Float", v.type_name())),
+                    },
+                    ValKind::Str => match v {
+                        Value::Str(_) => v,
+                        Value::Int(_) | Value::Float(_) => Value::Str(v.str()),
+                        _ => fail!(format!("cannot convert {} to String", v.type_name())),
+                    },
+                    _ => v,
+                };
+                push!(r);
+            }
+            Op::Gosub(t) => {
+                self.frames[fi].gosub.push(GosubCall { ret: pc as u32, handlers: self.handlers.len() });
+                pc = t as usize;
+            }
+            Op::GosubReturn => match self.frames[fi].gosub.pop() {
+                Some(g) => {
+                    self.handlers.truncate(g.handlers);
+                    pc = g.ret as usize;
+                }
+                None => leave!(Ok(Cold::Leave(Status::Finished))),
+            },
+            Op::New(t) => {
+                let r = self.heap.alloc(t, &prog.types[t as usize]);
+                push!(Value::Obj(r));
+            }
+            Op::Delete => {
+                let v = pop!();
+                if let Some(r) = self.heap.live_ref(&v) {
+                    self.heap.delete(r);
+                }
+            }
+            Op::DeleteEach(t) => self.heap.delete_each(t),
+            Op::Last(t) => {
+                let v = self.heap.last(t).map_or(Value::Null, Value::Obj);
+                push!(v);
+            }
+            Op::Before => {
+                let r = tri!(pop_obj!());
+                let v = self.heap.before(r).map_or(Value::Null, Value::Obj);
+                push!(v);
+            }
+            Op::Insert { before } => {
+                let t = tri!(pop_obj!());
+                let o = tri!(pop_obj!());
+                tri!(self.heap.insert(o, t, before));
+            }
+            Op::ToHandle => {
+                let v = pop!();
+                let h = match self.heap.live_ref(&v) {
+                    Some(r) => self.heap.handle(r),
+                    None => 0,
+                };
+                push_i!(h);
+            }
+            Op::FromHandle(t) => {
+                let h = pop_i!();
+                let v = self.heap.from_handle(h, t).map_or(Value::Null, Value::Obj);
+                push!(v);
+            }
+            Op::Read(k) => {
+                let Some(c) = prog.data.get(self.data_ptr) else { fail!("Out of data") };
+                self.data_ptr += 1;
+                let v = Value::from_const(c);
+                let v = match k {
+                    ValKind::Int => Value::Int(v.int()),
+                    ValKind::Float => Value::Float(v.float()),
+                    ValKind::Str => Value::Str(v.str()),
+                    _ => v,
+                };
+                push!(v);
+            }
+            Op::Restore(i) => self.data_ptr = i as usize,
+            Op::TryBegin { handler } => {
+                self.handlers.push(Handler {
+                    frame: fi,
+                    stack_len: sp,
+                    pc: handler,
+                    gosubs: self.frames[fi].gosub.len(),
+                });
+            }
+            Op::TryEnd => {
+                self.handlers.pop();
+            }
+            Op::TryLeave(n) => {
+                self.handlers.truncate(self.handlers.len().saturating_sub(n as usize));
+            }
+            Op::Throw => {
+                let m = pop_s!();
+                fail!(m.to_string());
+            }
+            Op::Stop if DEBUG => {
+                self.frames[fi].pc = pc as u32;
+                self.debug.as_mut().expect("debugger").stop = Some(StopReason::Stop);
+                leave!(Ok(Cold::Leave(Status::Paused)));
+            }
+            Op::End | Op::Stop => {
+                self.frames[fi].pc = (pc - 1) as u32;
+                leave!(Ok(Cold::Leave(Status::Finished)));
+            }
+            _ => unreachable!("instruction handled by the main loop"),
+        }
+        Ok(Cold::Next(pc, sp))
+    }
+}
+
+/// Integer comparison without a branch per kind of comparison: bit 0, 1 or 2
+/// of the mask says whether it holds when `a` is greater, equal or less.
+#[inline(always)]
+fn cmp_i(c: Cmp, a: i32, b: i32) -> bool {
+    const MASK: [u8; 6] = [0b010, 0b101, 0b100, 0b001, 0b110, 0b011];
+    let state = ((a < b) as u8) << 1 | (a == b) as u8;
+    MASK[c as usize] >> state & 1 != 0
 }
 
 #[inline]

@@ -581,6 +581,52 @@ agent = CreateAgent(guard, navmesh)
 AgentMoveTo agent, 10, 0, 10
 AgentStop agent                      ; stand still where it is
 
+=== AgentOnLink
+; Play a jump animation while an agent crosses a link
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+AgentMoveTo agent, 10, 0, 10
+UpdateWorld
+If AgentOnLink(agent) Then Print "In the air"
+
+=== AgentCrowd
+; Guards that walk around each other instead of bumping
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+guard = CreateCube()
+agent = CreateAgent(guard, navmesh)
+AgentCrowd agent                     ; looks 2 seconds ahead
+AgentCrowd agent, 1, 4               ; looks further, for slow walkers
+AgentCrowd agent, 0                  ; back to being pushed apart
+
+=== CreateNavLink
+; A jump across a gap, 3 units high at the top
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+jump = CreateNavLink(navmesh, -6, 0, 0, 6, 0, 0, 1, 1, 3)
+path = FindPath(navmesh, -10, 0, 0, 10, 0, 0)
+
+=== NavLinkEnable
+; A door that agents stop using while it is shut
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+door = CreateNavLink(navmesh, -2, 0, 0, 2, 0, 0)
+NavLinkEnable navmesh, door, 0
+NavLinkEnable navmesh, door          ; open again
+
+=== FreeNavLink
+floor = CreatePlane()
+EntityPickMode floor, 2
+navmesh = GenerateNavMesh(-20, -20, 40, 40)
+ladder = CreateNavLink(navmesh, -2, 0, 0, 2, 0, 0)
+FreeNavLink navmesh, ladder
+
 === AgentArrived
 floor = CreatePlane()
 EntityPickMode floor, 2

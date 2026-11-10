@@ -620,6 +620,7 @@ impl App {
         let mut remove_watch = None;
         let mut add = None;
         let mut goto_bp = None;
+        let mut edit_bp = None;
         let mut open = std::mem::take(&mut self.debug.open);
         ui.columns(3, |cols| {
             // call stack
@@ -682,7 +683,13 @@ impl App {
                     for &l in &d.breakpoints {
                         let (r, resp) = row(ui, th, ROW, false);
                         ui.painter().rect_filled(Rect::from_center_size(Pos2::new(r.left() + 12.0, r.center().y), Vec2::splat(9.0)), 0.0, th.error);
-                        ui.painter().text(Pos2::new(r.left() + 24.0, r.center().y), Align2::LEFT_CENTER, format!("{}:{}", d.title(), l + 1), prop(12.5), th.text);
+                        let place = ui.painter().text(Pos2::new(r.left() + 24.0, r.center().y), Align2::LEFT_CENTER, format!("{}:{}", d.title(), l + 1), prop(12.5), th.text);
+                        if let Some(rule) = d.break_rules.get(&l) {
+                            ui.painter().text(Pos2::new(place.right() + 8.0, r.center().y), Align2::LEFT_CENTER, rule.describe(), prop(12.5), th.faint);
+                        }
+                        if resp.secondary_clicked() {
+                            edit_bp = Some((d.id, l));
+                        }
                         if resp.clicked() {
                             goto_bp = Some((d.id, l));
                         }
@@ -702,6 +709,9 @@ impl App {
         }
         if let Some(e) = add {
             self.add_watch(e.trim().to_string());
+        }
+        if let Some((id, l)) = edit_bp {
+            self.edit_breakpoint(id, l);
         }
         if let Some((id, l)) = goto_bp {
             self.goto(id, Pos::new(l, 0), None);

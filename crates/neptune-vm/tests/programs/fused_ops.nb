@@ -1,0 +1,51 @@
+; every integer comparison, against a variable and against a constant
+For a = -1 To 1
+    b = 0
+    s$ = ""
+    If a = b Then s = s + "=" Else s = s + "."
+    If a <> b Then s = s + "#" Else s = s + "."
+    If a < b Then s = s + "<" Else s = s + "."
+    If a > b Then s = s + ">" Else s = s + "."
+    If a <= b Then s = s + "L" Else s = s + "."
+    If a >= b Then s = s + "G" Else s = s + "."
+    If a = 0 Then s = s + "=" Else s = s + "."
+    If a <> 0 Then s = s + "#" Else s = s + "."
+    If a < 0 Then s = s + "<" Else s = s + "."
+    If a > 0 Then s = s + ">" Else s = s + "."
+    If a <= 0 Then s = s + "L" Else s = s + "."
+    If a >= 0 Then s = s + "G" Else s = s + "."
+    If a + 1 > b Then s = s + "x" Else s = s + "."
+    If a * 2 <= 1 Then s = s + "y" Else s = s + "."
+    Print s
+Next
+; loops in both directions and with steps
+n = 0
+For i = 10 To 1 Step -3 : n = n * 10 + i : Next
+Print n
+n = 0
+For i = 1 To 20 Step 7 : n = n + i : Next
+Print n
+i = 5
+While i > 0 : i = i - 2 : Wend
+Print i
+Repeat : i = i + 3 : Until i >= 7
+Print i
+; arithmetic with constants and variables
+x = 17 : y = 5
+Print x + y : Print x - y : Print x * y : Print x / y : Print x Mod y
+Print x + 3 : Print x - 3 : Print x * 3 : Print x / 3 : Print x Mod 3
+Print x / -1 : Print x Mod -1 : Print -x / 4 : Print -x Mod 4
+m = -2147483648
+Print m - 1 : Print m / -1 : Print m * -1 : Print m - -2147483648
+f# = 7.5 : g# = 2
+Print f + g : Print f - g : Print f * g : Print f / g
+Print f + 0.25 : Print f - 0.25 : Print f * 0.5 : Print f / 0.5 : Print f / 0
+; float comparisons, with a value that is not a number
+nan# = Sqr(-1)
+If nan < 1 Then Print "lt" Else Print "not lt"
+If nan >= 1 Then Print "ge" Else Print "not ge"
+If nan = nan Then Print "eq" Else Print "not eq"
+If nan <> nan Then Print "ne" Else Print "not ne"
+k = 0
+While f > 1 : f = f / 2 : k = k + 1 : Wend
+Print k

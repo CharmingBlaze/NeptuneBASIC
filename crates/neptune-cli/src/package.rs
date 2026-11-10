@@ -185,15 +185,15 @@ fn add_model_files(rel: &Path, root: &Path, found: &mut BTreeSet<PathBuf>) {
     }
 }
 
-/// Adds the files a Tiled map or a sprite sheet needs: tilesets and images.
+/// Adds the files a level editor's map or a sprite sheet needs: tilesets and images.
 fn add_2d_files(rel: &Path, root: &Path, found: &mut BTreeSet<PathBuf>) {
     let is = |ext: &str| rel.extension().is_some_and(|x| x.eq_ignore_ascii_case(ext));
-    if !is("tmx") && !is("tmj") && !is("json") {
+    if !["tmx", "tmj", "json", "xml", "ldtk", "world", "ase", "aseprite"].iter().any(|e| is(e)) {
         return;
     }
     let path = rel.to_string_lossy();
     let read = |p: &Path| std::fs::read_to_string(root.join(p)).map_err(|e| e.to_string());
-    let mut files = neptune_runtime::tiled::dependencies(&path, &read).unwrap_or_default();
+    let mut files = neptune_runtime::tiled::dependencies(&path, &neptune_runtime::tiled::DiskFiles { root: root.to_path_buf() }).unwrap_or_default();
     if let Some(sheet) = read(rel).ok().and_then(|text| neptune_runtime::spritesheet::parse_sheet(&text).ok()) {
         files.push(neptune_runtime::spritesheet::image_path(&path, &sheet));
     }

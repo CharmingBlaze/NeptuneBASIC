@@ -64,6 +64,7 @@ a time, running it after each step.
 | | |
 |---|---|
 | [2D levels and sprites from other tools](TOOLS2D.md) | Maps from Tiled with layers and objects, and animated sprite sheets from Aseprite: a guide of its own |
+| [Character controllers](CHARACTERS.md) | Characters that walk, jump, climb stairs and ride platforms, in 3D and 2D: a guide of its own |
 | [Making levels in Blender](BLENDER.md) | Build levels in Blender and load their shapes, lights, cameras, solid objects and custom properties: a guide of its own |
 | [The shader manual](SHADERS.md) | Materials, shaders, screen effects and shadows: a manual of its own |
 | [Command reference](COMMANDS.md) | Every command, with what it does and an example |

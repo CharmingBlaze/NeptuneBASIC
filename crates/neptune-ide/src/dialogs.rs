@@ -6,6 +6,7 @@ use eframe::egui::{self, Align, Align2, Color32, FontId, Id, Key, Layout, Margin
 
 use crate::actions::{self, Action};
 use crate::app::{App, Palette};
+use crate::document::{valid_hit_count, BreakRule};
 use crate::procs;
 use crate::theme::{Theme, THEMES};
 use crate::ui_util::{self, fuzzy, paint_icon, primary_button, row, Icon};
@@ -83,6 +84,7 @@ pub enum Dialog {
     CloseUnsaved { pane: usize, index: usize, id: u64 },
     Reload(u64),
     Prompt { title: String, value: String, kind: PromptKind, focus: bool },
+    Breakpoint { id: u64, line: usize, condition: String, hits: String, focus: bool },
     Delete(PathBuf),
     Build { out: String, console: bool },
     Settings,
@@ -284,6 +286,7 @@ impl App {
             Dialog::CloseUnsaved { pane, index, id } => self.close_unsaved(ctx, *pane, *index, *id, esc),
             Dialog::Reload(id) => self.reload_prompt(ctx, *id, esc),
             Dialog::Prompt { title, value, kind, focus } => self.prompt(ctx, title, value, kind, focus, esc),
+            Dialog::Breakpoint { id, line, condition, hits, focus } => self.breakpoint_dialog(ctx, *id, *line, condition, hits, focus, esc),
             Dialog::Delete(p) => self.delete_prompt(ctx, p, esc),
             Dialog::Build { out, console } => self.build_dialog(ctx, out, console, esc),
             Dialog::Settings => self.settings_dialog(ctx, esc),
@@ -500,6 +503,60 @@ impl App {
             Some(false) => false,
             None => true,
         }
+    }
+
+    /// Opens the condition dialog for a line, with what it has now.
+    pub fn edit_breakpoint(&mut self, id: u64, line: usize) {
+        let rule = self.docs.iter().find(|d| d.id == id).and_then(|d| d.break_rules.get(&line).cloned()).unwrap_or_default();
+        self.dialog = Some(Dialog::Breakpoint { id, line, condition: rule.condition, hits: rule.hits, focus: true });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn breakpoint_dialog(&mut self, ctx: &egui::Context, id: u64, line: usize, condition: &mut String, hits: &mut String, focus: &mut bool, esc: bool) -> bool {
+        let th = self.th;
+        let exists = self.docs.iter().any(|d| d.id == id && d.breakpoints.contains(&line));
+        let good_hits = valid_hit_count(hits);
+        let (mut ok, mut cancel, mut remove) = (false, esc, false);
+        window(ctx, th, &format!("Breakpoint on line {}", line + 1), Vec2::new(460.0, 190.0), |ui| {
+            let enter = |ui: &egui::Ui, r: &egui::Response| r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            ui.label("Stop only when this is true");
+            let c = ui.add(TextEdit::singleline(condition).desired_width(f32::INFINITY).hint_text("lives < 2 And player\\x > 10"));
+            if *focus {
+                c.request_focus();
+                *focus = false;
+            }
+            ui.add_space(6.0);
+            ui.label("Stop only on these hits");
+            let h = ui.add(TextEdit::singleline(hits).desired_width(f32::INFINITY).hint_text("5, >=5, <5 or %5 (every fifth)"));
+            ok = enter(ui, &c) || enter(ui, &h);
+            if !good_hits {
+                ui.colored_label(th.error, "Use a number, or a number after > >= < <= = or %");
+            }
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if primary_button(ui, th, "OK").clicked() {
+                    ok = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+                if exists && ui.button("Remove Breakpoint").clicked() {
+                    remove = true;
+                }
+            });
+        });
+        let ok = ok && good_hits;
+        if ok || remove {
+            if let Some(d) = self.docs.iter_mut().find(|d| d.id == id) {
+                if remove {
+                    d.remove_breakpoint(line);
+                } else {
+                    d.set_breakpoint(line, BreakRule { condition: condition.trim().to_string(), hits: hits.trim().to_string() });
+                }
+            }
+            self.send_breakpoints();
+        }
+        !(ok || remove || cancel)
     }
 
     fn prompt(&mut self, ctx: &egui::Context, title: &str, value: &mut String, kind: &PromptKind, focus: &mut bool, esc: bool) -> bool {

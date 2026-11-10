@@ -42,6 +42,19 @@ impl SourceLoader for NoLoader {
     }
 }
 
+/// How much nesting one program may use, in units of roughly equal stack use
+/// across the compiler's passes. Beyond this the parser reports an error, so
+/// [`crate::compile`]'s stack can never run out.
+const MAX_DEPTH: u32 = 4000;
+/// A statement, or a bracketed or argument expression (about 200 levels).
+const NEST_COST: u32 = 16;
+/// One `ElseIf` arm, nested in the tree but not in the source (about 1000 arms).
+const ELSEIF_COST: u32 = 4;
+/// A prefix operator.
+const UNARY_COST: u32 = 4;
+/// One link of a chain: `a + b + c`, `a\b\c` or an interpolation hole.
+const LINK_COST: u32 = 1;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Scope {
     Prog,
@@ -56,6 +69,10 @@ struct Shared<'a> {
     sources: &'a mut SourceMap,
     loader: &'a mut dyn SourceLoader,
     diags: &'a mut Diagnostics,
+    /// Nesting used so far, see [`MAX_DEPTH`].
+    depth: u32,
+    /// Index of the "too deep" error, once reported.
+    too_deep: Option<usize>,
 }
 
 struct Parser<'s, 'a> {
@@ -83,6 +100,8 @@ pub fn parse_program(sources: &mut SourceMap, file: FileId, loader: &mut dyn Sou
         sources,
         loader,
         diags,
+        depth: 0,
+        too_deep: None,
     };
     let mut main = Vec::new();
     {
@@ -91,6 +110,10 @@ pub fn parse_program(sources: &mut SourceMap, file: FileId, loader: &mut dyn Sou
         if !matches!(p.peek(), Tok::Eof) {
             p.unexpected("end of file");
         }
+    }
+    // Everything after "too deep" is noise from the blocks left unfinished.
+    if let Some(n) = sh.too_deep {
+        sh.diags.items.truncate(n + 1);
     }
     sh.program.main = main;
     sh.program
@@ -145,6 +168,33 @@ impl<'s, 'a> Parser<'s, 'a> {
     }
     fn error(&mut self, span: Span, msg: impl Into<String>) {
         self.sh.diags.error(span, msg);
+    }
+
+    /// Uses up nesting budget, failing once when there is none left.
+    fn spend(&mut self, cost: u32) -> PResult<()> {
+        self.sh.depth += cost;
+        if self.sh.depth <= MAX_DEPTH {
+            return Ok(());
+        }
+        if self.sh.too_deep.is_none() {
+            self.sh.too_deep = Some(self.sh.diags.items.len());
+            let sp = self.span();
+            self.error(sp, "code is nested too deeply, or this statement is too long");
+        }
+        Err(Bail)
+    }
+
+    /// Runs `f` one nesting level down.
+    fn nested<T>(&mut self, cost: u32, f: impl FnOnce(&mut Self) -> PResult<T>) -> PResult<T> {
+        let r = self.spend(cost).and_then(|()| f(self));
+        self.sh.depth -= cost;
+        r
+    }
+
+    /// Builds `lhs op rhs`, one more link in a chain of operators.
+    fn link(&mut self, op: BinOp, lhs: Expr, rhs: Expr) -> PResult<Expr> {
+        self.spend(LINK_COST)?;
+        Ok(bin(op, lhs, rhs))
     }
 
     fn unexpected(&mut self, expected: &str) -> Bail {
@@ -208,12 +258,16 @@ impl<'s, 'a> Parser<'s, 'a> {
                 self.bump();
             }
             let start = self.span();
-            match self.stmt(out, scope) {
+            // a finished statement's operator chains are no longer on the stack
+            let depth = self.sh.depth;
+            let result = self.nested(NEST_COST, |p| p.stmt(out, scope));
+            self.sh.depth = depth;
+            match result {
                 Ok(true) => {}
                 Ok(false) => return,
                 Err(Bail) => {
                     self.recover();
-                    if scope == Scope::Line {
+                    if scope == Scope::Line || matches!(self.peek(), Tok::Eof) {
                         return;
                     }
                 }
@@ -573,7 +627,8 @@ impl<'s, 'a> Parser<'s, 'a> {
         if !self.sh.included.insert(name.clone()) {
             return Ok(());
         }
-        let file = self.sh.sources.add(name, text.clone());
+        let file = self.sh.sources.add(name, text);
+        let text = self.sh.sources.file(file).text.clone();
         let toks = lex(&text, file, 0, self.sh.diags);
         let mut sub = Parser { toks, pos: 0, file, sh: &mut *self.sh, in_method: false };
         sub.stmt_seq(out, scope);
@@ -661,7 +716,9 @@ impl<'s, 'a> Parser<'s, 'a> {
     }
 
     fn if_stmt(&mut self) -> PResult<StmtKind> {
+        let depth = self.sh.depth;
         let cond = self.expr()?;
+        self.sh.depth = depth;
         self.eat_kw(Kw::Then);
         let block = is_term(self.peek());
         let scope = if block { Scope::Block } else { Scope::Line };
@@ -670,7 +727,7 @@ impl<'s, 'a> Parser<'s, 'a> {
         let els = if self.is_kw(Kw::ElseIf) {
             let s = self.span();
             self.bump();
-            let inner = self.if_stmt()?;
+            let inner = self.nested(ELSEIF_COST, Self::if_stmt)?;
             Some(vec![Stmt { kind: inner, span: s.to(self.prev_span()) }])
         } else if self.eat_kw(Kw::Else) {
             let mut e = Vec::new();
@@ -864,6 +921,7 @@ impl<'s, 'a> Parser<'s, 'a> {
     fn postfix(&mut self, mut e: Expr) -> PResult<Expr> {
         loop {
             if self.eat_op("\\") {
+                self.spend(LINK_COST)?;
                 let field = self.ident()?;
                 if self.is_op("(") && !self.toks[self.pos].space_before {
                     self.bump();
@@ -877,6 +935,7 @@ impl<'s, 'a> Parser<'s, 'a> {
                     e = Expr { kind: ExprKind::Var(Box::new(Var::Field { target: e, field, tag })), span };
                 }
             } else if self.is_op("[") && !self.toks[self.pos].space_before {
+                self.spend(LINK_COST)?;
                 self.bump();
                 let index = self.expr()?;
                 self.expect_op("]")?;
@@ -906,6 +965,10 @@ impl<'s, 'a> Parser<'s, 'a> {
     }
 
     pub(crate) fn expr(&mut self) -> PResult<Expr> {
+        self.nested(NEST_COST, Self::expr0)
+    }
+
+    fn expr0(&mut self) -> PResult<Expr> {
         let mut lhs = self.not_expr()?;
         loop {
             let op = match self.peek() {
@@ -915,7 +978,7 @@ impl<'s, 'a> Parser<'s, 'a> {
             };
             self.bump();
             let rhs = self.not_expr()?;
-            lhs = bin(op, lhs, rhs);
+            lhs = self.link(op, lhs, rhs)?;
         }
     }
 
@@ -949,7 +1012,7 @@ impl<'s, 'a> Parser<'s, 'a> {
             } else {
                 self.expr2()?
             };
-            lhs = bin(op, lhs, rhs);
+            lhs = self.link(op, lhs, rhs)?;
         }
     }
 
@@ -967,7 +1030,7 @@ impl<'s, 'a> Parser<'s, 'a> {
             };
             self.bump();
             let rhs = self.expr3()?;
-            lhs = bin(op, lhs, rhs);
+            lhs = self.link(op, lhs, rhs)?;
         }
     }
 
@@ -981,7 +1044,7 @@ impl<'s, 'a> Parser<'s, 'a> {
             };
             self.bump();
             let rhs = self.expr4()?;
-            lhs = bin(op, lhs, rhs);
+            lhs = self.link(op, lhs, rhs)?;
         }
     }
 
@@ -996,7 +1059,7 @@ impl<'s, 'a> Parser<'s, 'a> {
             };
             self.bump();
             let rhs = self.expr5()?;
-            lhs = bin(op, lhs, rhs);
+            lhs = self.link(op, lhs, rhs)?;
         }
     }
 
@@ -1011,7 +1074,7 @@ impl<'s, 'a> Parser<'s, 'a> {
             };
             self.bump();
             let rhs = self.expr6()?;
-            lhs = bin(op, lhs, rhs);
+            lhs = self.link(op, lhs, rhs)?;
         }
     }
 
@@ -1019,12 +1082,16 @@ impl<'s, 'a> Parser<'s, 'a> {
         let mut lhs = self.unary()?;
         while self.eat_op("^") {
             let rhs = self.unary()?;
-            lhs = bin(BinOp::Pow, lhs, rhs);
+            lhs = self.link(BinOp::Pow, lhs, rhs)?;
         }
         Ok(lhs)
     }
 
     fn unary(&mut self) -> PResult<Expr> {
+        self.nested(UNARY_COST, Self::unary0)
+    }
+
+    fn unary0(&mut self) -> PResult<Expr> {
         let start = self.span();
         let wrap = |p: &Self, kind: ExprKind| Expr { kind, span: start.to(p.prev_span()) };
         match self.peek().clone() {
@@ -1197,6 +1264,7 @@ impl<'s, 'a> Parser<'s, 'a> {
                     if !lit.is_empty() {
                         parts.push(InterpPart::Lit(std::mem::take(&mut lit)));
                     }
+                    self.spend(LINK_COST)?;
                     let inner = &raw[i + 1..close];
                     let toks = lex(inner, self.file, content_start + i + 1, self.sh.diags);
                     let mut sub = Parser { toks, pos: 0, file: self.file, sh: &mut *self.sh, in_method: self.in_method };
@@ -1270,6 +1338,22 @@ mod tests {
         let mut d = Diagnostics::default();
         let p = parse_program(&mut sm, f, &mut NoLoader, &mut d);
         (p, d)
+    }
+
+    #[test]
+    fn included_file_may_start_with_byte_order_mark() {
+        struct Bom;
+        impl SourceLoader for Bom {
+            fn load(&mut self, path: &str, _: &str) -> Result<(String, String), String> {
+                Ok((path.to_string(), "\u{feff}x = 1\n".to_string()))
+            }
+        }
+        let mut sm = SourceMap::default();
+        let f = sm.add("test.nb", "Include \"a.nb\"\n");
+        let mut d = Diagnostics::default();
+        let p = parse_program(&mut sm, f, &mut Bom, &mut d);
+        assert!(!d.has_errors(), "{}", d.render(&sm));
+        assert_eq!(p.main.len(), 1);
     }
 
     #[test]

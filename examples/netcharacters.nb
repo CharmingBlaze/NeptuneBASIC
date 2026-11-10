@@ -1,0 +1,151 @@
+; NETWORK CHARACTERS - movement the host checks, without feeling any lag.
+;
+; Try it with two copies:
+;     neptune run --players 2 examples/netcharacters.nb
+;
+; W A S D run, Space jumps, Q shoves everyone nearby, F fires the way you are
+; facing. F2 pretends the network is bad: your own character still answers at
+; once, and a shot still hits what you saw it hit.
+;
+; You write the same CharMove, CharJump and UpdateChar as a single-player game.
+; The host re-runs your buttons to check them, and quietly corrects you if the
+; two ever disagree.
+
+Graphics3D 960, 540, 32, 2
+AppTitle "Network Characters"
+SeedRnd MilliSecs()
+
+If NetPlay("Network Characters") = 0 Then RuntimeError NetError()
+
+camera = CreateCamera()
+PositionEntity camera, 0, 16, -16
+RotateEntity camera, 45, 0, 0
+CameraClsColor camera, 30, 34, 50
+sun = CreateLight(1)
+RotateEntity sun, 60, 30, 0
+AmbientLight 90, 90, 100
+
+; Controllers only collide with things that have physics.
+ground = CreateCube()
+ScaleEntity ground, 14, 0.5, 14
+PositionEntity ground, 0, -0.5, 0
+EntityColor ground, 70, 90, 80
+EntityPhysics ground, 2
+
+wall = CreateCube()
+ScaleEntity wall, 0.5, 1.5, 6
+PositionEntity wall, 4, 1.5, 0
+EntityColor wall, 150, 110, 80
+EntityPhysics wall, 2
+
+ramp = CreateCube()
+ScaleEntity ramp, 3, 0.2, 2
+PositionEntity ramp, -6, 0.8, 4
+RotateEntity ramp, 0, 0, 20
+EntityColor ramp, 120, 130, 160
+EntityPhysics ramp, 2
+
+; Give the physics world a frame to see the level.
+RenderWorld
+
+; The controller on the template is the pattern for every player's character,
+; on every computer, so they all agree how characters move.
+hero = CreateCube()
+ScaleEntity hero, 0.4, 0.9, 0.4
+PositionMesh hero, 0, 1, 0
+EntityPickMode hero, 2
+pattern = CreateCharController(hero, 0.4, 1.8)
+CharSet pattern, "speed", 7
+CharSet pattern, "face_rate", 720
+NetTemplate "hero", hero
+
+Type Hero
+    Field entity
+End Type
+
+Global me = AddHero(NetSpawn("hero", Rnd(-3, 3), 1, Rnd(-8, -3)))
+Global player = NetCharacter(me)
+; shots start at chest height (a child is scaled with the hero)
+Global gun = CreatePivot(me)
+PositionEntity gun, 0, 1, 0
+Global bad_network = False
+
+While Not KeyHit(KEY_ESCAPE)
+    ; exactly as in a single-player game
+    CharMove player, KeyDown(KEY_D) - KeyDown(KEY_A), 0, KeyDown(KEY_W) - KeyDown(KEY_S)
+    If KeyHit(KEY_SPACE) Then CharJump player
+    UpdateChar player
+
+    ; Shoving is decided by the host, and arrives as a correction.
+    If KeyHit(KEY_Q) Then NetSend "shove", "", NetHostPlayer()
+    If KeyHit(KEY_F2) Then ToggleBadNetwork
+
+    ; The host judges the shot against what you could see when you fired.
+    If KeyHit(KEY_F) Then NetFire "shot", gun, 40
+
+    While NetRecv()
+        Select NetEvent()
+            Case "spawn" : AddHero NetEntity()
+            Case "despawn" : ForgetHero NetEntity()
+            Case "lost" : RuntimeError "The host has gone."
+            Case "shove" : Shove
+            Case "shot" : JudgeShot
+        End Select
+    Wend
+
+    UpdateWorld
+    RenderWorld
+    Color 255, 255, 255
+    Text 12, 8, "Players: " + NetCountPlayers() + "   ping " + NetPing() + " ms   host corrections " + NetCorrections(player)
+    If bad_network Then Text 12, 26, "Pretending the network is bad (F2)"
+    Flip
+Wend
+End
+
+Function AddHero(entity)
+    h.Hero = New Hero
+    h\entity = entity
+    id = NetOwner(entity)
+    EntityColor entity, 90 + (id * 83) Mod 165, 90 + (id * 151) Mod 165, 90 + (id * 197) Mod 165
+    Return entity
+End Function
+
+Function ForgetHero(entity)
+    For h.Hero = Each Hero
+        If h\entity = entity Then Delete h
+    Next
+End Function
+
+; Only the host gets "shove" events, because only the host is sent them.
+Function Shove()
+    pusher = 0
+    For h.Hero = Each Hero
+        If NetOwner(h\entity) = NetFrom() Then pusher = h\entity
+    Next
+    If pusher = 0 Then Return
+    For h.Hero = Each Hero
+        distance# = EntityDistance(pusher, h\entity)
+        If h\entity <> pusher And distance < 5
+            x# = (EntityX(h\entity) - EntityX(pusher)) / distance
+            z# = (EntityZ(h\entity) - EntityZ(pusher)) / distance
+            CharImpulse NetCharacter(h\entity), x * 14, 5, z * 14
+        EndIf
+    Next
+End Function
+
+; Only the host gets "shot" events. NetHit picks like LinePick, with everyone
+; back where the shooter saw them.
+Function JudgeShot()
+    target = NetHit(0.1)
+    If target = 0 Then Return
+    If NetCharacter(target) <> 0 Then CharImpulse NetCharacter(target), PickedNX() * -12, 5, PickedNZ() * -12
+End Function
+
+Function ToggleBadNetwork()
+    bad_network = Not bad_network
+    If bad_network
+        NetSimulate 150, 10
+    Else
+        NetSimulate 0, 0
+    EndIf
+End Function

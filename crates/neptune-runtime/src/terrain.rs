@@ -368,6 +368,7 @@ impl Host3D<'_> {
         let id = self.add_entity(crate::mesh::empty_mesh_node(), Kind::Mesh, parent)?;
         let surface = self.create_surface(id, 0)?;
         self.ent_mut(id)?.terrain = Some(TerrainState::new(size as usize, surface));
+        self.world.any_terrain = true;
         self.rebuild_terrains()?;
         Ok(id)
     }
@@ -407,6 +408,9 @@ impl Host3D<'_> {
 
     /// Rebuilds terrains whose heights or scale changed (before rendering).
     pub fn rebuild_terrains(&mut self) -> Result<(), String> {
+        if !self.world.any_terrain {
+            return Ok(());
+        }
         let stale: Vec<i32> = self
             .entities()
             .filter(|(_, e)| e.terrain.as_ref().is_some_and(|t| t.built_for != Some(e.xf.scale)))

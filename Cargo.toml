@@ -13,6 +13,8 @@ neptune-lang = { path = "crates/neptune-lang" }
 neptune-vm = { path = "crates/neptune-vm" }
 neptune-runtime = { path = "crates/neptune-runtime" }
 fyrox = "1.0.1"
+iroh = "1.4"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 
 [profile.dev.package."*"]
 opt-level = 3

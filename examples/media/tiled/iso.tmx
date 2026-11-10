@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="isometric" renderorder="right-down" width="10" height="10" tilewidth="64" tileheight="32" infinite="0" backgroundcolor="#20242c">
+ <tileset firstgid="1" name="blocks" tilewidth="64" tileheight="64" tilecount="2" columns="2">
+  <image source="iso.png" width="128" height="64"/>
+ </tileset>
+ <layer id="1" name="Ground" width="10" height="10">
+  <data encoding="base64" compression="zlib">eNpjZGBgYBzFgwYDAFB4AGU=</data>
+ </layer>
+ <layer id="2" name="Blocks" width="10" height="10">
+  <data encoding="base64" compression="zlib">eNpjYKANYIJiYtTREjBR2b20BgAMAAAN</data>
+ </layer>
+</map>

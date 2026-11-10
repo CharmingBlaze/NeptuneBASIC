@@ -34,6 +34,8 @@ pub struct SourceFile {
 impl SourceFile {
     pub fn new(name: impl Into<String>, text: impl Into<String>) -> Self {
         let text = text.into();
+        // Some Windows editors start UTF-8 files with a byte order mark.
+        let text = text.strip_prefix('\u{feff}').map(str::to_string).unwrap_or(text);
         let mut line_starts = vec![0];
         for (i, b) in text.bytes().enumerate() {
             if b == b'\n' {

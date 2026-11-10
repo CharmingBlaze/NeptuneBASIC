@@ -1,0 +1,360 @@
+; Examples for character controllers. Format: see tools/check_doc_examples.py.
+
+=== CreateCharController
+; a hero whose entity origin is at its feet, walking on a static floor
+Graphics3D 800, 600
+floor = CreateCube()
+ScaleEntity floor, 20, 0.5, 20
+PositionEntity floor, 0, -0.5, 0
+EntityPhysics floor, 2                ; body_type 2 = static: solid, never moves
+hero = CreateCube()
+PositionEntity hero, 0, 1, 0
+player = CreateCharController(hero, 0.4, 1.8)   ; radius 0.4, height 1.8
+cam = CreateCamera()
+PositionEntity cam, 0, 3, -8
+While Not KeyHit(KEY_ESCAPE)
+    CharMove player, KeyDown(KEY_D) - KeyDown(KEY_A), 0, KeyDown(KEY_W) - KeyDown(KEY_S)
+    UpdateChar player
+    UpdateWorld
+    RenderWorld
+    Flip
+Wend
+
+=== CreateCharController2D
+; a platformer hero: a 26 by 44 box with its feet at 100, 400, falling onto the floor
+Graphics 960, 540
+floor = CreateBody2D(1, 480, 520)     ; body type 1 = static
+Body2DBox floor, 960, 40
+player = CreateCharController2D(100, 400, 26, 44)
+While Not KeyHit(KEY_ESCAPE)
+    CharMove player, KeyDown(KEY_RIGHT) - KeyDown(KEY_LEFT)
+    UpdateChar player
+    Cls
+    Rect CharX(player) - 13, CharY(player) - CharHeight(player), 26, CharHeight(player)
+    Flip
+Wend
+
+=== FreeCharController
+; the entity stays, but no longer walks by itself
+hero = CreatePivot()
+player = CreateCharController(hero)
+FreeCharController player
+
+=== UpdateChar
+; once a frame, after giving it input
+hero = CreatePivot()
+player = CreateCharController(hero)
+UpdateChar player
+
+=== CharMove
+; run along +X
+hero = CreatePivot()
+player = CreateCharController(hero)
+CharMove player, 1, 0, 0
+
+=== CharWalk
+; W means away from the camera, whichever way it faces
+hero = CreatePivot()
+player = CreateCharController(hero)
+camera = CreateCamera()
+CharWalk player, KeyDown(KEY_W) - KeyDown(KEY_S), KeyDown(KEY_D) - KeyDown(KEY_A), EntityYaw(camera)
+
+=== CharJump
+; when the button is pressed
+hero = CreatePivot()
+player = CreateCharController(hero)
+If KeyHit(KEY_SPACE) Then CharJump player
+
+=== CharHoldJump
+; tap for a hop, hold for a leap
+hero = CreatePivot()
+player = CreateCharController(hero)
+CharHoldJump player, KeyDown(KEY_SPACE)
+
+=== CharSprint
+; run faster while Shift is down
+hero = CreatePivot()
+player = CreateCharController(hero)
+CharSprint player, KeyDown(KEY_LSHIFT)
+
+=== CharCrouch
+; hold Ctrl to get under low things
+hero = CreatePivot()
+player = CreateCharController(hero)
+CharCrouch player, KeyDown(KEY_LCONTROL)
+
+=== CharDash
+; a quick burst forward
+hero = CreatePivot()
+player = CreateCharController(hero)
+CharDash player, 0, 0, 1, 16, 0.2
+
+=== CharImpulse
+; knocked back by an explosion
+hero = CreatePivot()
+player = CreateCharController(hero)
+CharImpulse player, 8, 4, 0
+
+=== CharDrop
+; a thin platform the player can jump onto, and drop through with Down + Space
+Graphics 960, 540
+ground = CreateBody2D(1, 480, 520)
+Body2DBox ground, 960, 40
+ledge = CreateBody2D(1, 480, 400)
+Body2DBox ledge, 200, 12
+Body2DOneWay ledge                    ; solid from above, passable from below
+player = CreateCharController2D(480, 300)
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_SPACE)
+        If KeyDown(KEY_DOWN) Then CharDrop player Else CharJump player
+    EndIf
+    UpdateChar player
+    Cls
+    Rect 380, 394, 200, 12
+    Rect CharX(player) - 12, CharY(player) - 32, 24, 32
+    Flip
+Wend
+
+=== CharMode
+; a top-down game: no gravity, so CharMove can go in any direction, and walls still stop it
+Graphics 960, 540
+player = CreateCharController2D(480, 270, 24, 24)
+CharMode player, CHAR_FLY
+While Not KeyHit(KEY_ESCAPE)
+    CharMove player, KeyDown(KEY_RIGHT) - KeyDown(KEY_LEFT), KeyDown(KEY_DOWN) - KeyDown(KEY_UP)
+    UpdateChar player
+    Cls
+    Rect CharX(player) - 12, CharY(player) - 24, 24, 24
+    Flip
+Wend
+
+=== CharSet
+; a double jump and a higher leap
+hero = CreatePivot()
+player = CreateCharController(hero)
+CharSet player, "air_jumps", 1
+CharSet player, "jump_speed", 10
+
+=== CharGet
+; read a setting back
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharGet(player, "speed")
+
+=== PositionChar
+; back to the last checkpoint
+hero = CreatePivot()
+player = CreateCharController(hero)
+PositionChar player, 0, 2, 0
+
+=== SetCharVelocity
+; a launch pad
+hero = CreatePivot()
+player = CreateCharController(hero)
+SetCharVelocity player, 0, 18, 0
+
+=== CharX
+; where its feet are
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharX(player)
+
+=== CharY
+; fell out of the level
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharY(player) < -20 Then PositionChar player, 0, 2, 0
+
+=== CharZ
+; where its feet are
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharZ(player)
+
+=== CharVX
+; how fast it moves across the ground
+hero = CreatePivot()
+player = CreateCharController(hero)
+pace# = Sqr(CharVX(player) * CharVX(player) + CharVZ(player) * CharVZ(player))
+
+=== CharVY
+; rising or falling
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharVY(player) < 0 Then Print "falling"
+
+=== CharVZ
+; its speed along z
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharVZ(player)
+
+=== CharHeight
+; draw a 2D character at its current height: it gets shorter while Down is held
+Graphics 960, 540
+floor = CreateBody2D(1, 480, 520)
+Body2DBox floor, 960, 40
+player = CreateCharController2D(100, 400, 26, 44)
+While Not KeyHit(KEY_ESCAPE)
+    CharCrouch player, KeyDown(KEY_DOWN)
+    UpdateChar player
+    Cls
+    Rect CharX(player) - 13, CharY(player) - CharHeight(player), 26, CharHeight(player)
+    Flip
+Wend
+
+=== CharGrounded
+; only let it attack on the ground
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharGrounded(player) Then Print "on the ground"
+
+=== CharLanded
+; a puff of dust on landing
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharLanded(player) Then Print "thump"
+
+=== CharLeftGround
+; walked off an edge
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharLeftGround(player) Then Print "whoa"
+
+=== CharJumped
+; the sound plays only for a jump that really happened
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharJumped(player) Then Print "boing"
+
+=== CharWallJumped
+; a different sound for a wall jump
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharWallJumped(player) Then Print "kick"
+
+=== CharStepped
+; a footstep on each stair
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharStepped(player) Then Print "step"
+
+=== CharImpact
+; fall damage
+hero = CreatePivot()
+player = CreateCharController(hero)
+health = 100
+If CharLanded(player) And CharImpact(player) > 15 Then health = health - 20
+
+=== CharOnWall
+; against a wall
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharOnWall(player) Then Print "wall"
+
+=== CharWallSliding
+; sparks while sliding down
+player = CreateCharController2D(100, 400)
+If CharWallSliding(player) Then Print "sliding"
+
+=== CharWallNX
+; which way the wall faces
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharWallNX(player)
+
+=== CharWallNY
+; which way the wall faces
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharWallNY(player)
+
+=== CharWallNZ
+; which way the wall faces
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharWallNZ(player)
+
+=== CharOnCeiling
+; bumped its head
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharOnCeiling(player) Then Print "ouch"
+
+=== CharSliding
+; on a slope too steep to stand on
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharSliding(player) Then Print "slipping"
+
+=== CharCrouching
+; a crouching player is harder to spot
+hero = CreatePivot()
+player = CreateCharController(hero)
+If CharCrouching(player) Then Print "hidden"
+
+=== CharDashing
+; can't be hurt while dashing
+hero = CreatePivot()
+player = CreateCharController(hero)
+safe = CharDashing(player)
+
+=== CharGroundObject
+; standing on a certain thing
+hero = CreatePivot()
+player = CreateCharController(hero)
+pad = CreateCube()
+If CharGroundObject(player) = pad Then Print "on the pad"
+
+=== CharGroundNX
+; how the ground leans
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharGroundNX(player)
+
+=== CharGroundNY
+; 1 is flat ground, less is a slope
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharGroundNY(player)
+
+=== CharGroundNZ
+; how the ground leans
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharGroundNZ(player)
+
+=== CharAirJumpsLeft
+; show how many jumps remain
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharAirJumpsLeft(player)
+
+=== CharFacing
+; flip a sprite the way it last moved
+image = CreateImage(26, 44)
+player = CreateCharController2D(100, 400)
+DrawImageEx image, CharX(player), CharY(player), 0, 0, CharFacing(player), 1
+
+=== CharState
+; one word to choose an animation by
+hero = CreatePivot()
+player = CreateCharController(hero)
+Print CharState(player)
+
+=== CharBody
+; its 2D body, for the body commands
+player = CreateCharController2D(100, 400)
+Print Body2DX(CharBody(player))
+
+=== EntityOneWay
+; a shelf to jump up through
+shelf = CreateCube()
+EntityPhysics shelf, 2
+EntityOneWay shelf
+
+=== Body2DOneWay
+; a ledge to jump up through
+ledge = CreateBody2D(1, 300, 400)
+Body2DBox ledge, 180, 12
+Body2DOneWay ledge

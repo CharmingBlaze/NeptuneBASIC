@@ -4,6 +4,210 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Screenshots always show the right frame
+
+* **`SaveBuffer BackBuffer(), "shot.png"` no longer saves a black or
+  out-of-date picture** – on some graphics cards (laptops with two of them
+  especially) the saved image was all black, or showed a frame from a moment
+  earlier or later. The picture is now always the frame your program last
+  flipped, 2D drawing included, on Windows, Linux and macOS. The same goes
+  for `FrontBuffer()`.
+* **The file is there when `SaveBuffer` returns** – the command now waits for
+  the frame to be drawn (one frame, as `Flip` does), so you can `LoadImage`
+  the file on the very next line, and the return value tells the truth: 1 if
+  the file was saved, 0 if not. If the window is minimized and nothing is
+  drawn, it gives up after two seconds and returns 0.
+
+## Old and slow graphics cards, and laptops with two
+
+* **Games now use the fast graphics card on laptops that have two** – Windows
+  was giving NeptuneBASIC the slow power-saving card. On the laptop this was
+  found on, a scene that ran at 41 to 89 frames a second (depending on the
+  quality level) now runs at the 144 its screen can show.
+  `GraphicsCardName` tells you which card is drawing.
+* **The player can hold the quality down** – `neptune run --max-quality low`,
+  or the `NEPTUNE_MAX_QUALITY` setting for a finished game, is a ceiling that
+  the program cannot go over. Until now a game that asked for
+  `QUALITY_HIGH` ignored `--quality low`.
+* **Quality that looks after itself** – `AutoQuality 50` steps the quality
+  level down while the game runs slower than 50 frames a second, and takes a
+  step back if it made no difference. `neptune run --quality auto` does the
+  same for any program.
+* **A benchmark of the quality levels** – `benchmarks/quality.nb` (part of
+  `neptune bench`) shows what each level is worth on your graphics card. On
+  a built-in AMD card, low is twice as fast as ultra.
+* Not done yet: drawing the 3D view at a lower resolution than the window,
+  which helps slow graphics cards most.
+
+## Programs run two to four times faster
+
+* **The interpreter that runs your BASIC code is much faster** – loops,
+  arithmetic, arrays, function calls and `Type` fields all gained. On the
+  language benchmark, 20 million loop iterations went from 1189 ms to 283 ms,
+  a quicksort of 200,000 numbers from 411 ms to 115 ms, recursive calls from
+  135 ms to 49 ms, and updating 200,000 objects from 545 ms to 262 ms.
+  Programs do exactly what they did before; nothing in the language changed.
+* **Big `Dim` arrays of numbers use a sixth of the memory** – an integer or
+  float array now takes 4 bytes an element instead of 24, so a 5-million-cell
+  map takes 20 MB instead of 120 MB, and working through it is over four
+  times faster.
+* **Thousands of sprites** – 5000 sprites facing the camera ran at 14 frames
+  a second and now run at 66. Sprites of the same size share their shape, so
+  the graphics card draws them in one go. Sprites that each have a different
+  `ScaleSprite` do not gain; use `ScaleEntity` for those.
+* **2D drawing in bulk** – `DrawImage`, `Rect`, `Oval` and `Line` are sent to
+  the graphics card together when they follow each other with the same image
+  or colour. 10,000 `DrawImage`s a frame went from 54 to 132 frames a second.
+  What is drawn later is still on top.
+* **Big worlds build and unload quickly** – `CopyEntity` and `FreeEntity`
+  got slower the more objects there were: making 40,000 copies took 3.9
+  seconds and freeing them 4.7. They now take 55 and 83 milliseconds, and a
+  chunk of 400 objects can be freed and another built in under a millisecond.
+* **A freed mirror stops drawing** – after `FreeEntity` on a mirror, its
+  hidden camera kept rendering the scene every frame. It is now switched off
+  and reused by the next `CreateMirror`.
+* **Worlds too big for the scene: `StoreEntity` and `RestoreEntity`** – a
+  hidden entity still costs a little time every frame, so tens of thousands
+  of them slow a game down with nothing on screen. `StoreEntity` takes an
+  entity and its children out of the world without freeing them, and
+  `RestoreEntity` puts them back exactly as they were; `EntityStored` tells
+  which it is. Walking through a world of 40,000 objects with the far parts
+  stored runs at 176 frames a second, against 36 with them hidden.
+  `examples/bigworld.nb` lets you switch between the two. Other commands
+  fail on a stored entity, and entities with physics, cameras and mirrors
+  cannot be stored.
+* **New benchmark and tool for large games** – `benchmarks/world.nb` (part of
+  `neptune bench`) keeps a world of 40,000 objects in chunks and walks
+  through it. `tools/gen_big_program.py` writes a program of any size; one of
+  218,000 lines compiles in 1.4 seconds.
+* **Not faster yet: building long strings** – `s = s + x` in a loop still
+  copies the whole string each time.
+* For people working on NeptuneBASIC: `cargo run --release -p neptune-vm
+  --example langbench` runs the language benchmark in seconds without building
+  the engine. How the interpreter got faster is described under *VM design*
+  in `docs/ARCHITECTURE.md`.
+
+## Compiler fixes: `Try` with `Goto` and `Gosub`, very deep code, byte order marks
+
+* **`Try` stays correct when you jump out of it** – leaving a `Try` block with
+  `Goto`, or with the `Return` of a `Gosub`, used to leave its `Catch` active,
+  so a later error jumped back into a block the program had already left. An
+  error caught across a `Gosub` no longer leaves a stale `Return` address.
+* **Jumping into a `Try` block is now a compile error** – a `Goto` or `Gosub`
+  from outside would skip setting up its `Catch`.
+* **Very deep code no longer crashes the compiler** – it now reports
+  "code is nested too deeply, or this statement is too long". The limits are
+  about 200 levels of nesting, 1000 `ElseIf` arms, and 4000 operators in one
+  statement.
+* **Files that start with a byte order mark now compile** – some Windows
+  editors save UTF-8 files this way. This applies to included files too.
+
+## Multiplayer that is easy, and works over the internet
+
+* **A whole multiplayer game in a few lines** – `NetPlay` finds a game or starts
+  one, `NetTemplate` and `NetSpawn` put an entity on every computer, and it moves
+  smoothly on all of them by itself. `examples/games/coinrush.nb` is a complete
+  game built this way.
+* **Play over the internet with an invite** – `NetInvite` gives a code, and
+  `NetJoin` joins with it. Nobody has to open a port on their router. This uses
+  the iroh library, so connections are encrypted, and a relay server carries
+  the traffic when two computers cannot reach each other directly. `NetRelay`
+  chooses your own relay for a released game.
+* **Shared values and events** – `NetSet` and `NetGet` keep a value the same on
+  every computer, `NetSend` and `NetRecv` report things that happen.
+* **Test without a second computer** – `neptune run --players 2` starts two
+  copies side by side, and `NetSimulate` pretends the network is bad.
+* **Characters the host checks, that still answer instantly** – put a
+  character controller on a `NetTemplate` and use `NetCharacter`. Your own
+  character moves the moment you press a key, the host re-runs your buttons to
+  check them, and if they ever disagree it slides to where the host says it is.
+  A modified game can't run faster, and `CharImpulse` from the host reaches the
+  player. `examples/netcharacters.nb` shows it.
+* **Shots hit what you saw them hit** – other players are drawn a moment in the
+  past, so a shot lined up on a moving target used to look like a miss to the
+  host. `NetFire` tells the host what the shooter could see and `NetHit` checks
+  the shot against that, up to half a second back, and works just like
+  `LinePick`.
+* **`NetPing` is now measured through the game's own connection**, so it counts
+  what `NetSimulate` adds in both directions.
+* **`reliable=0` now works** – `SendNetMsg` could only send reliably, so one lost
+  packet held up everything behind it.
+* **A slow player can no longer freeze the game** – all network traffic now runs
+  on its own thread, and the host keeps passing on messages during loading
+  screens. Starting or joining a game no longer freezes the window either.
+* **`StartNetGame` only finds copies of the same program** – it used to join any
+  NeptuneBASIC game on the network.
+* **Players that vanish are noticed** – within about 8 seconds, even if the
+  connection dropped silently.
+* **A client can no longer pretend to be someone else** – the host now checks who
+  sent each message, and only lets a computer remove its own players.
+* **Games from before this change cannot join these** – the network format has
+  changed. TCP streams and UDP streams are not affected.
+
+## Full Tiled support, and maps from LDtk, Ogmo, Sprite Fusion, Pyxel Edit and Aseprite
+
+* **`LoadTiledMap` now reads almost all of Tiled** - isometric, staggered,
+  hexagonal and infinite maps, compressed layers (Base64, zlib and gzip),
+  tilesets of separate images and of any tile size, animated tiles, picture
+  layers, layer opacity, tint and parallax, object templates and text objects.
+  Only Zstandard compression is still refused, and the error says what to
+  change. Tiled `.world` files load too.
+* **Collision shapes drawn on tiles** - `TiledMapBody2D` makes a physics body
+  from them, and `TiledTileType` and `TiledTileProperty` read a tile's data.
+* **Other editors, same command** - `LoadTiledMap` also opens LDtk projects,
+  Ogmo Editor 3 levels, Sprite Fusion and Pyxel Edit exports and the tilemap
+  layers of `.aseprite` files. `CountTiledLevels` and `TiledLevelName` list
+  the levels of a file, and a second argument loads one by name.
+* **Grids of any shape** - `TileAt` and `TileMapBody2D` work on diamonds and
+  hexagons, and `TileMapPickX/Y` and `TileMapCellCenterX/Y` go between pixels
+  and cells.
+* **`DrawTiledObject`** draws a tile object at its place, size and rotation.
+* **`Camera2D` no longer stops working after the first frame** in a program
+  that draws nothing after switching the camera off with `Camera2DEnable`.
+* **`neptune build`** packs what these maps need: tilesets, templates,
+  separate level files, Ogmo projects and pictures.
+
+## Breakpoint conditions, crowds, jumps for agents and head-related sound
+
+* **Breakpoints can have conditions** – in VS Code and the Neptune IDE a
+  breakpoint can stop only when something is true
+  (`lives < 2 And player\x > 10`) or only on certain hits (`5`, `>=5`, `%5`). A
+  condition that cannot be worked out stops and says why. In the IDE, right-click
+  the margin to set one; they are remembered with the session.
+* **Debugger indices can be sums** – watches and hovers accept `grid(i + 1)`.
+* **Crowds** – `AgentCrowd` makes an agent look ahead and choose a way past
+  the others, instead of only being pushed apart when they touch.
+* **Jumps, ladders and doors for agents** – `CreateNavLink` joins places a
+  navigation mesh cannot, and `FindPath` and agents use it. `NavLinkEnable`,
+  `FreeNavLink` and `AgentOnLink` go with it, and `DebugNavMesh` draws links.
+* **Head-related 3D sound** – `SetHRTF` makes sounds seem to come from above
+  and behind through headphones, using a file of head measurements that the
+  game supplies.
+
+## See-through surfaces no longer vanish or punch holes
+
+* **Solid things are now always drawn first** – entities using `EntityAlpha`,
+  `EntityBlend`, vertex alpha or alpha textures, and particles, are drawn after
+  everything solid. Before, a large mesh could be drawn after them, which left
+  holes showing the background or hid them completely.
+* **See-through surfaces no longer hide what is behind them** – alpha-blended
+  entities do not write depth any more, as additive and multiplied ones already
+  did. `examples/blending.nb` shows each kind in front of a large mesh.
+
+## Three racing demos in the style of a 1990s console
+
+* **Dirt bike, jet ski and four-wheeler races** – `examples/games/dirtbike.nb`
+  (a sunset canyon, with air tricks), `jetski.nb` (a tropical lagoon with waves,
+  ramps and buoys) and `quadrace.nb` (a climb to a snowy pass and back). Each
+  has computer rivals, laps, a mini-map and engine sounds it makes itself.
+* **A plane race too** – `examples/games/skyrace.nb`: biplanes round a volcano
+  island, with boost hoops and barrel rolls, flying on a character controller
+  in `CHAR_FLY` mode.
+* **Commented from top to bottom** – what they share is in
+  `examples/games/retro64.nb`: painted-on lighting, fog, track building, and
+  how to drive a vehicle with a character controller. Nothing needs loading:
+  every model, texture and sound is made by the program.
+
 ## Better tutorials, explanations and examples
 
 * **Two projects that build a whole game, step by step** – Star Catcher in 2D
@@ -39,6 +243,26 @@ the top. Every command mentioned here is explained in
   stack, variables and watches.
 * Closing the IDE never loses work: unsaved text comes back next time.
 * See the guide, [docs/IDE.md](docs/IDE.md).
+
+## Character controllers
+
+* **Characters that move like game characters** – `CreateCharController` for
+  3D and `CreateCharController2D` for 2D. The same commands work for both. Say
+  where the player wants to go with `CharMove` and `CharJump`, and call
+  `UpdateChar`.
+* **The ground** – slopes up to a limit, stairs, sticking to the ground going
+  downhill, and riding moving and turning platforms.
+* **Jumps that feel fair** – a jump still works just after leaving an edge or
+  just before landing, and letting go early makes a shorter one. Also double
+  jumps, wall slides and wall jumps.
+* **Everything else** – sprint, crouch (it waits until there's room to stand),
+  dash, knockback, one-way platforms you can drop through, pushing crates, and
+  fly and noclip modes for ladders, swimming and top-down games.
+* **Easy to tune and to animate** – about 25 settings by name (`CharSet`),
+  events such as `CharLanded` and `CharImpact` for sounds and fall damage, and
+  `CharState` gives one word to pick an animation by.
+* See the guide, [docs/CHARACTERS.md](docs/CHARACTERS.md), and the playgrounds
+  `examples/charcontrol3d.nb` and `examples/charcontrol2d.nb`.
 
 ## 2D levels and sprites from other tools
 

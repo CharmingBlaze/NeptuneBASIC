@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use neptune_lang::FsLoader;
-use neptune_vm::debug::{Control, DebugClient, StepKind, StopReason};
+use neptune_vm::debug::{BreakpointSpec, Control, DebugClient, StepKind, StopReason};
 use neptune_vm::{Value, Vm};
 
 use crate::json::{n, obj, parse, s, Json};
@@ -125,6 +125,7 @@ impl Session {
             StopReason::Pause => ("pause", None),
             StopReason::Stop => ("pause", Some("Stop statement".to_string())),
             StopReason::Error(m) => ("exception", Some(m.clone())),
+            StopReason::Condition(m) => ("breakpoint", Some(format!("Breakpoint condition: {m}"))),
         };
         let mut body = obj([("reason", s(name)), ("threadId", n(THREAD)), ("allThreadsStopped", Json::Bool(true))]);
         if let (Json::Obj(m), Some(t)) = (&mut body, text) {
@@ -208,18 +209,24 @@ impl Session {
     fn set_breakpoints(&mut self, vm: &mut Vm, req: &Json) {
         let args = req.get("arguments");
         let path = canonical(Path::new(args.at("source.path").str().unwrap_or("")));
-        let wanted: Vec<u32> = args.get("breakpoints").arr().iter().map(|b| b.get("line").num().unwrap_or(0.0) as u32).collect();
+        let text = |b: &Json, key: &str| b.get(key).str().map(String::from);
+        let wanted: Vec<BreakpointSpec> = args
+            .get("breakpoints")
+            .arr()
+            .iter()
+            .map(|b| BreakpointSpec { line: b.get("line").num().unwrap_or(0.0) as u32, condition: text(b, "condition"), hit_condition: text(b, "hitCondition") })
+            .collect();
         let file = self.files.iter().position(|f| *f == path).filter(|_| !self.no_debug);
         let placed = match file {
-            Some(f) => vm.debug_set_breakpoints(f as u32, &wanted),
-            None => vec![None; wanted.len()],
+            Some(f) => vm.debug_set_breakpoint_specs(f as u32, &wanted),
+            None => vec![Err("no code here in the running program".to_string()); wanted.len()],
         };
         let list = wanted
             .iter()
             .zip(placed)
-            .map(|(&asked, got)| match got {
-                Some(line) => obj([("verified", Json::Bool(true)), ("line", n(line))]),
-                None => obj([("verified", Json::Bool(false)), ("line", n(asked)), ("message", s("no code here in the running program"))]),
+            .map(|(asked, got)| match got {
+                Ok(line) => obj([("verified", Json::Bool(true)), ("line", n(line))]),
+                Err(why) => obj([("verified", Json::Bool(false)), ("line", n(asked.line)), ("message", s(why))]),
             })
             .collect();
         self.conn.borrow_mut().respond(req, obj([("breakpoints", Json::Arr(list))]));
@@ -403,7 +410,7 @@ pub fn run(args: &[String]) -> ExitCode {
         let Ok(req) = conn.borrow().rx.recv() else { return ExitCode::SUCCESS };
         match req.get("command").str().unwrap_or("") {
             "initialize" => {
-                let caps = obj([("supportsConfigurationDoneRequest", Json::Bool(true)), ("supportsEvaluateForHovers", Json::Bool(true)), ("supportsTerminateRequest", Json::Bool(true))]);
+                let caps = obj([("supportsConfigurationDoneRequest", Json::Bool(true)), ("supportsEvaluateForHovers", Json::Bool(true)), ("supportsConditionalBreakpoints", Json::Bool(true)), ("supportsHitConditionalBreakpoints", Json::Bool(true)),("supportsTerminateRequest", Json::Bool(true))]);
                 conn.borrow_mut().respond(&req, caps);
             }
             "launch" => {

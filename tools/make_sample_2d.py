@@ -1,11 +1,12 @@
-"""Writes the sample art for examples/tiledmap.nb into examples/media/tiled:
-a tileset, a Tiled map and a sprite sheet in Aseprite's format. Standard
-library only.
+"""Writes the sample art for examples/tiledmap.nb and examples/mapeditors.nb
+into examples/media/tiled: a tileset, Tiled maps, an LDtk project and a sprite
+sheet in Aseprite's format. Standard library only.
 
 Open meadow.tmx in the Tiled editor (https://www.mapeditor.org) to change the
 level. Running this script again overwrites it.
 """
 
+import base64
 import json
 import os
 import struct
@@ -211,8 +212,111 @@ def make_sheet():
         json.dump({"frames": data, "meta": meta}, f, indent=1)
 
 
+
+def base64_zlib(gids):
+    data = b"".join(struct.pack("<I", g) for g in gids)
+    return base64.b64encode(zlib.compress(data, 9)).decode()
+
+
+def make_iso():
+    """An isometric map with blocks 64x64 on a 64x32 grid, in Base64 and zlib."""
+    colors = [((92, 176, 72), (70, 130, 56)), ((150, 154, 165), (104, 108, 120))]
+    c = Canvas(64 * 2, 64)
+    for n, (top, side) in enumerate(colors):
+        for i in range(32):
+            half = (i + 1) // 2
+            for x in (i, 63 - i):
+                c.rect(n * 64 + x, 32 - half, 1, half * 2, top)
+                c.rect(n * 64 + x, 32 + half, 1, 16, side)
+    c.save(os.path.join(OUT, "iso.png"))
+    size = 10
+    ground = [1] * size**2
+    blocks = [2 if (x, y) in {(2, 2), (3, 2), (2, 3), (6, 5), (6, 6), (7, 6)} else 0 for y in range(size) for x in range(size)]
+    layer = lambda i, name, gids: f""" <layer id="{i}" name="{name}" width="{size}" height="{size}">
+  <data encoding="base64" compression="zlib">{base64_zlib(gids)}</data>
+ </layer>
+"""
+    text = f"""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="isometric" renderorder="right-down" width="{size}" height="{size}" tilewidth="64" tileheight="32" infinite="0" backgroundcolor="#20242c">
+ <tileset firstgid="1" name="blocks" tilewidth="64" tileheight="64" tilecount="2" columns="2">
+  <image source="iso.png" width="128" height="64"/>
+ </tileset>
+{layer(1, "Ground", ground)}{layer(2, "Blocks", blocks)}</map>
+"""
+    with open(os.path.join(OUT, "iso.tmx"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
+def make_extras():
+    """A Tiled map using a picture layer, animated tiles and tile collision shapes."""
+    c = Canvas(256, 480)
+    c.rect(0, 0, 256, 480, (130, 190, 240))
+    for x, w, top in [(0, 90, 300), (60, 120, 250), (170, 86, 280)]:
+        c.rect(x, top, w, 480 - top, (150, 190, 170))
+    c.save(os.path.join(OUT, "hills.png"))
+    width, height = 40, 15
+    ground = [GRASS if y == height - 2 else DIRT if y == height - 1 else 0 for y in range(height) for x in range(width)]
+    props = [0] * (width * height)
+    for x in range(4, width, 7):
+        props[(height - 3) * width + x] = COIN
+    for x in range(8, width, 9):
+        props[(height - 3) * width + x] = SPIKE
+    text = f"""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="{width}" height="{height}" tilewidth="{TILE}" tileheight="{TILE}" infinite="0">
+ <tileset firstgid="1" name="tiles" tilewidth="{TILE}" tileheight="{TILE}" tilecount="8" columns="4">
+  <image source="tiles.png" width="{TILE * 4}" height="{TILE * 2}"/>
+  <tile id="{COIN - 1}" type="coin">
+   <animation><frame tileid="{COIN - 1}" duration="300"/><frame tileid="{FLOWER - 1}" duration="300"/></animation>
+  </tile>
+  <tile id="{SPIKE - 1}" type="hazard">
+   <properties><property name="damage" type="int" value="1"/></properties>
+   <objectgroup><object x="4" y="{TILE}"><polygon points="0,0 12,-{TILE - 4} 24,0"/></object></objectgroup>
+  </tile>
+ </tileset>
+ <imagelayer id="1" name="Hills" repeatx="1" parallaxx="0.4">
+  <image source="hills.png" width="256" height="480"/>
+ </imagelayer>
+ <layer id="2" name="Ground" width="{width}" height="{height}">
+  <data encoding="base64" compression="zlib">{base64_zlib(ground)}</data>
+ </layer>
+ <layer id="3" name="Props" width="{width}" height="{height}" opacity="0.9">
+  <data encoding="csv">{",".join(map(str, props))}</data>
+ </layer>
+</map>
+"""
+    with open(os.path.join(OUT, "extras.tmx"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
+def make_ldtk():
+    """A small LDtk project: tiles stacked in a cell, solid cells and an entity."""
+    width, height = 30, 15
+    tile = lambda x, y, t, f=0: {"px": [x * TILE, y * TILE], "src": [t % 4 * TILE, t // 4 * TILE], "f": f, "t": t, "d": [], "a": 1}
+    art = [tile(x, 13, GRASS - 1) for x in range(width)] + [tile(x, 14, DIRT - 1) for x in range(width)]
+    art += [tile(x, 12, BUSH - 1, 1 if x % 2 else 0) for x in range(3, width, 5)]
+    art += [tile(x, 12, FLOWER - 1) for x in range(3, width, 5)]
+    solid = [1 if y >= 13 else 0 for y in range(height) for x in range(width)]
+    base = {"__cWid": width, "__cHei": height, "__gridSize": TILE, "__opacity": 1, "__pxTotalOffsetX": 0, "__pxTotalOffsetY": 0, "visible": True, "intGridCsv": [], "autoLayerTiles": [], "gridTiles": [], "entityInstances": []}
+    coin = {"__identifier": "Coin", "__grid": [10, 11], "__pivot": [0, 0], "__tags": [], "__tile": {"tilesetUid": 1, "x": (COIN - 1) % 4 * TILE, "y": (COIN - 1) // 4 * TILE, "w": TILE, "h": TILE},
+            "__smartColor": "#FFFF00", "iid": "coin-1", "width": TILE, "height": TILE, "defUid": 5, "px": [10 * TILE, 11 * TILE], "fieldInstances": [{"__identifier": "value", "__type": "Int", "__value": 5, "defUid": 6, "realEditorValues": []}]}
+    layers = [
+        {**base, "__identifier": "Things", "__type": "Entities", "entityInstances": [coin]},
+        {**base, "__identifier": "Art", "__type": "Tiles", "__tilesetDefUid": 1, "__tilesetRelPath": "tiles.png", "gridTiles": art},
+        {**base, "__identifier": "Solid", "__type": "IntGrid", "intGridCsv": solid},
+    ]
+    level = {"identifier": "Forest", "iid": "lvl-1", "uid": 0, "worldX": 0, "worldY": 0, "worldDepth": 0, "pxWid": width * TILE, "pxHei": height * TILE, "__bgColor": "#82BEF0", "bgColor": None, "externalRelPath": None, "fieldInstances": [], "layerInstances": layers}
+    project = {"iid": "project", "jsonVersion": "1.5.3", "defaultGridSize": TILE, "externalLevels": False, "levels": [level], "worlds": [],
+               "defs": {"tilesets": [{"uid": 1, "identifier": "Tiles", "relPath": "tiles.png", "pxWid": TILE * 4, "pxHei": TILE * 2, "tileGridSize": TILE, "spacing": 0, "padding": 0, "tags": [], "customData": [], "enumTags": []}], "layers": [], "entities": [], "enums": []}}
+    with open(os.path.join(OUT, "forest.ldtk"), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(project, f, indent=1)
+        f.write("\n")
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     make_tileset()
     make_map()
     make_sheet()
+    make_iso()
+    make_extras()
+    make_ldtk()

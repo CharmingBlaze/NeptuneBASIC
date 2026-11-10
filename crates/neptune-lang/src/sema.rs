@@ -48,6 +48,13 @@ struct FnCtx {
     labels: HashMap<String, u32>,
     label_defined: Vec<bool>,
     label_spans: Vec<Span>,
+    /// The `Try` blocks around each label, outermost first.
+    label_tries: Vec<Vec<u32>>,
+    /// Every `Goto` and `Gosub`: (label, the `Try` blocks around it, where).
+    jumps: Vec<(u32, Vec<u32>, Span)>,
+    /// The `Try` blocks around the current statement, outermost first.
+    tries: Vec<u32>,
+    n_tries: u32,
     loop_depth: u32,
     inferred: HashMap<String, Ty>,
     /// Plain variables assigned somewhere in the body (for the
@@ -854,6 +861,19 @@ impl<'a> Sema<'a> {
         for (sp, n) in missing {
             self.err(sp, format!("label '{n}' not found"));
         }
+        // Entering a `Try` sideways would skip installing its error handler.
+        for (label, tries, span) in std::mem::take(&mut self.f.jumps) {
+            if self.f.label_defined[label as usize] && !tries.starts_with(&self.f.label_tries[label as usize]) {
+                self.err(span, "cannot jump into a 'Try' block");
+            }
+        }
+    }
+
+    /// Resolves the target of a `Goto` or `Gosub`.
+    fn jump_label(&mut self, l: &ast::Ident) -> u32 {
+        let id = self.label(&l.name, l.span);
+        self.f.jumps.push((id, self.f.tries.clone(), l.span));
+        id
     }
 
     fn label(&mut self, name: &str, span: Span) -> u32 {
@@ -864,6 +884,7 @@ impl<'a> Sema<'a> {
         self.f.labels.insert(name.to_string(), id);
         self.f.label_defined.push(false);
         self.f.label_spans.push(span);
+        self.f.label_tries.push(Vec::new());
         id
     }
 
@@ -1108,14 +1129,15 @@ impl<'a> Sema<'a> {
                     }
                 }
             }
-            StmtKind::Goto(l) => HStmtKind::Goto(self.label(&l.name, l.span)),
-            StmtKind::Gosub(l) => HStmtKind::Gosub(self.label(&l.name, l.span)),
+            StmtKind::Goto(l) => HStmtKind::Goto(self.jump_label(l)),
+            StmtKind::Gosub(l) => HStmtKind::Gosub(self.jump_label(l)),
             StmtKind::Label(l) => {
                 let id = self.label(&l.name, l.span);
                 if self.f.label_defined[id as usize] {
                     self.err(l.span, format!("duplicate label '{}'", l.name));
                 }
                 self.f.label_defined[id as usize] = true;
+                self.f.label_tries[id as usize] = self.f.tries.clone();
                 HStmtKind::Label(id)
             }
             StmtKind::Delete(e) => {
@@ -1166,7 +1188,10 @@ impl<'a> Sema<'a> {
                 },
             },
             StmtKind::Try { body, var, handler } => {
+                self.f.n_tries += 1;
+                self.f.tries.push(self.f.n_tries);
                 let b = self.sub_block(body);
+                self.f.tries.pop();
                 let catch = match var {
                     Some(v) => match self.place(v, Some(&Ty::Str)) {
                         Some((p, Ty::Str | Ty::Variant)) => Some(p),

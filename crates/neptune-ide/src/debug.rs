@@ -4,10 +4,25 @@ use std::path::Path;
 
 use crate::app::{App, DockTab, Frame, Pending, Var, Watch};
 use crate::buffer::Pos;
+use crate::document::BreakRule;
 use crate::json::{n, obj, s, Json};
 use crate::procs;
 
 const THREAD: u32 = 1;
+
+/// One breakpoint as the debugger protocol writes it (lines count from 1).
+fn breakpoint_json(line: usize, rule: Option<&BreakRule>) -> Json {
+    let mut b = obj([("line", n(line as u32 + 1))]);
+    if let (Json::Obj(m), Some(r)) = (&mut b, rule) {
+        if !r.condition.is_empty() {
+            m.insert("condition".into(), s(r.condition.clone()));
+        }
+        if !r.hits.is_empty() {
+            m.insert("hitCondition".into(), s(r.hits.clone()));
+        }
+    }
+    b
+}
 
 impl App {
     fn dap_request(&mut self, command: &str, args: Json, what: Pending) {
@@ -35,9 +50,8 @@ impl App {
         if self.debug.session.is_none() {
             return;
         }
-        let all: Vec<(String, Vec<usize>)> = self.docs.iter().filter_map(|d| d.path.as_ref().map(|p| (p.display().to_string(), d.breakpoints.iter().copied().collect()))).collect();
-        for (path, lines) in all {
-            let list = Json::Arr(lines.iter().map(|l| obj([("line", n(*l as u32 + 1))])).collect());
+        let all: Vec<(String, Json)> = self.docs.iter().filter_map(|d| d.path.as_ref().map(|p| (p.display().to_string(), Json::Arr(d.breakpoints.iter().map(|l| breakpoint_json(*l, d.break_rules.get(l))).collect())))).collect();
+        for (path, list) in all {
             self.dap_request("setBreakpoints", obj([("source", obj([("path", s(path))])), ("breakpoints", list)]), Pending::Other);
         }
     }
@@ -60,7 +74,8 @@ impl App {
             "stopped" => {
                 self.debug.paused = true;
                 self.debug.reason = body.get("reason").str().unwrap_or("").to_string();
-                self.debug.exception = if self.debug.reason == "exception" { body.get("text").str().map(str::to_string) } else { None };
+                // (a breakpoint only has text when its condition could not be worked out)
+                self.debug.exception = if self.debug.reason == "exception" || self.debug.reason == "breakpoint" { body.get("text").str().map(str::to_string) } else { None };
                 self.debug.vars.clear();
                 self.debug.hover.clear();
                 self.debug.frame = 0;
@@ -246,5 +261,25 @@ impl App {
         if let Some(id) = self.active_id() {
             self.goto(id, Pos::new(line, col), None);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn breakpoints_carry_only_the_rules_they_have() {
+        let plain = breakpoint_json(4, None);
+        assert_eq!(plain.get("line").num(), Some(5.0));
+        assert_eq!(plain.get("condition"), &Json::Null);
+
+        let rule = BreakRule { condition: "x > 1".into(), hits: ">=2".into() };
+        let full = breakpoint_json(0, Some(&rule));
+        assert_eq!(full.get("condition").str(), Some("x > 1"));
+        assert_eq!(full.get("hitCondition").str(), Some(">=2"));
+
+        let hits_only = breakpoint_json(0, Some(&BreakRule { condition: String::new(), hits: "%3".into() }));
+        assert_eq!(hits_only.get("condition"), &Json::Null);
     }
 }

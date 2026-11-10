@@ -56,7 +56,7 @@ fn create(h: &mut Host3D, kind: &str, segments: i32, solid: bool, parent: i32) -
     int(id)
 }
 
-fn set_world_position(h: &mut Host3D, e: i32, p: Vector3<f32>) -> Result<(), String> {
+pub(crate) fn set_world_position(h: &mut Host3D, e: i32, p: Vector3<f32>) -> Result<(), String> {
     let local = h.parent_world(e)?.to_local_point(&p);
     h.set_xf(e, |xf| xf.pos = local)
 }
@@ -245,7 +245,7 @@ fn update_world(h: &mut Host3D) -> Result<(), String> {
 
 /// Picks along `origin .. origin + line` against pickable entities.
 /// `exclude` entities are ignored; `obscurers_only` restricts to obscurers.
-fn pick_line(
+pub(crate) fn pick_line(
     h: &mut Host3D,
     origin: Vector3<f32>,
     line: Vector3<f32>,
@@ -616,6 +616,14 @@ fn tilemap_mut<'a>(h: &'a mut Host3D, m: i32) -> Result<&'a mut crate::tilemap::
         .ok_or_else(|| format!("Tile map {m} does not exist"))
 }
 
+fn character<'a>(h: &'a mut Host3D, a: &[Value]) -> Result<&'a mut crate::charcontrol::Character, String> {
+    Ok(&mut crate::character::slot_mut(h, a[0].int())?.c)
+}
+
+fn char_read<'a>(h: &'a Host3D, a: &[Value]) -> Result<&'a crate::charcontrol::Character, String> {
+    Ok(&crate::character::slot(h, a[0].int())?.c)
+}
+
 fn tiled_point(h: &Host3D, a: &[Value]) -> Result<(f32, f32), String> {
     let i = a[1].int();
     let p = usize::try_from(i - 1).ok().and_then(|n| crate::tiled::object(h, a[0].int()).ok()?.def.points.get(n).copied());
@@ -633,25 +641,23 @@ fn add_tilemap(h: &mut Host3D, map: crate::tilemap::TileMap) -> Result<Value, St
     int(h.world.tilemaps.len() as i32)
 }
 
-/// Size of one tile: the size of a frame of the map's image.
+/// Size of one cell: from the editor for a loaded map, otherwise the size of
+/// a frame of the map's image.
 fn tile_size(h: &Host3D, m: i32) -> Result<(f32, f32), String> {
-    let img = h.image(tilemap(h, m)?.image)?;
+    let map = tilemap(h, m)?;
+    if let Some(l) = &map.layout {
+        return Ok(l.cell);
+    }
+    let img = h.image(map.image)?;
     Ok(img.size())
 }
 
-/// `DrawTileMap`: draws the cells that fall inside the screen or buffer, with
-/// the map's top-left corner at x, y.
-fn draw_tilemap(h: &mut Host3D, m: i32, x: f32, y: f32) -> Result<Value, String> {
-    let (tw, th) = tile_size(h, m)?;
-    let map = tilemap(h, m)?;
-    let image = map.image;
-    // tiles ignore the image handle
-    let (hx, hy) = h.image(image)?.top_left(0.0, 0.0);
+/// The part of the 2D world on the screen or buffer: through the camera, if it is on.
+fn view_rect(h: &Host3D) -> Result<(f32, f32, f32, f32), String> {
     let (vw, vh) = match h.current_buffer()? {
         crate::buffer::Buffer::Screen => (h.world.width as f32, h.world.height as f32),
         _ => (f32::MAX / 4.0, f32::MAX / 4.0),
     };
-    // the part of the world on screen: through the 2D camera, if it is on
     let (mut left, mut top, mut right, mut bottom) = (0.0, 0.0, vw, vh);
     if h.world.canvas.camera_on && vw < f32::MAX / 8.0 {
         let cam = h.world.canvas.camera;
@@ -661,22 +667,49 @@ fn draw_tilemap(h: &mut Host3D, m: i32, x: f32, y: f32) -> Result<Value, String>
             (left, top, right, bottom) = (left.min(cx), top.min(cy), right.max(cx), bottom.max(cy));
         }
     }
-    let x0 = (((left - x) / tw).floor() as i32).max(0);
-    let y0 = (((top - y) / th).floor() as i32).max(0);
-    let x1 = (((right - x) / tw).ceil() as i32).min(map.width);
-    let y1 = (((bottom - y) / th).ceil() as i32).min(map.height);
+    Ok((left, top, right, bottom))
+}
+
+/// `DrawTileMap`: draws the cells that fall inside the screen or buffer, with
+/// the map's top-left corner at x, y. `look` tints and fades the tiles.
+fn draw_tilemap(h: &mut Host3D, m: i32, x: f32, y: f32, look: Option<Color>) -> Result<Value, String> {
+    let (tw, th) = tile_size(h, m)?;
+    let map = tilemap(h, m)?;
+    if map.data_only {
+        return VOID;
+    }
+    let image = map.image;
+    let layout = map.layout.clone().unwrap_or_else(|| crate::tilegrid::Layout::ortho((tw, th)));
+    // tiles ignore the image handle
+    let (hx, hy) = h.image(image)?.top_left(0.0, 0.0);
+    let (fw, fh) = h.image(image)?.size();
+    let view = view_rect(h)?;
+    let (x0, y0, x1, y1) = layout.visible((view.0 - x, view.1 - y, view.2 - x, view.3 - y), map.width, map.height, (fw, fh));
+    let now = map.anims.as_ref().map(|_| crate::tilemap::clock_ms());
     let mut cells = Vec::new();
-    for cy in y0..y1 {
-        for cx in x0..x1 {
+    let columns: Vec<i32> = if layout.reverse.0 { (x0..x1).rev().collect() } else { (x0..x1).collect() };
+    let rows: Vec<i32> = if layout.reverse.1 { (y0..y1).rev().collect() } else { (y0..y1).collect() };
+    for &cy in &rows {
+        for &cx in &columns {
             let t = map.get(cx, cy);
             if t >= 0 {
-                cells.push((cx, cy, t));
+                let shown = map.anims.as_ref().zip(now).map_or(t, |(a, ms)| a.resolve(t, ms));
+                cells.push((cx, cy, shown));
             }
         }
     }
+    if matches!(layout.shape, crate::tilegrid::Shape::Hex { axis_x: true, .. }) {
+        // the lower columns of a staggered row overlap the others
+        cells.sort_by_key(|&(cx, cy, _)| (if layout.reverse.1 { -cy } else { cy }, layout.draws_late(cx)));
+    }
+    let place = |cx: i32, cy: i32| {
+        let (px, py) = layout.cell_pos(cx, cy);
+        (x + px + layout.frame.0 - hx, y + py + layout.frame.1 - hy)
+    };
     if h.current_buffer()? != crate::buffer::Buffer::Screen {
         for (cx, cy, t) in cells {
-            let args = [Value::Int(image), Value::Float(x + cx as f32 * tw - hx), Value::Float(y + cy as f32 * th - hy), Value::Int(t)];
+            let (qx, qy) = place(cx, cy);
+            let args = [Value::Int(image), Value::Float(qx), Value::Float(qy), Value::Int(t)];
             draw_image(h, &args, true, None)?;
         }
         return VOID;
@@ -692,13 +725,126 @@ fn draw_tilemap(h: &mut Host3D, m: i32, x: f32, y: f32) -> Result<Value, String>
     let mut quads = Vec::with_capacity(cells.len());
     for (cx, cy, t) in cells {
         if let Ok(uv) = img.uv(t as u32, Some(inset)) {
-            quads.push((x + cx as f32 * tw - hx, y + cy as f32 * th - hy, uv));
+            let (qx, qy) = place(cx, cy);
+            quads.push((qx, qy, uv));
         }
     }
     for (qx, qy, uv) in quads {
-        h.world.canvas.image(qx, qy, tw, th, uv, tex.clone());
+        match look {
+            None => h.world.canvas.image(qx, qy, fw, fh, uv, tex.clone()),
+            Some(c) => h.world.canvas.image_ex(qx, qy, fw, fh, (0.0, 0.0), 0.0, uv, tex.clone(), c),
+        }
     }
     VOID
+}
+
+/// The colour a layer is drawn with; `None` if it is drawn as it is.
+fn layer_color(look: &crate::tiled::LayerLook) -> Option<Color> {
+    let [r, g, b] = look.tint;
+    let plain = look.opacity >= 1.0 && look.tint == [255; 3];
+    (!plain).then(|| Color::from_rgba(r, g, b, (look.opacity.clamp(0.0, 1.0) * 255.0).round() as u8))
+}
+
+/// Where a layer goes, with its offset and parallax.
+fn layer_origin(look: &crate::tiled::LayerLook, x: f32, y: f32, center: (f32, f32), origin: (f32, f32)) -> (f32, f32) {
+    let scroll = |p: f32, c: f32, o: f32, at: f32| if p == 1.0 { 0.0 } else { (1.0 - p) * (c - at - o) };
+    (x + look.offset.0 + scroll(look.parallax.0, center.0, origin.0, x), y + look.offset.1 + scroll(look.parallax.1, center.1, origin.1, y))
+}
+
+fn draw_image_layer(h: &mut Host3D, l: &crate::tiled::TiledImageLayer, x: f32, y: f32, view: (f32, f32, f32, f32)) -> Result<Value, String> {
+    if h.image(l.image)?.dirty {
+        h.image_mut(l.image)?.commit();
+    }
+    if h.current_buffer()? != crate::buffer::Buffer::Screen {
+        return draw_image(h, &[Value::Int(l.image), Value::Float(x), Value::Float(y), Value::Int(0)], true, None);
+    }
+    let img = h.image(l.image)?;
+    let (iw, ih) = img.size();
+    let (uv, tex) = (img.uv(0, None)?, img.masked.clone());
+    let color = layer_color(&l.look).unwrap_or(Color::WHITE);
+    let start = |at: f32, low: f32, size: f32| at + ((low - at) / size).floor() * size;
+    let (x0, y0) = (if l.repeat.0 { start(x, view.0, iw) } else { x }, if l.repeat.1 { start(y, view.1, ih) } else { y });
+    let mut py = y0;
+    loop {
+        let mut px = x0;
+        loop {
+            h.world.canvas.image_ex(px, py, iw, ih, (0.0, 0.0), 0.0, uv, tex.clone(), color);
+            px += iw;
+            if !l.repeat.0 || px >= view.2 {
+                break;
+            }
+        }
+        py += ih;
+        if !l.repeat.1 || py >= view.3 {
+            break;
+        }
+    }
+    VOID
+}
+
+/// `DrawTiledMap`: every visible layer in order.
+fn draw_tiled_map(h: &mut Host3D, m: i32, x: f32, y: f32) -> Result<Value, String> {
+    let t = crate::tiled::map(h, m)?;
+    let (layers, pictures, origin) = (t.layers.clone(), t.image_layers.clone(), t.parallax_origin);
+    let view = view_rect(h)?;
+    // parallax is measured from the middle of the view
+    let center = ((view.0 + view.2) / 2.0, (view.1 + view.3) / 2.0);
+    for i in 0..=layers.len() {
+        for p in pictures.iter().filter(|p| p.z == i && p.visible) {
+            let (px, py) = layer_origin(&p.look, x, y, center, origin);
+            draw_image_layer(h, p, px, py, view)?;
+        }
+        if let Some(l) = layers.get(i).filter(|l| l.visible) {
+            let (px, py) = layer_origin(&l.look, x, y, center, origin);
+            draw_tilemap(h, l.map, px, py, layer_color(&l.look))?;
+        }
+    }
+    VOID
+}
+
+/// `DrawTiledObject`: a tile object where the editor put it.
+fn draw_tiled_object(h: &mut Host3D, o: i32, x: f32, y: f32) -> Result<Value, String> {
+    let t = crate::tiled::object(h, o)?.clone();
+    let Ok(frame) = usize::try_from(t.tile) else { return VOID };
+    let parent = crate::tiled::map(h, t.map)?;
+    let (image, info) = (parent.image, parent.frames.get(frame).cloned().ok_or("Tile frame does not exist")?);
+    let d = &t.def;
+    let (scale_x, scale_y) = (if d.w > 0.0 { d.w / info.size.0 } else { 1.0 }, if d.h > 0.0 { d.h / info.size.1 } else { 1.0 });
+    let (w, ht) = (info.size.0 * scale_x, info.size.1 * scale_y);
+    let (ax, ay) = (d.x + d.anchor.0 * w + x, d.y + d.anchor.1 * ht + y);
+    if h.image(image)?.dirty {
+        h.image_mut(image)?.commit();
+    }
+    if h.current_buffer()? != crate::buffer::Buffer::Screen {
+        let args = [Value::Int(image), Value::Float(ax - (info.place.0 + d.anchor.0 * info.size.0)), Value::Float(ay - (info.place.1 + d.anchor.1 * info.size.1)), Value::Int(t.tile)];
+        return draw_image(h, &args, true, None);
+    }
+    let img = h.image(image)?;
+    let (fw, fh) = img.size();
+    let (uv, tex) = (img.uv(frame as u32, None)?, img.masked.clone());
+    let handle = ((info.place.0 + d.anchor.0 * info.size.0) * scale_x, (info.place.1 + d.anchor.1 * info.size.1) * scale_y);
+    h.world.canvas.image_ex(ax, ay, fw * scale_x, fh * scale_y, handle, d.rotation, uv, tex, Color::WHITE);
+    VOID
+}
+
+/// A map's layout, or the plain one of a map made in the program.
+fn map_layout(h: &Host3D, m: i32) -> Result<crate::tilegrid::Layout, String> {
+    let (tw, th) = tile_size(h, m)?;
+    Ok(tilemap(h, m)?.layout.clone().unwrap_or_else(|| crate::tilegrid::Layout::ortho((tw, th))))
+}
+
+fn tiled_level(h: &Host3D, a: &[Value]) -> Result<crate::tiled::LevelDef, String> {
+    let i = a[1].int();
+    let found = usize::try_from(i - 1).ok().and_then(|n| crate::tiled::map(h, a[0].int()).ok()?.levels.get(n).cloned());
+    found.ok_or_else(|| format!("level index {i} out of range"))
+}
+
+fn tiled_frame(h: &Host3D, m: i32, frame: i32) -> Result<std::sync::Arc<Vec<crate::tiled::FrameInfo>>, String> {
+    let frames = crate::tiled::map(h, m)?.frames.clone();
+    if usize::try_from(frame).ok().is_none_or(|f| f >= frames.len()) {
+        return Err(format!("tile {frame} out of range"));
+    }
+    Ok(frames)
 }
 
 fn save_scene(h: &mut Host3D, entities: &[i32], path: &str) -> Result<Value, String> {
@@ -1086,6 +1232,11 @@ pub fn constants() -> Vec<(String, ConstVal)> {
         ("BLEND_ALPHA".into(), ConstVal::Int(1)),
         ("BLEND_MULTIPLY".into(), ConstVal::Int(2)),
         ("BLEND_ADD".into(), ConstVal::Int(3)),
+        ("CHAR_WALK".into(), ConstVal::Int(crate::charcontrol::MODE_WALK)),
+        ("CHAR_FLY".into(), ConstVal::Int(crate::charcontrol::MODE_FLY)),
+        ("CHAR_NOCLIP".into(), ConstVal::Int(crate::charcontrol::MODE_NOCLIP)),
+        ("CHAR_BOX".into(), ConstVal::Int(crate::character::SHAPE_BOX)),
+        ("CHAR_CAPSULE".into(), ConstVal::Int(crate::character::SHAPE_CAPSULE)),
         ("FX_FULLBRIGHT".into(), ConstVal::Int(1)),
         ("FX_VERTEXCOLOR".into(), ConstVal::Int(2)),
         ("FX_FLAT".into(), ConstVal::Int(4)),
@@ -1308,7 +1459,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.world.quality_dirty = true;
         VOID
     }),
-    ("%GetGraphicsQuality", |h, _, _| int(h.world.quality.level)),
+    ("%GetGraphicsQuality", |h, _, _| int(h.world.quality.in_use())),
     ("PostEffect%effect%enable=1", |h, a, _| {
         h.world.quality.set_effect(a[0].int(), a[1].int() != 0)?;
         h.world.quality_dirty = true;
@@ -1480,13 +1631,21 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("CopyPixelFast%src_x%src_y%src_buffer%dest_x%dest_y%dest_buffer=0", |h, a, _| copy_pixel(h, a)),
     ("%BufferWidth%buffer", |h, a, _| buffer_size(h, a[0].int(), true)),
     ("%BufferHeight%buffer", |h, a, _| buffer_size(h, a[0].int(), false)),
-    ("%SaveBuffer%buffer$file", |h, a, _| {
+    ("%SaveBuffer%buffer$file", |h, a, ctx| {
         let path = a[1].str().to_string();
         match crate::buffer::decode(a[0].int())? {
             crate::buffer::Buffer::Screen => {
-                // saved at the start of the next frame, when this frame is on screen
-                h.world.pending_screenshot = Some(path);
-                int(1)
+                // the frame last flipped is drawn again and read before it is
+                // shown (see screenshot.rs); wait here until it is saved
+                if let Some(saved) = h.world.screenshot_saved.take() {
+                    return int(saved as i32);
+                }
+                if h.scene_opt().is_none() {
+                    return int(0);
+                }
+                h.world.pending_screenshot.get_or_insert(path);
+                ctx.request_retry();
+                int(0)
             }
             b => {
                 let img = h.with_target(b, |t| {
@@ -1539,6 +1698,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     }),
     ("RenderWorld#tween=1", |h, a, ctx| {
         h.scene()?;
+        crate::netsync::update(h)?;
         h.world.pick_gen += 1;
         let tween = a[0].float();
         h.in_each_scene(|h| {
@@ -1580,6 +1740,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         // Flip ends the frame: publish the 2D layer and let the engine render.
         h.world.canvas.flip();
         h.world.renders_at_flip = h.world.renders;
+        h.auto_quality_frame();
         ctx.request_yield();
         VOID
     }),
@@ -2097,6 +2258,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("ClearWorld%entities=1%brushes=1%textures=1", |h, a, _| {
         h.scene()?;
         if a[0].int() != 0 {
+            h.restore_all()?;
             let roots: Vec<i32> = h.entities().filter(|(_, e)| e.parent == 0).map(|(i, _)| i).collect();
             for e in roots {
                 h.free_entity(e)?;
@@ -2317,6 +2479,22 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("%CountMeshTriangles%mesh", |h, a, _| int(h.mesh_triangles(a[0].int())?.len() as i32)), // (ext)
     ("FreeEntity%entity", |h, a, _| {
         h.free_entity(a[0].int())?;
+        VOID
+    }),
+    // (ext) multiplayer entities (see netsync.rs)
+    ("NetTemplate$name%entity", |h, a, _| {
+        crate::netsync::template(h, &a[0].str(), a[1].int())?;
+        VOID
+    }),
+    ("%NetSpawn$template#x=0#y=0#z=0", |h, a, _| int(crate::netsync::spawn(h, &a[0].str(), v3(a, 1))?)),
+    ("%NetIsMine%entity", |h, a, _| int(crate::netsync::is_mine(h, a[0].int()) as i32)),
+    ("%NetOwner%entity", |h, a, _| int(crate::netsync::owner(h, a[0].int()))),
+    ("%NetCharacter%entity", |h, a, _| int(crate::netsync::character_of(h, a[0].int()))),
+    ("%NetFire$event%source_entity#range=1000$data=\"\"", |h, a, _| int(crate::netsync::fire(h, &a[0].str(), a[1].int(), a[2].float(), &a[3].str())? as i32)),
+    ("%NetHit#radius=0", |h, a, _| int(crate::netsync::hit(h, a[0].float())?)),
+    ("%NetCorrections%character", |h, a, _| int(crate::netsync::corrections(h, a[0].int())?)),
+    ("NetRate#updates_per_second", |h, a, _| {
+        crate::netsync::set_rate(h, a[0].float());
         VOID
     }),
     // ---- hierarchy
@@ -2574,6 +2752,10 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("%EntityHidden%entity", |h, a, _| int(h.ent(a[0].int())?.hidden as i32)), // (ext)
+    // (ext) out of the scene and back, for worlds too large to keep in it (store.rs)
+    ("StoreEntity%entity", |h, a, _| h.store_entity(a[0].int()).map(|_| Value::Null)),
+    ("RestoreEntity%entity", |h, a, _| h.restore_entity(a[0].int()).map(|_| Value::Null)),
+    ("%EntityStored%entity", |h, a, _| int(h.entity_stored(a[0].int())? as i32)),
     // ---- materials
     ("EntityColor%entity#red#green#blue", |h, a, _| {
         let e = a[0].int();
@@ -3151,6 +3333,7 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.bus_filter(a[0].int(), a[1].int(), a[2].float(), a[3].float(), a[4].float())?;
         VOID
     }),
+    ("%SetHRTF$file=\"\"", |h, a, _| int(h.set_hrtf(&a[0].str())?)),
     ("SoundBus%sound%bus", |h, a, _| {
         h.world.audio.get(a[1].int())?;
         h.sound_mut(a[0].int())?.bus = a[1].int();
@@ -3199,6 +3382,128 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         int(h.play(&info, a[1].int())?)
     }),
     // ---- physics (ext), Rapier through Fyrox
+    // (ext) character controllers for 3D and 2D (see character.rs, charcontrol.rs)
+    ("%CreateCharController%entity#radius=0.4#height=1.8", |h, a, _| int(crate::character::create_3d(h, a[0].int(), a[1].float(), a[2].float())?)),
+    ("%CreateCharController2D#x#y#width=24#height=32%shape=0", |h, a, _| int(crate::character::create_2d(h, a[0].float(), a[1].float(), a[2].float(), a[3].float(), a[4].int())?)),
+    ("FreeCharController%character", |h, a, _| {
+        crate::character::free(h, a[0].int())?;
+        VOID
+    }),
+    ("UpdateChar%character#seconds=0", |h, a, _| {
+        crate::character::update(h, a[0].int(), a[1].float())?;
+        VOID
+    }),
+    ("CharMove%character#x#y=0#z=0", |h, a, _| {
+        character(h, a)?.wish = Vector3::new(a[1].float(), a[2].float(), a[3].float());
+        VOID
+    }),
+    ("CharWalk%character#ahead#side#yaw", |h, a, _| {
+        let (s, c) = a[3].float().to_radians().sin_cos();
+        let (ahead, side) = (a[1].float(), a[2].float());
+        character(h, a)?.wish = Vector3::new(-s * ahead + c * side, 0.0, c * ahead + s * side);
+        VOID
+    }),
+    ("CharJump%character", |h, a, _| {
+        character(h, a)?.press_jump();
+        VOID
+    }),
+    ("CharHoldJump%character%held", |h, a, _| {
+        character(h, a)?.jump_held = a[1].int() != 0;
+        VOID
+    }),
+    ("CharSprint%character%enable", |h, a, _| {
+        character(h, a)?.sprint = a[1].int() != 0;
+        VOID
+    }),
+    ("CharCrouch%character%enable", |h, a, _| {
+        character(h, a)?.crouch_wanted = a[1].int() != 0;
+        VOID
+    }),
+    ("CharDash%character#x#y#z#speed#seconds", |h, a, _| {
+        let dir = Vector3::new(a[1].float(), a[2].float(), a[3].float());
+        character(h, a)?.dash(dir, a[4].float(), a[5].float());
+        VOID
+    }),
+    ("CharImpulse%character#x#y=0#z=0", |h, a, _| {
+        let v = Vector3::new(a[1].float(), a[2].float(), a[3].float());
+        character(h, a)?.impulse(v);
+        VOID
+    }),
+    ("CharDrop%character", |h, a, _| {
+        character(h, a)?.press_drop();
+        VOID
+    }),
+    ("CharMode%character%mode", |h, a, _| {
+        let mode = a[1].int();
+        if !(0..=2).contains(&mode) {
+            return Err(format!("CharMode mode must be 0, 1 or 2, got {mode}"));
+        }
+        character(h, a)?.mode = mode;
+        VOID
+    }),
+    ("CharSet%character$setting#value", |h, a, _| {
+        crate::character::set(h, a[0].int(), &a[1].str(), a[2].float())?;
+        VOID
+    }),
+    ("#CharGet%character$setting", |h, a, _| float(crate::character::get(h, a[0].int(), &a[1].str())?)),
+    ("PositionChar%character#x#y#z=0", |h, a, _| {
+        crate::character::teleport(h, a[0].int(), Vector3::new(a[1].float(), a[2].float(), a[3].float()))?;
+        VOID
+    }),
+    ("SetCharVelocity%character#x#y#z=0", |h, a, _| {
+        character(h, a)?.vel = Vector3::new(a[1].float(), a[2].float(), a[3].float());
+        VOID
+    }),
+    ("#CharX%character", |h, a, _| float(char_read(h, a)?.pos.x)),
+    ("#CharY%character", |h, a, _| float(char_read(h, a)?.pos.y)),
+    ("#CharZ%character", |h, a, _| float(char_read(h, a)?.pos.z)),
+    ("#CharVX%character", |h, a, _| float(char_read(h, a)?.vel.x)),
+    ("#CharVY%character", |h, a, _| float(char_read(h, a)?.vel.y)),
+    ("#CharVZ%character", |h, a, _| float(char_read(h, a)?.vel.z)),
+    ("#CharHeight%character", |h, a, _| float(char_read(h, a)?.height)),
+    ("%CharGrounded%character", |h, a, _| int(char_read(h, a)?.grounded as i32)),
+    ("%CharLanded%character", |h, a, _| int(char_read(h, a)?.landed as i32)),
+    ("%CharLeftGround%character", |h, a, _| int(char_read(h, a)?.left_ground as i32)),
+    ("%CharJumped%character", |h, a, _| int(char_read(h, a)?.jumped as i32)),
+    ("%CharWallJumped%character", |h, a, _| int(char_read(h, a)?.wall_jumped as i32)),
+    ("%CharStepped%character", |h, a, _| int(char_read(h, a)?.stepped as i32)),
+    ("#CharImpact%character", |h, a, _| float(char_read(h, a)?.impact)),
+    ("%CharOnWall%character", |h, a, _| int(char_read(h, a)?.on_wall as i32)),
+    ("%CharWallSliding%character", |h, a, _| int(char_read(h, a)?.wall_sliding as i32)),
+    ("#CharWallNX%character", |h, a, _| float(char_read(h, a)?.wall_normal.x)),
+    ("#CharWallNY%character", |h, a, _| float(char_read(h, a)?.wall_normal.y)),
+    ("#CharWallNZ%character", |h, a, _| float(char_read(h, a)?.wall_normal.z)),
+    ("%CharOnCeiling%character", |h, a, _| int(char_read(h, a)?.on_ceiling as i32)),
+    ("%CharSliding%character", |h, a, _| int(char_read(h, a)?.sliding as i32)),
+    ("%CharCrouching%character", |h, a, _| int(char_read(h, a)?.crouching as i32)),
+    ("%CharDashing%character", |h, a, _| int((char_read(h, a)?.dash_time > 0.0) as i32)),
+    ("%CharGroundObject%character", |h, a, _| int(char_read(h, a)?.ground_id)),
+    ("#CharGroundNX%character", |h, a, _| float(char_read(h, a)?.ground_normal.x)),
+    ("#CharGroundNY%character", |h, a, _| float(char_read(h, a)?.ground_normal.y)),
+    ("#CharGroundNZ%character", |h, a, _| float(char_read(h, a)?.ground_normal.z)),
+    ("%CharAirJumpsLeft%character", |h, a, _| int(char_read(h, a)?.air_left)),
+    ("%CharFacing%character", |h, a, _| int(crate::character::slot(h, a[0].int())?.facing)),
+    ("$CharState%character", |h, a, _| Ok(Value::Str(char_read(h, a)?.state_name().into()))),
+    ("%CharBody%character", |h, a, _| {
+        int(match crate::character::slot(h, a[0].int())?.link {
+            crate::character::Link::Body2D { body, .. } => body,
+            crate::character::Link::Entity { .. } => 0,
+        })
+    }),
+    ("EntityOneWay%entity%enable=1", |h, a, _| {
+        let e = a[0].int();
+        h.ent(e)?;
+        if a[1].int() != 0 {
+            h.world.chars.one_way_3d.insert(e);
+        } else {
+            h.world.chars.one_way_3d.remove(&e);
+        }
+        VOID
+    }),
+    ("Body2DOneWay%body%enable=1", |h, a, _| {
+        crate::character::set_one_way_2d(h, a[0].int(), a[1].int() != 0)?;
+        VOID
+    }),
     ("EntityPhysics%entity%body_type=1%shape=0#mass=1", |h, a, _| {
         h.scene()?;
         h.enable_physics(a[0].int(), a[1].int(), a[2].int(), a[3].float())?;
@@ -3521,17 +3826,55 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         int(std::fs::write(&*a[1].str(), text).is_ok() as i32)
     }),
     // (ext) maps made in the Tiled editor (see tiled.rs)
-    ("%LoadTiledMap$file", |h, a, _| int(crate::tiled::load(h, &a[0].str())?)),
+    ("%LoadTiledMap$file$level=\"\"", |h, a, _| int(crate::tiled::load(h, &a[0].str(), &a[1].str())?)),
     ("FreeTiledMap%map", |h, a, _| {
         crate::tiled::free(h, a[0].int())?;
         VOID
     }),
-    ("DrawTiledMap%map#x=0#y=0", |h, a, _| {
-        let layers = crate::tiled::map(h, a[0].int())?.layers.clone();
-        for l in layers.iter().filter(|l| l.visible) {
-            draw_tilemap(h, l.map, a[1].float() + l.offset.0, a[2].float() + l.offset.1)?;
+    ("DrawTiledMap%map#x=0#y=0", |h, a, _| draw_tiled_map(h, a[0].int(), a[1].float(), a[2].float())),
+    ("%CountTiledLevels%map", |h, a, _| int(crate::tiled::map(h, a[0].int())?.levels.len().max(1) as i32)),
+    ("$TiledLevelName%map%index", |h, a, _| Ok(Value::Str(tiled_level(h, a)?.name.as_str().into()))),
+    ("#TiledLevelX%map%index", |h, a, _| float(tiled_level(h, a)?.x)),
+    ("#TiledLevelY%map%index", |h, a, _| float(tiled_level(h, a)?.y)),
+    ("$TiledMapLevel%map", |h, a, _| Ok(Value::Str(crate::tiled::map(h, a[0].int())?.level.as_str().into()))),
+    ("%TiledMapWidth%map", |h, a, _| int(crate::tiled::map(h, a[0].int())?.width)),
+    ("%TiledMapHeight%map", |h, a, _| int(crate::tiled::map(h, a[0].int())?.height)),
+    ("%TiledMapTileWidth%map", |h, a, _| int(crate::tiled::map(h, a[0].int())?.tile_size.0 as i32)),
+    ("%TiledMapTileHeight%map", |h, a, _| int(crate::tiled::map(h, a[0].int())?.tile_size.1 as i32)),
+    ("#TiledMapPixelWidth%map", |h, a, _| float(crate::tiled::map(h, a[0].int())?.pixel_size.0)),
+    ("#TiledMapPixelHeight%map", |h, a, _| float(crate::tiled::map(h, a[0].int())?.pixel_size.1)),
+    ("$TiledMapOrientation%map", |h, a, _| Ok(Value::Str(crate::tiled::map(h, a[0].int())?.orientation.into()))),
+    ("%TiledMapBackground%map", |h, a, _| {
+        int(crate::tiled::map(h, a[0].int())?.background.map_or(-1, |[r, g, b]| (r as i32) << 16 | (g as i32) << 8 | b as i32))
+    }),
+    ("%TiledMapBody2D%map$layer=\"\"#x=0#y=0", |h, a, _| int(crate::tiled::collision_body(h, a[0].int(), &a[1].str(), a[2].float(), a[3].float())?)),
+    ("$TiledLayerProperty%map$layer$name$fallback=\"\"", |h, a, _| {
+        let (layer, name) = (a[1].str(), a[2].str());
+        let t = crate::tiled::map(h, a[0].int())?;
+        let tiles = t.layers.iter().find(|l| l.name.eq_ignore_ascii_case(&layer)).map(|l| &l.props);
+        let list = tiles.or_else(|| t.image_layers.iter().find(|l| l.name.eq_ignore_ascii_case(&layer)).map(|l| &l.props));
+        let v = list.and_then(|p| crate::level::prop(p, &name)).map(str::to_string);
+        Ok(Value::Str(v.unwrap_or_else(|| a[3].str().to_string()).as_str().into()))
+    }),
+    ("TiledLayerAlpha%map$layer#alpha", |h, a, _| {
+        let (m, name) = (a[0].int(), a[1].str());
+        crate::tiled::map(h, m)?;
+        if let Some(t) = h.world.tiled_maps[m as usize - 1].as_mut() {
+            let v = a[2].float().clamp(0.0, 1.0);
+            t.layers.iter_mut().filter(|l| l.name.eq_ignore_ascii_case(&name) || l.group.eq_ignore_ascii_case(&name)).for_each(|l| l.look.opacity = v);
+            t.image_layers.iter_mut().filter(|l| l.name.eq_ignore_ascii_case(&name)).for_each(|l| l.look.opacity = v);
         }
         VOID
+    }),
+    ("%TiledImageLayer%map$name", |h, a, _| {
+        let name = a[1].str();
+        int(crate::tiled::map(h, a[0].int())?.image_layers.iter().find(|l| l.name.eq_ignore_ascii_case(&name)).map_or(0, |l| l.image))
+    }),
+    ("$TiledTileType%map%tile", |h, a, _| Ok(Value::Str(tiled_frame(h, a[0].int(), a[1].int())?[a[1].int() as usize].kind.as_str().into()))),
+    ("$TiledTileProperty%map%tile$name$fallback=\"\"", |h, a, _| {
+        let frames = tiled_frame(h, a[0].int(), a[1].int())?;
+        let v = crate::level::prop(&frames[a[1].int() as usize].props, &a[2].str()).map(str::to_string);
+        Ok(Value::Str(v.unwrap_or_else(|| a[3].str().to_string()).as_str().into()))
     }),
     ("%TiledMapImage%map", |h, a, _| int(crate::tiled::map(h, a[0].int())?.image)),
     ("$TiledMapProperty%map$name$fallback=\"\"", |h, a, _| {
@@ -3552,7 +3895,9 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         let (m, name) = (a[0].int(), a[1].str());
         crate::tiled::map(h, m)?;
         if let Some(t) = h.world.tiled_maps[m as usize - 1].as_mut() {
-            t.layers.iter_mut().filter(|l| l.name.eq_ignore_ascii_case(&name)).for_each(|l| l.visible = a[2].int() != 0);
+            let show = a[2].int() != 0;
+            t.layers.iter_mut().filter(|l| l.name.eq_ignore_ascii_case(&name) || l.group.eq_ignore_ascii_case(&name)).for_each(|l| l.visible = show);
+            t.image_layers.iter_mut().filter(|l| l.name.eq_ignore_ascii_case(&name)).for_each(|l| l.visible = show);
         }
         VOID
     }),
@@ -3577,6 +3922,8 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
     ("#TiledObjectRotation%obj", |h, a, _| float(crate::tiled::object(h, a[0].int())?.def.rotation)),
     ("%TiledObjectShape%obj", |h, a, _| int(crate::tiled::object(h, a[0].int())?.def.shape)),
     ("%TiledObjectTile%obj", |h, a, _| int(crate::tiled::object(h, a[0].int())?.tile)),
+    ("$TiledObjectText%obj", |h, a, _| Ok(Value::Str(crate::tiled::object(h, a[0].int())?.def.text.as_str().into()))),
+    ("DrawTiledObject%obj#x=0#y=0", |h, a, _| draw_tiled_object(h, a[0].int(), a[1].float(), a[2].float())),
     ("%CountTiledObjectPoints%obj", |h, a, _| int(crate::tiled::object(h, a[0].int())?.def.points.len() as i32)),
     ("#TiledObjectPointX%obj%index", |h, a, _| float(tiled_point(h, a)?.0)),
     ("#TiledObjectPointY%obj%index", |h, a, _| float(tiled_point(h, a)?.1)),
@@ -3619,14 +3966,19 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("%GetTileTerrain%map%x%y", |h, a, _| int(tilemap(h, a[0].int())?.terrain_at(a[1].int(), a[2].int()))),
-    ("DrawTileMap%map%x=0%y=0", |h, a, _| draw_tilemap(h, a[0].int(), a[1].float(), a[2].float())),
+    ("DrawTileMap%map%x=0%y=0", |h, a, _| draw_tilemap(h, a[0].int(), a[1].float(), a[2].float(), None)),
     // cell under a point given in pixels from the map's top-left corner
     ("%TileMapCellX%map#x", |h, a, _| int((a[1].float() / tile_size(h, a[0].int())?.0).floor() as i32)),
     ("%TileMapCellY%map#y", |h, a, _| int((a[1].float() / tile_size(h, a[0].int())?.1).floor() as i32)),
     ("%TileAt%map#x#y", |h, a, _| {
-        let (tw, th) = tile_size(h, a[0].int())?;
-        int(tilemap(h, a[0].int())?.get((a[1].float() / tw).floor() as i32, (a[2].float() / th).floor() as i32))
+        let (cx, cy) = map_layout(h, a[0].int())?.pick(a[1].float(), a[2].float());
+        int(tilemap(h, a[0].int())?.get(cx, cy))
     }),
+    // (ext) the same for grids of diamonds and hexagons, where a cell depends on both
+    ("%TileMapPickX%map#x#y", |h, a, _| int(map_layout(h, a[0].int())?.pick(a[1].float(), a[2].float()).0)),
+    ("%TileMapPickY%map#x#y", |h, a, _| int(map_layout(h, a[0].int())?.pick(a[1].float(), a[2].float()).1)),
+    ("#TileMapCellCenterX%map%cell_x%cell_y", |h, a, _| float(map_layout(h, a[0].int())?.cell_center(a[1].int(), a[2].int()).0)),
+    ("#TileMapCellCenterY%map%cell_x%cell_y", |h, a, _| float(map_layout(h, a[0].int())?.cell_center(a[1].int(), a[2].int()).1)),
     // ---- movies (bbgraphics.cpp): GIF, Motion-JPEG AVI or a folder of images
     ("%OpenMovie$file", |h, a, _| match crate::movie::Movie::open(&a[0].str()) {
         Ok(m) => {
@@ -3868,6 +4220,9 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("%TileMapBody2D%map#x=0#y=0", |h, a, _| {
+        if let Some(l) = tilemap(h, a[0].int())?.layout.clone().filter(|l| l.shape != crate::tilegrid::Shape::Ortho) {
+            return int(crate::tiled::grid_body(h, a[0].int(), &l, a[1].float(), a[2].float())?);
+        }
         let (tw, th) = tile_size(h, a[0].int())?;
         int(h.tilemap_body2d(a[0].int(), a[1].float(), a[2].float(), tw, th)?)
     }),
@@ -4253,6 +4608,15 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         h.free_navmesh(a[0].int())?;
         VOID
     }),
+    ("%CreateNavLink%navmesh#x1#y1#z1#x2#y2#z2%two_way=1#cost=1#jump_height=0", |h, a, _| int(h.create_nav_link(a[0].int(), v3(a, 1), v3(a, 4), a[7].int() != 0, a[8].float(), a[9].float())?)),
+    ("NavLinkEnable%navmesh%link%enable=1", |h, a, _| {
+        h.nav_link_enable(a[0].int(), a[1].int(), a[2].int() != 0)?;
+        VOID
+    }),
+    ("FreeNavLink%navmesh%link", |h, a, _| {
+        h.free_nav_link(a[0].int(), a[1].int())?;
+        VOID
+    }),
     ("%FindPath%navmesh#x1#y1#z1#x2#y2#z2", |h, a, _| int(h.find_path(a[0].int(), v3(a, 1), v3(a, 4))?)),
     ("%PathPoints%path", |h, a, _| int(h.path(a[0].int())?.len() as i32)),
     ("#PathX%path%index", |h, a, _| float(h.path_point(a[0].int(), a[1].int())?.x)),
@@ -4293,6 +4657,11 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         VOID
     }),
     ("%AgentArrived%agent", |h, a, _| int(h.agent_mut(a[0].int())?.arrived as i32)),
+    ("%AgentOnLink%agent", |h, a, _| int(h.agent_mut(a[0].int())?.link_here())),
+    ("AgentCrowd%agent%enable=1#look_ahead=2", |h, a, _| {
+        h.agent_crowd(a[0].int(), a[1].int() != 0, a[2].float())?;
+        VOID
+    }),
     ("#AgentDistance%agent", |h, a, _| float(h.agent_distance(a[0].int())?)),
     ("AgentSpeed%agent#speed", |h, a, _| {
         h.agent_mut(a[0].int())?.speed = a[1].float().max(0.0);

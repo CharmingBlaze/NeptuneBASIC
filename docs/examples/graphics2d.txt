@@ -305,6 +305,23 @@ Graphics3D 800, 600
 GraphicsQuality 2
 Print "Quality level: " + GetGraphicsQuality()   ; 2 = high
 
+=== AutoQuality
+; start with everything turned up and let slow computers turn it down
+Graphics3D 800, 600
+GraphicsQuality QUALITY_ULTRA
+AutoQuality 50                   ; aim for 50 frames a second or more
+cam = CreateCamera()
+While Not KeyHit(1)
+    RenderWorld
+    Text 10, 10, "Quality level: " + GetGraphicsQuality()
+    Flip
+Wend
+
+=== GraphicsCardName
+; Show which graphics card is drawing the game
+Graphics3D 800, 600
+Print "Graphics card: " + GraphicsCardName()
+
 === PostEffect
 ; Turn on bloom, and turn off shadows
 Graphics3D 800, 600

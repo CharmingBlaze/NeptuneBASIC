@@ -368,6 +368,12 @@ world = CreateAudioBus("world")
 BusFilter world, FILTER_LOWPASS, 800     ; only sounds below about 800 Hz pass
 BusFilter world, FILTER_NONE             ; back to normal
 
+=== SetHRTF
+; head-related 3D sound, if the game has the measurements
+Graphics3D 800, 600
+If SetHRTF("sounds/head.bin") = 0 Then DebugLog "plain panning"
+SetHRTF                          ; no file: back to plain panning
+
 === SoundBus
 ; every later PlaySound of this sound goes into the voices bus
 voices = CreateAudioBus("voices")

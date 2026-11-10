@@ -1,0 +1,339 @@
+; ARENA - a first-person shooter in about 300 lines.
+; Run from the repository root: neptune run examples/games/arena.nb
+;
+; Survive waves of robots. Mouse looks, left button fires, W A S D walk,
+; Space jumps, Esc quits. Green boxes restore health.
+;
+; Mechanics shown (each is explained in docs/GAMES3D.md):
+;   frame-rate independent movement, mouse look, gravity and jumping with
+;   Collisions, hitscan shooting with CameraPick, enemies that chase,
+;   health and damage, waves, pickups, game states, a HUD, input actions,
+;   particles, camera shake and a flash when hurt.
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "Arena"
+SeedRnd MilliSecs()
+
+; Numbers to tweak live here, so nothing is buried in the code.
+Const RUN_SPEED# = 7, JUMP_SPEED# = 7.5, GRAVITY# = 20, LOOK_SPEED# = 0.15
+Const FIRE_DELAY# = 0.16, SHOT_DAMAGE = 34, MAX_HEALTH = 100
+Const ENEMY_HEALTH = 100, ENEMY_DAMAGE = 12, ENEMY_REACH# = 1.8, ENEMY_ATTACK_DELAY# = 0.8
+
+; Collision types are just names for groups of things.
+Const TYPE_PLAYER = 1, TYPE_WALL = 2, TYPE_ENEMY = 3
+Const STATE_TITLE = 0, STATE_PLAY = 1, STATE_OVER = 2
+
+; Actions: the game asks for "fire", not for a certain key, so a gamepad or
+; a rebinding menu needs no change to the game code.
+BindKey "forward", KEY_W : BindKey "back", KEY_S
+BindKey "left", KEY_A : BindKey "right", KEY_D
+BindKey "jump", KEY_SPACE
+BindMouse "fire", 1
+
+; ---- the player -------------------------------------------------------
+; The body turns left and right. The camera is its child and only tilts up
+; and down, so walking forward never depends on where you look vertically.
+Global player = CreatePivot()
+EntityType player, TYPE_PLAYER
+EntityRadius player, 0.45, 0.9
+Global camera = CreateCamera(player)
+PositionEntity camera, 0, 0.6, 0
+CameraRange camera, 0.05, 200
+CameraClsColor camera, 25, 28, 40
+Global pitch#, fallSpeed#, onGround, health, fireTimer#, score, wave, hurtTimer#
+Global state = STATE_TITLE
+
+; ---- the world --------------------------------------------------------
+sun = CreateLight(1)
+RotateEntity sun, 55, 30, 0
+LightShadows sun, True
+AmbientLight 70, 70, 85
+
+; Every wall is a scaled cube that bullets and bodies both stop at.
+Function Wall(x#, y#, z#, w#, h#, d#, r, g, b)
+    c = CreateCube()
+    ScaleEntity c, w / 2, h / 2, d / 2
+    PositionEntity c, x, y, z
+    EntityColor c, r, g, b
+    EntityType c, TYPE_WALL
+    EntityPickMode c, 2
+    Return c
+End Function
+
+Wall 0, -0.5, 0, 50, 1, 50, 70, 75, 85
+Wall 0, 3, 25, 50, 8, 1, 110, 70, 60
+Wall 0, 3, -25, 50, 8, 1, 110, 70, 60
+Wall 25, 3, 0, 1, 8, 50, 90, 75, 65
+Wall -25, 3, 0, 1, 8, 50, 90, 75, 65
+; cover to dodge behind
+For i = 1 To 14
+    Wall Rnd(-19, 19), 1.25, Rnd(-19, 19), Rnd(2, 5), 2.5, Rnd(2, 5), 95, 100, 115
+Next
+
+; Which groups stop which. Method 2 is against the mesh, method 1 against a
+; sphere. Response 3 slides along walls without sliding down slopes.
+Collisions TYPE_PLAYER, TYPE_WALL, 2, 3
+Collisions TYPE_PLAYER, TYPE_ENEMY, 1, 2
+Collisions TYPE_ENEMY, TYPE_WALL, 2, 2
+Collisions TYPE_ENEMY, TYPE_ENEMY, 1, 2
+
+; ---- effects ----------------------------------------------------------
+Global shot = LoadSound("examples/media/blip.wav")
+If shot = 0 Then RuntimeError "run this from the repository root (media not found)"
+
+; One emitter is moved to wherever sparks are needed, and only runs briefly.
+Global sparks = CreateEmitter()
+EmitterRate sparks, 500
+EmitterLife sparks, 0.15, 0.4
+EmitterVelocity sparks, 0, 2, 0, 6
+EmitterGravity sparks, 0, -14, 0
+EmitterSize sparks, 0.1
+EmitterColor sparks, 255, 220, 120
+EmitterFadeColor sparks, 255, 80, 20
+EmitterEnable sparks, False
+Global sparkTimer#
+
+Function Sparks_At(x#, y#, z#)
+    PositionEntity sparks, x, y, z
+    EmitterEnable sparks, True
+    sparkTimer = 0.06
+End Function
+
+; ---- things that come and go ------------------------------------------
+Type Enemy
+    Field ent
+    Field health
+    Field attackTimer#, flash#
+End Type
+
+Type Medkit
+    Field ent
+End Type
+
+Function SpawnEnemy()
+    e.Enemy = New Enemy
+    e\ent = CreateSphere(10)
+    ScaleEntity e\ent, 0.8, 0.8, 0.8
+    EntityColor e\ent, 200, 60, 60
+    ; a child moves and turns with its parent: this one is the robot's eye
+    eye = CreateSphere(6, e\ent)
+    ScaleEntity eye, 0.3, 0.3, 0.2
+    PositionEntity eye, 0, 0.2, 0.9
+    EntityColor eye, 255, 240, 120
+    EntityFX eye, 1
+    ; spawn in a corner, in a ring around it, so they don't overlap
+    cx# = 21 * (Rand(0, 1) * 2 - 1)
+    cz# = 21 * (Rand(0, 1) * 2 - 1)
+    PositionEntity e\ent, cx + Rnd(-2, 2), 1, cz + Rnd(-2, 2)
+    ResetEntity e\ent
+    EntityType e\ent, TYPE_ENEMY
+    EntityRadius e\ent, 0.8
+    EntityPickMode e\ent, 1
+    e\health = ENEMY_HEALTH
+    e\attackTimer = ENEMY_ATTACK_DELAY
+End Function
+
+Function SpawnMedkit()
+    m.Medkit = New Medkit
+    m\ent = CreateCube()
+    ScaleEntity m\ent, 0.35, 0.35, 0.35
+    EntityColor m\ent, 80, 230, 110
+    PositionEntity m\ent, Rnd(-18, 18), 0.8, Rnd(-18, 18)
+End Function
+
+Function NextWave()
+    wave = wave + 1
+    For i = 1 To wave + 2
+        SpawnEnemy
+    Next
+    SpawnMedkit
+End Function
+
+Function NewGame()
+    For e.Enemy = Each Enemy
+        FreeEntity e\ent
+        Delete e
+    Next
+    For m.Medkit = Each Medkit
+        FreeEntity m\ent
+        Delete m
+    Next
+    PositionEntity player, 0, 1.2, 0
+    RotateEntity player, 0, 0, 0
+    ResetEntity player
+    pitch = 0
+    fallSpeed = 0
+    health = MAX_HEALTH
+    score = 0
+    wave = 0
+    state = STATE_PLAY
+    CaptureMouse True
+    ; throw away movement and clicks from before the game began
+    MouseXSpeed() : MouseYSpeed() : ActionHit("fire")
+    NextWave
+End Function
+
+; ---- each part of a frame is its own function ---------------------------
+Function MovePlayer(dt#)
+    ; look: the body turns, the camera tilts and stops short of straight up
+    TurnEntity player, 0, -MouseXSpeed() * LOOK_SPEED, 0
+    pitch = Clamp(pitch + MouseYSpeed() * LOOK_SPEED, -85, 85)
+    RotateEntity camera, pitch, 0, 0
+
+    ; walk: without dividing by the length, moving diagonally would be faster
+    sideways# = ActionValue("right") - ActionValue("left")
+    ahead# = ActionValue("forward") - ActionValue("back")
+    length# = Sqr(sideways * sideways + ahead * ahead)
+    If length > 1
+        sideways = sideways / length
+        ahead = ahead / length
+    End If
+    MoveEntity player, sideways * RUN_SPEED * dt, 0, ahead * RUN_SPEED * dt
+
+    ; gravity changes the speed; the speed changes the height
+    fallSpeed = fallSpeed - GRAVITY * dt
+    If ActionHit("jump") And onGround Then fallSpeed = JUMP_SPEED
+    TranslateEntity player, 0, fallSpeed * dt, 0
+End Function
+
+; Runs after UpdateWorld has moved everything and found what touched what.
+Function ReadCollisions()
+    onGround = False
+    For i = 1 To CountCollisions(player)
+        ; the surface's normal says which way it faces: up means a floor
+        If CollisionNY(player, i) > 0.7
+            onGround = True
+            If fallSpeed < 0 Then fallSpeed = 0
+        ElseIf CollisionNY(player, i) < -0.7 And fallSpeed > 0
+            fallSpeed = 0 ; bumped a ceiling
+        End If
+    Next
+End Function
+
+Function Shoot()
+    fireTimer = FIRE_DELAY
+    PlaySound shot
+    CameraShake camera, 0.12, 0.1
+    ; hitscan: the bullet is instant, a line straight out from the crosshair
+    hit = CameraPick(camera, GraphicsWidth() / 2, GraphicsHeight() / 2)
+    If hit = 0 Then Return
+    Sparks_At PickedX(), PickedY(), PickedZ()
+    For e.Enemy = Each Enemy
+        If e\ent = hit
+            e\health = e\health - SHOT_DAMAGE
+            e\flash = 0.1
+            EntityColor e\ent, 255, 255, 255
+            If e\health <= 0
+                FreeEntity e\ent
+                Delete e
+                score = score + 100
+            End If
+            Return
+        End If
+    Next
+End Function
+
+Function HurtPlayer(damage)
+    health = health - damage
+    CameraShake camera, 0.7, 0.3
+    ; flash red, then the main loop fades it away
+    ScreenFade 180, 0, 0, 0.45, 0.04
+    hurtTimer = 0.08
+    If health <= 0
+        state = STATE_OVER
+        CaptureMouse False
+    End If
+End Function
+
+Function UpdateEnemies(dt#)
+    alive = 0
+    speed# = 2.6 + wave * 0.35
+    For e.Enemy = Each Enemy
+        alive = alive + 1
+        ; face the player, flat, then walk "forward": no trigonometry needed
+        PointEntity e\ent, player
+        RotateEntity e\ent, 0, EntityYaw(e\ent), 0
+        MoveEntity e\ent, 0, 0, speed * dt
+        e\attackTimer = e\attackTimer - dt
+        If EntityDistance(e\ent, player) < ENEMY_REACH And e\attackTimer <= 0
+            e\attackTimer = ENEMY_ATTACK_DELAY
+            HurtPlayer ENEMY_DAMAGE
+        End If
+        If e\flash > 0
+            e\flash = e\flash - dt
+            If e\flash <= 0 Then EntityColor e\ent, 200, 60, 60
+        End If
+    Next
+    If alive = 0 Then NextWave
+End Function
+
+Function UpdateMedkits(dt#)
+    For m.Medkit = Each Medkit
+        TurnEntity m\ent, 0, 120 * dt, 0
+        If EntityDistance(m\ent, player) < 1.8
+            health = Clamp(health + 35, 0, MAX_HEALTH)
+            PlaySound shot
+            FreeEntity m\ent
+            Delete m
+        End If
+    Next
+End Function
+
+Function DrawHUD()
+    w = GraphicsWidth()
+    h = GraphicsHeight()
+    Color 255, 255, 255
+    If state = STATE_PLAY
+        Rect w / 2 - 1, h / 2 - 9, 2, 6 : Rect w / 2 - 1, h / 2 + 3, 2, 6
+        Rect w / 2 - 9, h / 2 - 1, 6, 2 : Rect w / 2 + 3, h / 2 - 1, 6, 2
+        Text 20, 16, "Wave " + wave + "    Score " + score
+        Color 40, 40, 50 : Rect 20, h - 34, 204, 18
+        Color 220, 60, 60 : Rect 22, h - 32, Clamp(health, 0, 100) * 2, 14
+    ElseIf state = STATE_TITLE
+        Text w / 2, h / 2 - 30, "A R E N A", True, True
+        Text w / 2, h / 2 + 4, "Click to start", True, True
+    Else
+        Text w / 2, h / 2 - 30, "You reached wave " + wave + " with " + score + " points", True, True
+        Text w / 2, h / 2 + 4, "Click to play again", True, True
+    End If
+End Function
+
+; ---- the main loop -----------------------------------------------------
+lastTime = MilliSecs()
+While Not KeyHit(KEY_ESCAPE)
+    ; How long the last frame took. Multiplying movement by this makes the
+    ; game run at the same speed on every computer. The limit stops a long
+    ; pause from throwing things through walls.
+    now = MilliSecs()
+    dt# = Clamp((now - lastTime) / 1000.0, 0, 0.05)
+    lastTime = now
+
+    Select state
+        Case STATE_PLAY
+            MovePlayer dt
+            fireTimer = fireTimer - dt
+            If ActionDown("fire") And fireTimer <= 0 Then Shoot
+            UpdateEnemies dt
+            UpdateMedkits dt
+        Default
+            ; nothing moves; the view turns slowly behind the title
+            TurnEntity player, 0, 8 * dt, 0
+            If ActionHit("fire") Then NewGame
+    End Select
+
+    If sparkTimer > 0
+        sparkTimer = sparkTimer - dt
+        If sparkTimer <= 0 Then EmitterEnable sparks, False
+    End If
+    If hurtTimer > 0
+        hurtTimer = hurtTimer - dt
+        If hurtTimer <= 0 Then ScreenFade 180, 0, 0, 0, 0.3
+    End If
+
+    UpdateWorld
+    ReadCollisions
+    RenderWorld
+    DrawHUD
+    Flip
+Wend
+End

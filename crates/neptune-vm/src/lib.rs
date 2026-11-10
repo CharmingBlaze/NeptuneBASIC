@@ -14,6 +14,8 @@ pub mod dynlib;
 pub mod ease;
 pub mod net;
 pub mod netgame;
+#[cfg(feature = "online")]
+pub mod netlink;
 pub mod plugin;
 pub mod settings;
 pub mod stdlib;

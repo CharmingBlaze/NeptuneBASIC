@@ -6,6 +6,15 @@
 //! `NEPTUNE_QUALITY` environment variable) and defaults to high. Low also
 //! turns off multisampling and is meant for older integrated GPUs.
 //!
+//! Two things are the player's, not the program's, so that a game written
+//! on a fast PC still runs on a slow one:
+//!
+//! * a ceiling, `--max-quality <level>` (`NEPTUNE_MAX_QUALITY`): whatever
+//!   the program asks for with `GraphicsQuality`, it gets no more than this;
+//! * automatic quality, `--quality auto` (or `AutoQuality` in the program):
+//!   the level steps down while the game runs slower than wanted
+//!   ([`AutoQuality`]).
+//!
 //! Shadow controls (ext): `SetShadowMode`, `SetShadowQuality`,
 //! `SetShadowResolution`, `SetShadowSoftness`, `SetShadowDistance`,
 //! `SetShadowCascadeCount`, `SetShadowBias`, `EnableShadows` and
@@ -35,7 +44,10 @@ pub const EFFECT_LIGHT_SCATTER: i32 = 5;
 /// Requested quality: a preset plus per-effect overrides.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quality {
+    /// The level asked for; [`Quality::in_use`] is the one applied.
     pub level: i32,
+    /// The player's ceiling (`--max-quality`).
+    pub max_level: i32,
     pub bloom: Option<bool>,
     pub ssao: Option<bool>,
     pub fxaa: Option<bool>,
@@ -57,6 +69,7 @@ impl Default for Quality {
     fn default() -> Self {
         Quality {
             level: initial_level(),
+            max_level: max_level(),
             bloom: None,
             ssao: None,
             fxaa: None,
@@ -87,10 +100,92 @@ fn initial_level() -> i32 {
     std::env::var("NEPTUNE_QUALITY").ok().and_then(|v| parse_level(&v)).unwrap_or(2)
 }
 
+fn max_level() -> i32 {
+    std::env::var("NEPTUNE_MAX_QUALITY").ok().and_then(|v| parse_level(&v)).unwrap_or(3)
+}
+
+/// True when the player asked for automatic quality (`--quality auto`).
+pub fn auto_requested() -> bool {
+    std::env::var("NEPTUNE_QUALITY").is_ok_and(|v| v.trim().eq_ignore_ascii_case("auto"))
+}
+
+/// Frame rate automatic quality aims for unless the program names one.
+pub const AUTO_TARGET: f32 = 50.0;
+/// Seconds of frames looked at before deciding anything.
+const AUTO_WINDOW: f32 = 1.0;
+
+/// (ext) Automatic quality: while the game runs slower than `target` frames
+/// a second, the quality level steps down, one level at a time. If a step
+/// does not make the game faster, the graphics card was not what held it
+/// back (the program's own work was): the step is taken back and the level
+/// is left alone from then on. The level never goes up by itself, so the
+/// picture does not flicker between two levels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AutoQuality {
+    pub target: f32,
+    frames: u32,
+    time: f32,
+    /// Windows to let pass after a change: shaders are compiled and shadow
+    /// maps remade, which says nothing about the speed that follows.
+    settle: u32,
+    /// The frame rate before the last step down, to see whether it helped.
+    before: Option<f32>,
+    done: bool,
+}
+
+impl AutoQuality {
+    pub fn new(target: f32) -> AutoQuality {
+        AutoQuality { target, frames: 0, time: 0.0, settle: 2, before: None, done: false }
+    }
+
+    /// Counts a frame that took `dt` seconds at quality `level`. Returns the
+    /// level to change to, if any.
+    pub fn frame(&mut self, dt: f32, level: i32) -> Option<i32> {
+        if self.done {
+            return None;
+        }
+        // a long pause (loading, a window being dragged) is not slowness
+        if dt > 0.5 {
+            self.frames = 0;
+            self.time = 0.0;
+            return None;
+        }
+        self.frames += 1;
+        self.time += dt;
+        if self.time < AUTO_WINDOW {
+            return None;
+        }
+        let fps = self.frames as f32 / self.time;
+        self.frames = 0;
+        self.time = 0.0;
+        if self.settle > 0 {
+            self.settle -= 1;
+            return None;
+        }
+        if let Some(before) = self.before.take() {
+            if fps < before * 1.1 {
+                self.done = true;
+                return Some(level + 1);
+            }
+        }
+        if fps < self.target * 0.9 && level > 0 {
+            self.before = Some(fps);
+            self.settle = 1;
+            return Some(level - 1);
+        }
+        None
+    }
+}
+
 impl Quality {
+    /// The level applied: the one asked for, held under the player's ceiling.
+    pub fn in_use(&self) -> i32 {
+        self.level.min(self.max_level)
+    }
+
     /// Multisample count for the window (set when it opens).
     pub fn msaa(&self) -> Option<u8> {
-        if self.level == 0 {
+        if self.in_use() == 0 {
             None
         } else {
             Some(4)
@@ -98,13 +193,14 @@ impl Quality {
     }
 
     pub fn settings(&self) -> QualitySettings {
-        let mut q = match self.level {
+        let level = self.in_use();
+        let mut q = match level {
             0 => QualitySettings::low(),
             1 => QualitySettings::medium(),
             3 => QualitySettings::ultra(),
             _ => QualitySettings::high(),
         };
-        if self.level == 0 {
+        if level == 0 {
             // Fyrox's low preset keeps tiny half-precision sun shadows that
             // speckle surfaces; dropping them is both cleaner and faster
             q.csm_settings.enabled = false;
@@ -213,6 +309,18 @@ impl Host3D<'_> {
         Ok(())
     }
 
+    /// Automatic quality's share of each frame (called by `Flip`).
+    pub fn auto_quality_frame(&mut self) {
+        let now = std::time::Instant::now();
+        let dt = self.world.last_flip.replace(now).map(|t| now.duration_since(t).as_secs_f32());
+        let level = self.world.quality.in_use();
+        let (Some(auto), Some(dt)) = (self.world.auto_quality.as_mut(), dt) else { return };
+        if let Some(new) = auto.frame(dt, level) {
+            self.world.quality.level = new;
+            self.world.quality_dirty = true;
+        }
+    }
+
     fn shadows_changed(&mut self) -> Result<Value, String> {
         self.world.quality_dirty = true;
         if self.scene().is_ok() {
@@ -224,6 +332,17 @@ impl Host3D<'_> {
 
 /// The shadow commands; see the module comment.
 pub static COMMANDS: &[(&str, Cmd)] = &[
+    // (ext) the level steps down while the game runs slower than `fps`; 0 turns it off
+    ("AutoQuality#fps=50", |h, a, _| {
+        let fps = a[0].float();
+        h.world.auto_quality = (fps > 0.0).then(|| AutoQuality::new(fps));
+        Ok(Value::Null)
+    }),
+    // (ext) what the graphics card calls itself, for settings screens and bug reports
+    ("$GraphicsCardName", |h, _, _| {
+        let name = h.gpu.and_then(crate::screenshot::card_name).unwrap_or_default();
+        Ok(Value::Str(name.into()))
+    }),
     ("SetShadowMode%mode", |h, a, _| {
         let q = &mut h.world.quality;
         match a[0].int() {
@@ -307,6 +426,66 @@ mod tests {
         q.set_effect(EFFECT_SHADOWS, true).unwrap();
         assert!(q.settings().spot_shadows_enabled && q.settings().spot_shadow_map_size >= 256);
         assert!(q.set_effect(99, true).is_err());
+    }
+
+    #[test]
+    fn the_players_ceiling_holds_whatever_the_program_asks() {
+        let q = Quality { level: 3, max_level: 0, ..Quality::default() };
+        assert_eq!(q.in_use(), 0);
+        assert_eq!(q.msaa(), None);
+        assert!(!q.settings().use_ssao && !q.settings().csm_settings.enabled);
+        let q = Quality { level: 1, max_level: 3, ..Quality::default() };
+        assert_eq!(q.in_use(), 1);
+    }
+
+    /// Runs `seconds` of frames at `fps`; the level changes asked for.
+    fn run(auto: &mut AutoQuality, level: &mut i32, fps: f32, seconds: f32) -> Vec<i32> {
+        let mut changes = Vec::new();
+        for _ in 0..(fps * seconds) as usize {
+            if let Some(l) = auto.frame(1.0 / fps, *level) {
+                *level = l;
+                changes.push(l);
+            }
+        }
+        changes
+    }
+
+    #[test]
+    fn auto_quality_steps_down_while_it_helps() {
+        let mut auto = AutoQuality::new(50.0);
+        let mut level = 2;
+        // fast enough: nothing happens
+        assert!(run(&mut auto, &mut level, 60.0, 10.0).is_empty());
+        // too slow: one step down, after the first second or two
+        assert_eq!(run(&mut auto, &mut level, 30.0, 2.5), [1]);
+        // that made it faster but not fast enough: another step
+        assert_eq!(run(&mut auto, &mut level, 40.0, 2.0), [0]);
+        // faster again: the step is kept; nothing below low, and never back up
+        assert!(run(&mut auto, &mut level, 48.0, 10.0).is_empty());
+        assert!(run(&mut auto, &mut level, 200.0, 10.0).is_empty());
+        assert_eq!(level, 0);
+    }
+
+    #[test]
+    fn auto_quality_takes_back_a_step_that_did_not_help() {
+        let mut auto = AutoQuality::new(50.0);
+        let mut level = 2;
+        // 30 a second whatever the level: the program itself is the limit
+        assert_eq!(run(&mut auto, &mut level, 30.0, 20.0), [1, 2]);
+        assert_eq!(level, 2);
+    }
+
+    #[test]
+    fn auto_quality_ignores_pauses_and_start_up() {
+        let mut auto = AutoQuality::new(50.0);
+        // the first two seconds (loading, shader compiling) do not count
+        assert!(run(&mut auto, &mut 2, 10.0, 2.0).is_empty());
+        let mut auto = AutoQuality::new(50.0);
+        let mut level = 2;
+        run(&mut auto, &mut level, 60.0, 5.0);
+        // a two-second freeze in the middle is not a low frame rate
+        assert_eq!(auto.frame(2.0, level), None);
+        assert!(run(&mut auto, &mut level, 60.0, 5.0).is_empty());
     }
 
     #[test]

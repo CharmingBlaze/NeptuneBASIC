@@ -63,7 +63,13 @@ reachable from BASIC commands.
    can be added beside the bytecode generator without touching earlier stages.
 7. **Code generation** (`codegen.rs`) – typed stack bytecode (`AddI`/`AddF`,
    `CmpS`, ...), so the VM does no type dispatch on hot paths except for
-   `Variant` operations. Includes a fused `IncLocalI` for loop counters.
+   `Variant` operations. Its last pass (`fuse.rs`) joins short runs of
+   instructions into superinstructions: the test of an `If`, `While` or `For`
+   becomes one instruction (`JumpCmpILK`: jump if a local compares with a
+   constant), and so do arithmetic with a local or a constant, a field of an
+   object in a local, and an array indexed by a local. A run is never fused
+   across a jump target or the start of a statement, so jumps and the
+   debugger's stops are unaffected.
 8. **Runtime integration** – native commands are declared by hosts with
    Blitz3D's own `rtSym` signature syntax (`"%CreateCube%parent=0"`) and
    passed to the compiler in an `Env`; the VM dispatches them by id through
@@ -84,6 +90,20 @@ reachable from BASIC commands.
   as `Null` instead of dangling – no use-after-free, no reference cycles.
 * **Errors**: runtime errors carry the source location from a per-function
   pc → span table and can be caught with `Try`/`Catch`.
+* **Speed** (all safe Rust; measure with `cargo run --release -p neptune-vm
+  --example langbench`):
+  * The value stack is allocated ahead and its top (`sp`) is a local of the
+    interpreter loop, as are `pc` and the frame base, so they live in
+    registers.
+  * Numbers are read and written in place as 4-byte numbers, not moved as
+    whole `Value`s. A whole-value read of a slot that was just written in
+    part makes the processor wait for the write (a store-forwarding stall);
+    this was the largest single cost.
+  * Rarely used instructions run in a separate function (`exec_cold`), which
+    keeps the main loop small enough for the compiler to keep its variables
+    in registers. An instruction that games run every frame belongs in the
+    main loop.
+  * `Dim` arrays of integers and floats store plain numbers (`ArrayData`).
 
 ## Runtime design
 

@@ -6,3 +6,10 @@ license.workspace = true
 
 [dependencies]
 neptune-lang.workspace = true
+# real multiplayer connections; off for `cargo test -p neptune-vm`, which then
+# builds in seconds and still tests the session rules in netgame.rs
+iroh = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[features]
+online = ["dep:iroh", "dep:tokio"]

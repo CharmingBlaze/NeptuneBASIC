@@ -432,5 +432,6 @@ Wend
 3. Add a rare golden crystal worth extra time. It is one more `Field`.
 4. Add a hazard that drives towards the player using `PointEntity` and `MoveEntity`.
 5. Replace the ball with a real model using `LoadAnimMesh` ([chapter 18](18-3d-models.md)).
+6. Use a proper walking character with jumping and stairs: see [Character controllers](../CHARACTERS.md).
 
 [Contents](../MANUAL.md) · Previous: [Project 1: Star Catcher](p1-star-catcher.md)

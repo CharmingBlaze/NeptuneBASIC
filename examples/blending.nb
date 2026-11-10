@@ -1,0 +1,100 @@
+; See-through surfaces in front of something solid and very large.
+; Run from the repository root: neptune run examples/blending.nb
+;
+; The ground is one big mesh whose origin is far behind the camera, which is
+; the hard case: however far away a mesh's origin is, solid things must be
+; drawn before anything see-through. You should see, on green and brown
+; stripes, from left to right:
+;   a glass panel you can see the ground and the red post through,
+;   a soft dark disc made with vertex alpha,
+;   a darkening multiply panel, a glowing additive panel, and rising smoke.
+; Esc quits.
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "See-through surfaces"
+
+camera = CreateCamera()
+PositionEntity camera, 0, 5, -14
+RotateEntity camera, 18, 0, 0
+CameraClsColor camera, 255, 0, 255      ; magenta shows through any hole
+AmbientLight 120, 120, 130
+sun = CreateLight(1)
+RotateEntity sun, 50, 30, 0
+
+; The ground: full bright vertex colours, so it uses the classic material.
+ground = CreateMesh()
+s = CreateSurface(ground)
+Const CELLS = 40
+For j = 0 To CELLS
+    For i = 0 To CELLS
+        v = AddVertex(s, i * 4, 0, j * 4)
+        If (i + j) Mod 2 = 0
+            VertexColor s, v, 90, 150, 70
+        Else
+            VertexColor s, v, 150, 120, 80
+        End If
+    Next
+Next
+For j = 0 To CELLS - 1
+    For i = 0 To CELLS - 1
+        a = j * (CELLS + 1) + i
+        AddTriangle s, a + CELLS + 1, a + CELLS + 2, a + 1
+        AddTriangle s, a + CELLS + 1, a + 1, a
+    Next
+Next
+UpdateNormals ground
+EntityFX ground, 1 + 2
+; its origin ends up behind the camera, which is the point of this example
+PositionEntity ground, -80, 0, -60
+
+post = CreateCube()
+ScaleEntity post, 0.3, 2, 0.3
+PositionEntity post, -9, 2, 3
+EntityColor post, 230, 50, 40
+
+Function Panel(x#, r, g, b)
+    p = CreateCube()
+    ScaleEntity p, 2, 2, 0.05
+    PositionEntity p, x, 2, 0
+    EntityColor p, r, g, b
+    Return p
+End Function
+
+glass = Panel(-9, 120, 200, 255)
+EntityAlpha glass, 0.4
+
+; a disc on the ground, dark in the middle and clear at the rim
+disc = CreateMesh()
+ds = CreateSurface(disc)
+middle = AddVertex(ds, 0, 0, 0)
+VertexColor ds, middle, 10, 10, 20, 0.75
+For k = 0 To 16
+    rim = AddVertex(ds, Cos(k * 22.5) * 2.5, 0, Sin(k * 22.5) * 2.5)
+    VertexColor ds, rim, 10, 10, 20, 0
+    If k > 0 Then AddTriangle ds, middle, rim - 1, rim
+Next
+UpdateNormals disc
+EntityFX disc, 1 + 2 + 16 + 32
+PositionEntity disc, -3, 0.05, 0
+
+darken = Panel(3, 170, 170, 200)
+EntityBlend darken, 2
+
+glow = Panel(9, 255, 150, 40)
+EntityBlend glow, 3
+
+smoke = CreateEmitter()
+PositionEntity smoke, 14, 0.2, 0
+EmitterRate smoke, 30
+EmitterLife smoke, 1.5, 2.5
+EmitterVelocity smoke, 0, 2, 0, 0.6
+EmitterSize smoke, 0.6, 1
+EmitterColor smoke, 255, 255, 255, 200
+
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity post, 0, 1, 0
+    UpdateWorld
+    RenderWorld
+    Flip
+Wend
+End

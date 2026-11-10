@@ -186,6 +186,8 @@ End Try
 Runtime errors (dividing by zero, `Null` objects, array places that don't
 exist, ...) report the file, line and column, and can be caught with
 `Try`. `RuntimeError message$` stops the program with a message.
+`Goto` and `Gosub` can leave a `Try` block but can't jump into one from
+outside.
 
 ## Program structure ([chapter 11](manual/11-organising.md))
 

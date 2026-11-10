@@ -97,6 +97,7 @@ impl Host3D<'_> {
         for &e in &gone {
             self.world.entities[e as usize - 1] = None;
         }
+        self.world.stored.retain(|e, _| !gone.contains(&(*e as i32)));
         for s in self.world.surfaces.iter_mut() {
             if s.as_ref().is_some_and(|x| gone.contains(&x.entity)) {
                 *s = None;

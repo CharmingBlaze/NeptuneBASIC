@@ -8,11 +8,12 @@ has three levels:
 
 | Level | Good for |
 |---|---|
-| **Multiplayer games** | players joining a game, sending each other messages; finds games on the local network for you |
+| **Multiplayer games** | a whole game on several computers, on a local network or over the internet, with entities that move on everyone's screen |
 | **TCP** | a reliable connection: everything arrives, in order |
 | **UDP** | single messages, fast, but some may be lost: positions sent many times a second |
 
 - [Multiplayer games](#multiplayer-games)
+- [Blitz3D's multiplayer commands](#blitz3ds-multiplayer-commands)
 - [TCP connections](#tcp-connections)
 - [UDP messages](#udp-messages)
 - [Addresses](#addresses)
@@ -21,8 +22,183 @@ has three levels:
 
 ## Multiplayer games
 
-The multiplayer commands handle players, joining and leaving, and
-messages. One computer **hosts** the game; the others **join** it.
+This is a complete multiplayer program. Everyone who runs it is in the same
+world, and sees everyone else's cube move:
+
+```basic
+Graphics3D 800, 600, 32, 2
+If NetPlay("Cube Chase") = 0 Then RuntimeError NetError()
+
+camera = CreateCamera()
+PositionEntity camera, 0, 12, -12
+RotateEntity camera, 45, 0, 0
+light = CreateLight()
+ground = CreatePlane()
+
+NetTemplate "player", CreateCube()      ; what a player looks like
+me = NetSpawn("player", 0, 1, 0)        ; appears on every computer
+
+While Not KeyHit(KEY_ESCAPE)
+    TranslateEntity me, (KeyDown(KEY_D) - KeyDown(KEY_A)) * 0.1, 0, (KeyDown(KEY_W) - KeyDown(KEY_S)) * 0.1
+    UpdateWorld
+    RenderWorld
+    Flip
+Wend
+```
+
+`NetPlay` looks for a game of that name on the local network, and starts one
+if there is none. `NetSpawn` makes an entity that belongs to you. You move it
+with the commands you already know, and it glides smoothly on every other
+computer. When a player leaves, their entities go too.
+
+You do not need a second computer. This starts two copies, side by side:
+
+```bash
+neptune run --players 2 mygame.nb
+```
+
+[`examples/games/coinrush.nb`](../../examples/games/coinrush.nb) is a whole
+game built this way, in about 150 lines.
+
+### Playing with friends over the internet
+
+The host calls `NetInvite()`, which returns a long code. Send it to a friend,
+and their game joins with it:
+
+```basic
+If NetJoin(CommandLine()) = 0 Then RuntimeError NetError()
+```
+
+Nobody has to open a port on their router. Connections are encrypted, and
+computers talk directly when they can. When a router will not allow that, the
+traffic goes through a relay server, which cannot read it.
+
+The free public relays are for development, and they limit how much can be
+sent. Before you release a game, run your own relay (the `iroh-relay` program
+is free) and point your game at it with `NetRelay`.
+
+### Sharing things
+
+Three commands cover most games:
+
+| Command | Good for |
+|---|---|
+| `NetSet "score", 5` and `NetGet("score")` | things that have a current value: scores, the round, the map. Anyone who joins later gets them too. |
+| `NetSend "boom", "12,40"` | things that happen: an explosion, a chat line. Each one always arrives, in order. |
+| `NetSpawn("kart")` | things that move |
+
+Read what has happened once a frame:
+
+```basic
+While NetRecv()
+    Select NetEvent()
+        Case "join" : Print NetData() + " joined"
+        Case "leave" : Print NetPlayerName(NetFrom()) + " left"
+        Case "boom" : Print "Explosion at " + NetData()
+        Case "spawn" : EntityColor NetEntity(), 255, 80, 80
+        Case "lost" : RuntimeError "The game has ended: " + NetData()
+    End Select
+Wend
+```
+
+Besides your own events there are `"join"`, `"leave"`, `"spawn"` and
+`"despawn"` (an entity from another computer appeared or went) and `"lost"`
+(the connection to the host has gone).
+
+### Let one computer decide
+
+If two players grab the same coin at the same moment, somebody has to say who
+got it. Let that be the host: check `NetIsHost()`, make the decision there, and
+tell everybody with `NetSet` or `NetSend`. The host can see every player's
+entity, because they are all copies on its screen.
+
+### Characters that answer instantly
+
+`NetSpawn` trusts each computer about what it owns, which is simple but lets a
+modified game move as fast as it likes. A [character
+controller](../CHARACTERS.md#in-a-multiplayer-game) on a template changes that:
+the host decides where characters really are, and yet your own still answers the
+moment you press a key.
+
+```basic
+hero = CreateCube()
+pattern = CreateCharController(hero, 0.4, 1.8)
+NetTemplate "hero", hero
+
+me = NetSpawn("hero", 0, 1, 0)
+player = NetCharacter(me)
+CharMove player, 1, 0, 0        ; then CharJump, UpdateChar, as usual
+```
+
+### Shooting at things that move
+
+Other players are always drawn a moment in the past, because their positions
+take time to arrive. If you line up a moving target and fire, it has really
+moved on, so a check on the host would say you missed. `NetFire` tells the host
+when you fired *in terms of what you could see*. `NetHit` puts everyone back
+there for an instant, checks the shot, and puts them back.
+
+```basic
+; on whoever fires
+If MouseHit(1) Then NetFire "shot", camera, 200
+
+; on the host, in the NetRecv loop
+If NetEvent() = "shot"
+    target = NetHit()
+    If target <> 0 Then NetSend "hit", "10", NetOwner(target)
+EndIf
+```
+
+`NetHit` works like `LinePick`, so walls with `EntityPickMode` stop shots, and
+`PickedX()` and the rest say where it landed. Give what you can hit an
+`EntityPickMode` before `NetTemplate`, and the copies will have it too. Players
+never hit their own entities.
+
+The host looks back at most half a second, so on a worse connection than that
+players have to aim ahead. It also believes where the shot came from and which
+way it went. If that matters for your game, check it on the host.
+
+### When it goes wrong
+
+`NetPlay`, `NetCreate` and `NetJoin` return 0 if they fail, and `NetError()` says
+why in words you can show the player.
+
+Before you release a game, try it on a bad connection. This adds 150
+milliseconds of delay and loses a tenth of the messages that are allowed to be
+lost:
+
+```basic
+NetSimulate 150, 10
+```
+
+| Command | Does |
+|---|---|
+| `NetPlay(game$ [, name$])` | joins a game on the local network, or hosts one: 1 joined, 2 hosting, 0 failed |
+| `NetCreate(game$ [, name$])` | hosts a new game |
+| `NetJoin(invite$ [, name$])` | joins with an invite, from anywhere |
+| `NetInvite()` | the code that lets others join |
+| `NetError()` | why the game could not start or was lost |
+| `NetIsHost()`, `NetMe()`, `NetHostPlayer()` | this computer's role, your player, the host's player |
+| `NetCountPlayers()`, `NetPlayerAt(i)`, `NetPlayerName(id)` | who is playing |
+| `NetPing()` | round trip to the host, in milliseconds |
+| `NetSet key$, value$`, `NetGet(key$ [, default$])` | shared values |
+| `NetSend event$ [, data$ [, to]]` | tells everyone, or one player |
+| `NetRecv()` | true if something happened; then `NetEvent()`, `NetData()`, `NetFrom()`, `NetEntity()` |
+| `NetTemplate name$, entity` | what copies called `name$` look like |
+| `NetSpawn(template$ [, x#, y#, z#])` | an entity that belongs to you, seen by everyone |
+| `NetIsMine(entity)`, `NetOwner(entity)` | who an entity belongs to |
+| `NetCharacter(entity)`, `NetCorrections(character)` | the character controller of a networked entity, and how often the host has corrected it |
+| `NetFire event$, entity [, range#, data$]` | fires along an entity's forward direction |
+| `NetHit([radius#])` | on the host: what the last `NetFire` hit |
+| `NetRate per_second` | how often positions are sent (20 unless you change it) |
+| `NetSimulate lag_ms, loss_percent` | pretends the network is bad |
+| `NetRelay url$` | uses your own relay server |
+| `StopNetGame` | leaves the game |
+
+## Blitz3D's multiplayer commands
+
+Programs written for Blitz3D use these, and they work the same way. They are
+also the place to start if you want to build your own message formats.
 
 ```basic
 Graphics 800, 600
@@ -31,8 +207,8 @@ If result = 0 Then RuntimeError "Could not start a network game"
 me = CreateNetPlayer("Player " + Rand(100))
 
 While Not KeyHit(KEY_ESCAPE)
-    ; tell everyone where the mouse is
-    SendNetMsg 1, MouseX() + "," + MouseY(), me
+    ; tell everyone where the mouse is; 0, 0 = to everyone, and it may be lost
+    SendNetMsg 1, MouseX() + "," + MouseY(), me, 0, 0
 
     ; read what has arrived
     While RecvNetMsg()
@@ -51,11 +227,11 @@ StopNetGame
 
 | Command | Does |
 |---|---|
-| `StartNetGame()` | joins a game on the local network, or hosts one if there is none: 1 joined, 2 hosting, 0 failed |
+| `StartNetGame()` | joins another copy of this program on the local network, or hosts: 1 joined, 2 hosting, 0 failed |
 | `HostNetGame(name$)` | hosts a game |
-| `JoinNetGame(name$, address$)` | joins a game; an empty address searches the local network |
+| `JoinNetGame(name$, address$)` | joins a game; the address can be an IP address, an invite, or empty to search the local network |
 | `CreateNetPlayer(name$)` | adds a player on this computer and returns its id |
-| `SendNetMsg type, data$, from [, to]` | sends text to one player, or everyone (to 0) |
+| `SendNetMsg type, data$, from [, to [, reliable]]` | sends text to one player, or everyone (to 0); with reliable 0 it is faster but may be lost |
 | `RecvNetMsg()` | true if a message has arrived; then read it with... |
 | `NetMsgType()`, `NetMsgFrom()`, `NetMsgTo()`, `NetMsgData()` | ...its type, sender, receiver and text |
 | `NetPlayerName(id)`, `NetPlayerLocal(id)` | about a player |
@@ -63,8 +239,8 @@ StopNetGame
 
 Message types 1 to 99 are yours to choose (say 1 for positions, 2 for
 chat, 3 for "I fired"). Type 100 means a player joined, 101 a player
-left. Put several values in one message as text separated by commas,
-and take it apart with the string commands
+left, and 200 that the game was lost. Put several values in one message as
+text separated by commas, and take it apart with the string commands
 ([chapter 7](07-text.md#splitting-a-line-into-words)).
 
 ## TCP connections
@@ -141,13 +317,15 @@ Addresses are kept as whole numbers. `DottedIP(ip)` shows one as
 ## Tips for network games
 
 - **Send little, often.** A position a few times a second is plenty;
-  smooth the movement in between on the other computers.
+  smooth the movement in between on the other computers. `NetSpawn` does both
+  for you.
 - **Never wait.** Check for messages each frame and carry on if there are
   none, so the game doesn't freeze when the network is slow.
 - **One computer decides.** Let the host decide things like who was hit,
   so players can't disagree.
-- **Test on two computers**, or two copies of the game on one, from the
-  start: networking is much easier to build in than to add later.
+- **Test with two copies from the start** (`neptune run --players 2`), and with
+  `NetSimulate` to see a bad connection: networking is much easier to build in
+  than to add later.
 
 ## Try it yourself
 

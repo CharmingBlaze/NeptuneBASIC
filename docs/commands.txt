@@ -158,20 +158,50 @@ UDPMsgPort: Returns the port of the sender of the last message received on the U
 UDPTimeouts: Sets how long RecvUDPMsg waits for a message, in milliseconds (recv_millis).
 
 # Multiplayer games
-StartNetGame: Joins a game found on the local network, or hosts a new one if there is none. Returns 1 if it joined, 2 if it is hosting, or 0 on failure. Uses TCP, with no dialog.
+StartNetGame: Joins a game found on the local network, or hosts a new one if there is none. Returns 1 if it joined, 2 if it is hosting, or 0 on failure. Only finds other copies of this program. The window stays alive while it searches.
 HostNetGame: Hosts a multiplayer game called game_name that others can join, and returns 2 on success or 0 on failure.
-JoinNetGame: Joins the game game_name at server_ip (an empty address searches the local network) and returns 1 on success or 0 on failure.
+JoinNetGame: Joins the game game_name at server_ip, which can be an address, an invite from NetInvite, or empty to search the local network. Returns 1 on success or 0 on failure.
 StopNetGame: Leaves the multiplayer game you joined, or shuts down the one you host. The players created here are gone, and CreateNetPlayer fails until you host or join again. Does nothing if no game is running.
 CreateNetPlayer: Creates a local player called name in the current game and returns its player id.
 DeleteNetPlayer: Removes player from the game, so it disappears from the player list. Does nothing if there is no game. Players you created are also gone after StopNetGame.
 NetPlayerName: Returns the name player was given when it was created with CreateNetPlayer, or an empty string if there is no such player or no game.
 NetPlayerLocal: Returns 1 if player was created on this computer with CreateNetPlayer, or 0 if it belongs to another computer, does not exist, or no game is running. Use it to tell your own players from remote ones.
-SendNetMsg: Sends a message of type (1-99) with the text data from from_player to to_player (0 sends to all players). Returns true on success. reliable is accepted for compatibility: messages are always sent reliably.
+SendNetMsg: Sends a message of type (1-99) with the text data from from_player to to_player (0 sends to all players). Returns true on success. With reliable set to 0 the message is faster but may be lost or arrive out of order: use that for things sent again and again, such as positions.
 RecvNetMsg: Fetches the next received message and returns true, or false if there is none; read it with NetMsgType, NetMsgFrom, NetMsgTo and NetMsgData.
 NetMsgType: Returns the type of the last received message: 1-99 for player messages, 100 for a player joining, 101 for a player leaving and 200 when the session is lost.
 NetMsgFrom: Returns the player id that sent the last received message (for type 100, the new player).
 NetMsgTo: Returns the player id the last received message was sent to, or 0 if it was sent to everyone.
 NetMsgData: Returns the text of the message RecvNetMsg last received, or an empty string before any. Read it right after RecvNetMsg returns 1, because the next message replaces it.
+NetPlay: (ext) The easy way to start: joins a game called game on the local network, or hosts one if there is none, and creates your player. Returns 1 if it joined, 2 if it is hosting, or 0 on failure (see NetError). The window stays alive while it searches.
+NetCreate: (ext) Hosts a new game called game and creates your player. Returns 2, or 0 on failure. Use it for a "Host" button; NetPlay decides by itself.
+NetJoin: (ext) Joins a game with an invite from NetInvite, from anywhere on the internet, and creates your player. Returns 1, or 0 on failure (see NetError).
+NetInvite: (ext) Returns the code that lets others join this game with NetJoin, or an empty string if there is no game. Every player in the game can get it, and it lasts as long as the game.
+NetError: (ext) Returns why the last game could not start or was lost, in words you can show the player.
+NetIsHost: (ext) Returns 1 if this computer is hosting the game. Let the host decide things like who won, so nobody disagrees.
+NetMe: (ext) Returns the player id of this computer's main player, or 0 if there is none.
+NetHostPlayer: (ext) Returns the player id of the host's main player, for sending it something with NetSend.
+NetCountPlayers: (ext) Returns how many players are in the game.
+NetPlayerAt: (ext) Returns the player id of the player at index, from 1 to NetCountPlayers, in the order they joined; 0 if there is no such player.
+NetPing: (ext) Returns the time for a message to reach the host and come back, in milliseconds. Always 0 on the host.
+NetSet: (ext) Sets a value shared by every computer in the game, including anyone who joins later. Numbers can be used as value.
+NetGet: (ext) Returns a value set with NetSet, or default if nobody has set it. It is text; a number variable converts it for you.
+NetSend: (ext) Sends an event called event with the text data to to_player, or everyone else if to_player is 0. Always arrives, in order. Returns true on success.
+NetRecv: (ext) Fetches the next thing that happened and returns true, or false if there is nothing. Read it with NetEvent, NetData, NetFrom and NetEntity. Besides events from NetSend, it reports "join", "leave", "spawn", "despawn" and "lost" (the game ended).
+NetEvent: (ext) Returns the name of the event NetRecv last fetched.
+NetData: (ext) Returns the text sent with the event NetRecv last fetched. For "join" it is the player's name; for "spawn" the template's name; for "lost" the reason.
+NetFrom: (ext) Returns the player id the event NetRecv last fetched came from. For "spawn" and "despawn", the entity's owner.
+NetEntity: (ext) Returns the entity a "spawn" or "despawn" event from NetRecv is about. After "despawn" it has already been freed, so only compare it.
+NetSimulate: (ext) Makes the network pretend to be bad, for testing: delays what arrives by lag_millis and loses loss_percent of the messages that are allowed to be lost. NetSimulate 0, 0 stops it.
+NetRelay: (ext) Uses your own relay server at url for games started after this, instead of the free public ones meant for development. Every player must use the same one.
+NetTemplate: (ext) Registers entity as what copies called name look like, and hides it. Every computer must register the same names. Keep physics off the template: copies on other computers only follow their owner. If the entity has a character controller, it becomes the pattern for a controller on every copy, moved by the host's rules (see NetCharacter), and its own handle stops working.
+NetSpawn: (ext) Creates a copy of a template at x, y, z that belongs to this computer and returns it. Move it with the usual commands, and it moves smoothly on every other computer. FreeEntity removes it everywhere, and it goes when its owner leaves.
+NetIsMine: (ext) Returns 1 if entity was made with NetSpawn on this computer.
+NetOwner: (ext) Returns the player id entity belongs to, or 0 if it is not a networked entity.
+NetCharacter: (ext) Returns the character controller of entity, if its template had one, or 0. Give it input with CharMove and UpdateChar as usual: the player's character answers at once and the host checks it. On the host, it also works on other players' characters, so CharImpulse and CharSet reach them.
+NetFire: (ext) Tells the host a shot called event was fired along the forward direction of source_entity, up to range, along with when the shooter saw the world as it looks now. Returns true if it was sent. The host receives it from NetRecv and judges it with NetHit.
+NetHit: (ext) On the host, right after NetRecv fetched a NetFire: puts everything networked back where the shooter saw it, picks along the shot like LinePick (radius 0 is a thin line), and returns the entity hit or 0. Afterwards PickedX and the other Picked commands describe the hit. It never hits the shooter's own entities, and looks back at most half a second. Returns 0 on other computers and for other events. Targets need EntityPickMode, as for any pick.
+NetCorrections: (ext) Returns how many times the host has disagreed with where this computer thought character was. Always 0 on the host.
+NetRate: (ext) Sets how many times a second entity positions are sent, from 1 to 60. The default is 20.
 DottedIP: Returns the integer IP address ip as a dotted string such as "192.168.0.1".
 CountHostIPs: Looks up the IP addresses of host_name (an empty string for this computer) and returns how many were found.
 HostIP: Returns address number index (from 1) found by the last CountHostIPs, as an integer IP address.
@@ -222,7 +252,9 @@ ScreenFading: (ext) Returns 1 while a ScreenFade is still running and 0 once it 
 
 # Gamma and quality
 GraphicsQuality: (ext) Sets the renderer quality preset: level 0 low, 1 medium, 2 high, 3 ultra (QUALITY_LOW to QUALITY_ULTRA). Use a low level for old graphics cards.
-GetGraphicsQuality: (ext) Returns the quality level, 0 (low) to 3 (ultra), last set by GraphicsQuality. Until you set one it is 2 (high), unless the NEPTUNE_QUALITY environment variable chose another.
+GetGraphicsQuality: (ext) Returns the quality level in use, 0 (low) to 3 (ultra). Until you set one it is 2 (high), unless the NEPTUNE_QUALITY environment variable chose another. It can be lower than the level GraphicsQuality asked for: the player's ceiling (neptune run --max-quality, or NEPTUNE_MAX_QUALITY) holds it down, and AutoQuality lowers it while the game runs slowly.
+AutoQuality: (ext) Lets the quality level look after itself: while the game runs slower than fps frames a second, the level steps down one at a time. A step that does not make the game faster is taken back, and the level is then left alone (the graphics card was not what held the game back). The level never rises by itself. AutoQuality 0 turns this off. Players can turn it on for any program with neptune run --quality auto.
+GraphicsCardName: (ext) Returns what the graphics card that draws the game calls itself, such as "Intel(R) HD Graphics 4400", for settings screens and bug reports. Empty before Graphics3D.
 PostEffect: (ext) Turns a rendering effect on (enable = 1) or off (enable = 0): EFFECT_BLOOM, EFFECT_SSAO, EFFECT_FXAA, EFFECT_SHADOWS or EFFECT_LIGHT_SCATTER.
 AntiAlias: Turns anti-aliasing (smoothing of jagged edges) on (1) or off (0) using a fast screen filter (FXAA). It overrides the level's choice, but a later GraphicsQuality call resets it.
 SetGamma: Sets the gamma ramp so that the colour levels src_red, src_green, src_blue (0-255) are shown as dest_red, dest_green, dest_blue. Call UpdateGamma to apply it.
@@ -317,15 +349,34 @@ WritePixelFast: Sets the pixel at x, y of a locked buffer to the ARGB colour arg
 CopyRect: Copies a width by height rectangle at src_x, src_y of src_buffer to dest_x, dest_y of dest_buffer (both default to the current buffer).
 
 # Tile maps
-LoadTiledMap: (ext) Loads a map made in the Tiled editor (.tmx or .tmj) with its tilesets, layers and objects, and returns its handle, or 0 on failure. See docs/TOOLS2D.md.
+LoadTiledMap: (ext) Loads a map from a level editor and returns its handle, or 0 on failure. Reads Tiled (.tmx, .tmj, .world), LDtk (.ldtk), Ogmo Editor 3, Sprite Fusion and Pyxel Edit exports, and tilemap layers in Aseprite files. level picks a level by name in a file that holds several; leave it out for the first. See docs/TOOLS2D.md.
 FreeTiledMap: (ext) Frees a Tiled map with its layers, objects and picture.
-DrawTiledMap: (ext) Draws every visible layer of a Tiled map in order, with its top-left corner at x, y.
-TiledMapImage: (ext) Returns the animation image holding every tile of a Tiled map.
+DrawTiledMap: (ext) Draws every visible layer of a map in order, with its top-left corner at x, y, using each layer's opacity, tint and parallax. Animated tiles play by themselves. Objects are not drawn; use DrawTiledObject.
+CountTiledLevels: (ext) Returns how many levels the file holds that map was loaded from; 1 if it has no levels.
+TiledLevelName: (ext) Returns the name of level number index (from 1), to pass to LoadTiledMap.
+TiledLevelX: (ext) Returns where the editor puts level number index (from 1), in world pixels across.
+TiledLevelY: (ext) Returns where the editor puts level number index (from 1), in world pixels down.
+TiledMapLevel: (ext) Returns the name of the level that map holds, or an empty string if the file has no levels.
+TiledMapWidth: (ext) Returns the width of a map in cells.
+TiledMapHeight: (ext) Returns the height of a map in cells.
+TiledMapTileWidth: (ext) Returns the width of a map's grid in pixels.
+TiledMapTileHeight: (ext) Returns the height of a map's grid in pixels.
+TiledMapPixelWidth: (ext) Returns the width in pixels of the box around a whole map, whatever the shape of its grid.
+TiledMapPixelHeight: (ext) Returns the height in pixels of the box around a whole map, whatever the shape of its grid.
+TiledMapOrientation: (ext) Returns the shape of a map's grid: "orthogonal", "isometric", "staggered" or "hexagonal".
+TiledMapBackground: (ext) Returns the background colour set in the editor as red * 65536 + green * 256 + blue, or -1 if none was set.
+TiledMapBody2D: (ext) Makes a static 2D physics body from the collision shapes drawn on tiles in Tiled, for one layer or for all if layer is left out, and returns it. Only tiles with shapes are solid. x, y place the body. Use TileMapBody2D instead to make every tile of a layer a solid cell.
+TiledLayerProperty: (ext) Returns a custom property of a tile or picture layer as text, or fallback if it does not have it.
+TiledLayerAlpha: (ext) Sets how solid a layer is drawn by DrawTiledMap, from 0 (invisible) to 1.
+TiledImageLayer: (ext) Returns the picture of the layer called name as an image, or 0 if there is no such picture layer.
+TiledTileType: (ext) Returns the type given to a tile in the tileset, from a frame number such as GetTile returns.
+TiledTileProperty: (ext) Returns a custom property given to a tile in the tileset as text, from a frame number such as GetTile returns, or fallback if it does not have it.
+TiledMapImage: (ext) Returns the animation image holding every tile of a map. Frames are all the size of the largest tile.
 TiledMapProperty: (ext) Returns a custom property of a Tiled map as text, or fallback if it does not have it.
 CountTiledLayers: (ext) Returns the number of tile layers in map; object layers are not counted. Layers are numbered from 1 in the order of the file (bottom layer first), as TiledLayerName(map, index) uses.
 TiledLayerName: (ext) Returns the name of tile layer number index (from 1).
 TiledLayer: (ext) Returns the layer called name as a tile map for the tile map commands, or 0 if there is none.
-ShowTiledLayer: (ext) Shows (show 1, the default) or hides (0) the layer called name, so DrawTiledMap draws or skips it. Names ignore case and an unknown name does nothing. The layer stays loaded either way.
+ShowTiledLayer: (ext) Shows (show 1, the default) or hides (0) the tile or picture layer called name, so DrawTiledMap draws or skips it. Names ignore case and an unknown name does nothing. The layer stays loaded either way.
 CountTiledObjects: (ext) Returns how many objects a Tiled map has, or only how many of a type if type is given.
 TiledObject: (ext) Returns object number index (from 1) of a Tiled map, counting as CountTiledObjects does.
 FindTiledObject: (ext) Returns the object called name in a Tiled map, or 0 if there is none.
@@ -337,8 +388,10 @@ TiledObjectY: (ext) Returns the top edge of a Tiled object, in pixels from the t
 TiledObjectWidth: (ext) Returns the width of obj in pixels as drawn in Tiled. Point objects, such as spawn points, have a width of 0.
 TiledObjectHeight: (ext) Returns the height of obj in pixels as drawn in Tiled. Point objects, such as spawn points, have a height of 0.
 TiledObjectRotation: (ext) Returns the rotation of a Tiled object in degrees clockwise.
-TiledObjectShape: (ext) Returns the shape of a Tiled object: 0 rectangle, 1 ellipse, 2 point, 3 polygon, 4 polyline, 5 tile.
+TiledObjectShape: (ext) Returns the shape of an object: 0 rectangle, 1 ellipse, 2 point, 3 polygon, 4 polyline, 5 tile, 6 text.
 TiledObjectTile: (ext) Returns the frame of TiledMapImage that a tile object shows, or -1 for other objects.
+TiledObjectText: (ext) Returns the words of a text object, or an empty string for other objects. Its look is in the properties "text.color", "text.pixelsize", "text.fontfamily" and so on.
+DrawTiledObject: (ext) Draws a tile object where the editor put it, at its size and rotation, moved by x, y. Other objects draw nothing.
 CountTiledObjectPoints: (ext) Returns how many corners a polygon or polyline Tiled object has.
 TiledObjectPointX: (ext) Returns the x of corner number index (from 1) of a Tiled object, in map pixels.
 TiledObjectPointY: (ext) Returns the y of corner number index (from 1) of a Tiled object, in map pixels.
@@ -362,6 +415,10 @@ DrawTileMap: (ext) Draws tile map map with its top-left corner at x,y (pixels, o
 TileMapCellX: (ext) Returns the column of tile map map under x, given in pixels from the map's left edge.
 TileMapCellY: (ext) Returns the row of tile map map under y, given in pixels from the map's top edge.
 TileAt: (ext) Returns the frame number of the tile under the point x,y, given in pixels from the map's top-left corner.
+TileMapPickX: (ext) Returns the column of the cell at x, y in pixels from the map's top-left. On isometric, staggered and hexagonal maps a cell depends on both x and y, so use this rather than TileMapCellX.
+TileMapPickY: (ext) Returns the row of the cell at x, y in pixels from the map's top-left. On isometric, staggered and hexagonal maps a cell depends on both x and y, so use this rather than TileMapCellY.
+TileMapCellCenterX: (ext) Returns the x of the middle of a cell, in pixels from the map's top-left, on a grid of any shape.
+TileMapCellCenterY: (ext) Returns the y of the middle of a cell, in pixels from the map's top-left, on a grid of any shape.
 
 # 2D camera
 Camera2D: (ext) Turns on the 2D camera: 2D drawing then uses world coordinates, with world point x,y at the centre of the screen, zoom scaling the view (2 = twice as big) and rotation turning it clockwise in degrees.
@@ -549,6 +606,7 @@ CreateAudioBus: (ext) Creates an audio bus (a mixer channel that sounds play int
 BusVolume: (ext) Sets the volume of bus (0 is the master bus), from 0 (silent) to 1 (full); above 1 is louder.
 BusReverb: (ext) Gives bus a reverb, the echoes of a room, hall or cave: decay_seconds is how long the echoes last (0 removes the reverb), dry how much of the original sound is kept (0-1), brightness the highest frequency the echoes keep in Hz (lower is duller).
 BusFilter: (ext) Gives bus a filter of kind FILTER_LOWPASS (muffles: underwater, behind a wall), FILTER_HIGHPASS (thins: a radio, a telephone), FILTER_BANDPASS, FILTER_LOWSHELF, FILTER_HIGHSHELF or FILTER_ALLPASS at frequency in Hz, with quality (the width around it) and gain; FILTER_NONE removes it. The filter comes before the reverb.
+SetHRTF: (ext) Makes 3D sound use head measurements read from file (an HRIR sphere .bin file), so that sounds seem to come from above, below and behind through headphones. Returns 1, or 0 if the file cannot be used, which leaves the sound as it was. No file goes back to plain panning. NeptuneBASIC does not come with a file: see docs/SOUND.md.
 SoundBus: (ext) Makes the channels that sound plays from now on go into bus.
 ChannelBus: (ext) Moves the playing channel into audio bus, so the bus's volume, reverb and filters apply to it. bus must exist (CreateAudioBus) or it is an error; nothing happens if the channel ended. SoundBus sets the bus before playing.
 ChannelPan: Sets the pan of channel, from -1 (left) to 1 (right).
@@ -585,6 +643,9 @@ EntityName: Returns the name given to entity with NameEntity, or an empty string
 HideEntity: Hides entity and its children so they are not drawn and take no part in collisions or picking.
 ShowEntity: Makes entity and its children visible again after HideEntity, so they are drawn and take part in collisions and picking once more. Entities start out visible.
 EntityHidden: (ext) Returns 1 if entity has been hidden with HideEntity, otherwise 0.
+StoreEntity: (ext) Takes entity and its children out of the world without freeing them, for parts of a large world that are far away. A hidden entity still costs a little time every frame; a stored one costs none. Until RestoreEntity, every other command on a stored entity or its children fails (FreeEntity still works). Entities with physics, cameras and mirrors cannot be stored.
+RestoreEntity: (ext) Puts entity and its children back in the world exactly as they were when StoreEntity took them out. Does nothing if entity is not stored. An entity that was stored along with its parent comes back with the parent.
+EntityStored: (ext) Returns 1 if entity is out of the world because it, or a parent of it, was stored with StoreEntity, otherwise 0.
 
 # Transforms
 PositionEntity: Places entity at x, y, z, relative to its parent unless global is 1.
@@ -931,6 +992,59 @@ ClothPointX: (ext) Returns the world X of a point of a cloth (column, row) or ro
 ClothPointY: (ext) Returns the world Y of a point of a cloth or rope.
 ClothPointZ: (ext) Returns the world Z of a point of a cloth or rope.
 
+# Character controllers
+CreateCharController: (ext) Makes entity a walking character whose feet are at its origin, with a capsule of radius and height, and returns the character. The world must be solid to physics (EntityPhysics). See docs/CHARACTERS.md.
+CreateCharController2D: (ext) Makes a 2D character with its feet at x, y and returns it. shape is CHAR_BOX (the default) or CHAR_CAPSULE.
+FreeCharController: (ext) Frees a character. A 3D character's entity stays where it is.
+UpdateChar: (ext) Moves character for one frame after its input has been given. seconds is the time to advance; 0 measures the time since the last update.
+CharMove: (ext) Sets which way character wants to go in world directions, up to 1 long. y only counts when flying. In 2D use x and, for ladders and top-down games, y.
+CharWalk: (ext) Sets where a 3D character wants to go relative to the direction yaw (usually the camera's): ahead and side from -1 to 1.
+CharJump: (ext) Asks character to jump. Call it when the button is pressed; a press just before landing still counts.
+CharHoldJump: (ext) Tells character whether the jump button is held. Letting go early shortens the jump. Without this every jump is full height.
+CharSprint: (ext) Turns sprinting on (enable 1) or off (0) for character. While on, its walking speed is multiplied by the sprint setting (1.6 in 3D, 1.5 in 2D by default). It stays set until you change it, and crouching overrides it.
+CharCrouch: (ext) Asks character to crouch (enable 1) or stand (0). It stays down until there is room to stand.
+CharDash: (ext) Sends character in direction x, y, z at speed for seconds, ignoring gravity.
+CharImpulse: (ext) Shoves character by a velocity that fades away; an upward part lifts it off the ground.
+CharDrop: (ext) Lets character fall through one-way platforms (EntityOneWay, Body2DOneWay) for a quarter of a second and makes it leave the ground it stands on at once. Call it on the frame the player presses down and jump.
+CharMode: (ext) Sets how character moves: CHAR_WALK, CHAR_FLY (no gravity, all directions, still solid) or CHAR_NOCLIP (through everything).
+CharSet: (ext) Changes a setting of character by name, such as "speed" or "jump_speed". The settings are listed in docs/CHARACTERS.md.
+CharGet: (ext) Returns the tuning setting called setting of character as a decimal, for example "speed", "gravity" or "jump_speed". Names ignore case and an unknown name is a runtime error. Values are in metres (3D) or pixels (2D); CharSet changes them.
+PositionChar: (ext) Moves character at once so its feet are at x, y, z (in 2D only x and y count, in pixels), without checking for obstacles on the way. Its velocity is kept, so call SetCharVelocity with zeros for a clean respawn.
+SetCharVelocity: (ext) Replaces the velocity of character with x, y, z, in metres per second (3D) or pixels per second (2D). Gravity and steering keep acting afterwards. In 3D +y is up; in 2D +y points down the screen.
+CharX: (ext) Returns the x position of the middle of character's feet as of the last UpdateChar: the world x in 3D, pixels in 2D.
+CharY: (ext) Returns the y position of character's feet as of the last UpdateChar. In 3D it is the height of the ground it stands on; in 2D it is pixels down the screen, so its head is at CharY minus CharHeight.
+CharZ: (ext) Returns the z (depth) position of character's feet as of the last UpdateChar. In 2D it is always 0.
+CharVX: (ext) Returns the velocity of character along x, in metres per second (3D) or pixels per second (2D), as of the last UpdateChar. Positive means towards +x.
+CharVY: (ext) Returns the velocity of character along y as of the last UpdateChar. In 3D positive is up, so falling is negative; in 2D y points down the screen, so a rising character has a negative value.
+CharVZ: (ext) Returns the velocity of character along z, in metres per second, as of the last UpdateChar. Positive means towards +z. In 2D it is always 0.
+CharHeight: (ext) Returns the current height of character in metres (3D) or pixels (2D): the full height standing, lower while crouching, and back to full only once there is room to stand up.
+CharGrounded: (ext) Returns 1 if character stood on ground it can walk on (not steeper than the max_slope setting) at the last UpdateChar, otherwise 0. It is 0 while jumping or falling.
+CharLanded: (ext) Returns 1 if character touched down after being in the air during the last UpdateChar, otherwise 0. It is true for one update only, so check it every frame to play landing sounds and dust.
+CharLeftGround: (ext) Returns 1 if character walked off an edge during the last update.
+CharJumped: (ext) Returns 1 if a jump (ground, air or wall jump) really started during the last UpdateChar, otherwise 0. CharJump only asks for a jump and may be refused in the air, so use this to play the sound.
+CharWallJumped: (ext) Returns 1 if character jumped off a wall during the last update.
+CharStepped: (ext) Returns 1 if character stepped up a stair during the last update.
+CharImpact: (ext) Returns how fast character was falling when it last landed, during the last update.
+CharOnWall: (ext) Returns 1 if character touched a wall beside it during the last UpdateChar, otherwise 0. Wall sliding and wall jumping (settings wall_slide and wall_jump) depend on it; CharWallNX, CharWallNY and CharWallNZ give the wall's direction.
+CharWallSliding: (ext) Returns 1 if character is in the air, pushing into a wall and falling slowly down it, otherwise 0. It needs the wall_slide setting above 0 (off by default), which is the sliding speed.
+CharWallNX: (ext) Returns the x part of the direction the wall character last touched faces.
+CharWallNY: (ext) Returns the y part of the direction the wall character last touched faces.
+CharWallNZ: (ext) Returns the z part of the direction the wall character last touched faces.
+CharOnCeiling: (ext) Returns 1 if character bumped its head during the last update.
+CharSliding: (ext) Returns 1 if character is on a slope too steep to stand on.
+CharCrouching: (ext) Returns 1 while character is crouching, otherwise 0. After CharCrouch is turned off it stays 1 until there is room above its head to stand up.
+CharDashing: (ext) Returns 1 while a dash started with CharDash is still going, otherwise 0. Use it to make the character immune or to draw a trail.
+CharGroundObject: (ext) Returns the entity or 2D body under character, or 0.
+CharGroundNX: (ext) Returns the x part of the direction the ground under character faces.
+CharGroundNY: (ext) Returns the y part of the direction the ground under character faces.
+CharGroundNZ: (ext) Returns the z part of the direction the ground under character faces.
+CharAirJumpsLeft: (ext) Returns how many more jumps in mid-air character can make. It refills to the air_jumps setting (0 by default, so 1 means a double jump) whenever it stands on the ground, and drops by one for each air jump.
+CharFacing: (ext) Returns -1 or 1, the way character last moved along x.
+CharState: (ext) Returns one word for what character is doing: idle, walk, run, jump, fall, crouch, crawl, slide, wallslide, dash or fly.
+CharBody: (ext) Returns a 2D character's body, or 0 for a 3D character.
+EntityOneWay: (ext) Makes a physics entity solid to characters only from above (enable 1) or solid all round (0).
+Body2DOneWay: (ext) Makes a 2D body solid to characters only from above (enable 1) or solid all round (0). Call it after giving the body its shapes.
+
 # 3D physics
 EntityPhysics: (ext) Makes entity a rigid body: body_type 1 dynamic, 2 static, 3 kinematic; shape 0 automatic, 1 box, 2 sphere, 3 capsule, 4 cylinder, 5 mesh, 6 convex hull; mass in kilograms.
 PhysicsGravity: (ext) Sets the world's gravity vector x, y, z, in units per second squared.
@@ -995,7 +1109,10 @@ NavMeshX: (ext) Returns the X of the point on navmesh closest to x, y, z (use wi
 NavMeshY: (ext) Returns the Y of the point on navmesh closest to x, y, z.
 NavMeshZ: (ext) Returns the Z of the point on navmesh closest to x, y, z.
 FreeNavMesh: (ext) Frees navmesh and also frees every agent that walks on it (their entities stay). Paths already returned by FindPath are separate and stay valid until FreePath.
-FindPath: (ext) Finds the shortest way over navmesh from x1, y1, z1 to x2, y2, z2 (A* with corners cut where the way is clear) and returns a path handle, or 0 if there is no way. Read it with PathPoints and PathX/Y/Z.
+CreateNavLink: (ext) Joins two places on navmesh that walking cannot connect, for a jump, a ladder or a teleporter pad, and returns a link number for that navmesh. Each end moves to the closest point on the navmesh. two_way 0 only goes from the first place to the second. cost multiplies the link's length when routes are compared, so a higher cost makes it a last resort. Agents cross in a straight line, or in an arc jump_height high. FindPath and agents use it by themselves.
+NavLinkEnable: (ext) Opens or closes link on navmesh (enable 0 is a shut door). Agents find new routes at once; one already crossing finishes.
+FreeNavLink: (ext) Removes link from navmesh. The numbers of other links do not change.
+FindPath: (ext) Finds the shortest way over navmesh from x1, y1, z1 to x2, y2, z2 (A* with corners cut where the way is clear), using any open links, and returns a path handle, or 0 if there is no way. Read it with PathPoints and PathX/Y/Z.
 PathPoints: (ext) Returns how many points path has (from FindPath, FindGridPath or AgentPath).
 PathX: (ext) Returns the X of point index (from 0) of path; for a grid path, the column.
 PathY: (ext) Returns the Y of point index (from 0) of path; for a grid path, the row.
@@ -1013,6 +1130,8 @@ AgentMoveTo: (ext) Sends agent to x, y, z: it finds the way and walks there. Age
 AgentFollow: (ext) Makes agent keep walking towards entity, stopping when within distance, and finding a new way as the entity moves. entity 0 stops following.
 AgentStop: (ext) Stops agent where it is: it forgets its destination, any entity it was following and its route, and AgentArrived becomes 1. Its entity stays put and can be sent off again with AgentMoveTo.
 AgentArrived: (ext) Returns 1 when agent has reached where it was sent (or is close enough to what it follows) or is not going anywhere, 0 while it is walking.
+AgentOnLink: (ext) Returns the number of the link agent is crossing, or 0 if it is walking. Use it to play a jump or climb animation.
+AgentCrowd: (ext) Turns crowd steering on (enable 1) or off for agent. It looks look_ahead seconds ahead and picks a direction and speed that miss other agents, so crowds flow past each other rather than bumping and being pushed apart. Agents that are close enough to their goal but blocked by others standing on it count as arrived.
 AgentDistance: (ext) Returns how far agent still has to walk along its path.
 AgentSpeed: (ext) Sets how fast agent walks, in world units per second. Negative values count as 0, which makes the agent stand still. CreateAgent sets the starting speed.
 AgentTurnSpeed: (ext) Sets how fast agent turns to face where it goes, in degrees a second (default 360; 0 does not turn it).

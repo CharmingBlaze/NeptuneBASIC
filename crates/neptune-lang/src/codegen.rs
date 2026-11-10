@@ -24,6 +24,10 @@ struct FnGen<'a> {
     loops: Vec<Loop>,
     labels: Vec<Option<u32>>,
     label_fixups: Vec<(usize, u32)>,
+    /// `Try` depth at each label.
+    label_try_depth: Vec<u32>,
+    /// `TryLeave` to fill in: (instruction, `Try` depth of the `Goto`, label).
+    try_leaves: Vec<(usize, u32, u32)>,
     try_depth: u32,
     is_main: bool,
     ret: Ty,
@@ -46,6 +50,8 @@ pub fn generate(p: &HProgram, natives: &[CommandSig], sources: SourceMap) -> Pro
             loops: Vec::new(),
             labels: vec![None; f.n_labels as usize],
             label_fixups: Vec::new(),
+            label_try_depth: vec![0; f.n_labels as usize],
+            try_leaves: Vec::new(),
             try_depth: 0,
             is_main: f.is_main,
             ret: f.ret.clone(),
@@ -64,6 +70,11 @@ pub fn generate(p: &HProgram, natives: &[CommandSig], sources: SourceMap) -> Pro
             let target = g.labels[label as usize].expect("label resolved by sema");
             g.patch(at, target);
         }
+        // sema rejects jumps into a `Try`, so a label is never deeper than its `Goto`
+        for (at, depth, label) in std::mem::take(&mut g.try_leaves) {
+            g.code[at] = Op::TryLeave(depth - g.label_try_depth[label as usize]);
+        }
+        crate::fuse::fuse(&mut g.code, &mut g.lines, &mut g.stmts);
         functions.push(Function {
             name: f.name.clone(),
             n_params: f.n_params,
@@ -369,6 +380,10 @@ impl<'a> FnGen<'a> {
                 self.emit(Op::GosubReturn);
             }
             HStmtKind::Goto(l) => {
+                if self.try_depth > 0 {
+                    let at = self.emit(Op::TryLeave(0));
+                    self.try_leaves.push((at, self.try_depth, *l));
+                }
                 let j = self.emit(Op::Jump(0));
                 self.label_fixups.push((j, *l));
             }
@@ -376,7 +391,10 @@ impl<'a> FnGen<'a> {
                 let j = self.emit(Op::Gosub(0));
                 self.label_fixups.push((j, *l));
             }
-            HStmtKind::Label(l) => self.labels[*l as usize] = Some(self.here()),
+            HStmtKind::Label(l) => {
+                self.labels[*l as usize] = Some(self.here());
+                self.label_try_depth[*l as usize] = self.try_depth;
+            }
             HStmtKind::Delete(e) => {
                 self.expr(e);
                 self.emit(Op::Delete);

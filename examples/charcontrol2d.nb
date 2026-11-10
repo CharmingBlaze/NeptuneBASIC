@@ -1,0 +1,143 @@
+; 2D character controller playground: a slope, a moving platform, platforms
+; you can jump up through, a ladder, walls to jump between, a dash and a
+; crate to push.
+; Run from the project folder:  neptune run examples/charcontrol2d.nb
+;
+; Left/Right run, Space jumps (hold for higher, tap again in the air), Shift
+; dashes, Down crouches, Down and Space drops through thin platforms, Up and
+; Down climb the ladder, Esc quits. See docs/CHARACTERS.md.
+
+Graphics 960, 540, 0, 2
+AppTitle "2D character controller"
+SetBuffer BackBuffer()
+
+BindKey "left", KEY_LEFT : BindKey "right", KEY_RIGHT
+BindKey "up", KEY_UP : BindKey "down", KEY_DOWN
+BindKey "jump", KEY_SPACE
+BindKey "dash", KEY_LSHIFT
+
+Const MAX_BOXES = 32
+Dim boxX#(MAX_BOXES), boxY#(MAX_BOXES), boxW#(MAX_BOXES), boxH#(MAX_BOXES), boxThin(MAX_BOXES)
+Global boxes = 0
+
+; A solid box: x, y is its top-left corner, as you would draw it.
+Function Solid(x#, y#, w#, h#)
+    b = CreateBody2D(1, x + w / 2, y + h / 2)
+    Body2DBox b, w, h
+    boxes = boxes + 1
+    boxX(boxes) = x : boxY(boxes) = y : boxW(boxes) = w : boxH(boxes) = h
+    Return b
+End Function
+
+Solid 0, 500, 1600, 40
+Solid 0, 0, 20, 540
+Solid 1580, 0, 20, 540
+
+; two thin platforms: solid only from above
+For i = 0 To 1
+    thin = Solid(240, 400 - i * 90, 180, 12)
+    Body2DOneWay thin
+    boxThin(boxes) = True
+Next
+
+; two walls to jump between
+Solid 500, 180, 24, 320
+Solid 640, 120, 24, 330
+
+; a slope
+hill = CreateBody2D(1, 0, 0)
+Body2DSegment hill, 780, 500, 980, 400
+Solid 980, 400, 120, 100
+
+; a platform that moves: a kinematic body
+lift = CreateBody2D(2, 1240, 380)
+Body2DBox lift, 120, 16
+
+; a crate to push
+crate = CreateBody2D(0, 1050, 360)
+Body2DBox crate, 34, 34
+
+Const LADDER_X = 1420, LADDER_TOP = 200, LADDER_BOTTOM = 500
+Solid LADDER_X + 20, LADDER_TOP, 140, 14
+
+; ---- the character ----------------------------------------------------
+; x, y is the middle of the feet, the same as in 3D.
+player = CreateCharController2D(100, 480, 26, 44)
+CharSet player, "air_jumps", 1
+CharSet player, "wall_slide", 110
+CharSet player, "wall_jump", 1
+CharSet player, "step_height", 6
+
+camX# = 480
+climbing = False
+started = MilliSecs()
+
+While Not KeyHit(KEY_ESCAPE)
+    seconds# = (MilliSecs() - started) / 1000.0
+    moveX# = ActionValue("right") - ActionValue("left")
+    moveY# = ActionValue("down") - ActionValue("up")
+
+    ; ActionHit counts presses since it was last asked, so ask only once
+    jumpPressed = ActionHit("jump")
+
+    ; a ladder is just a place where gravity stops and up and down work
+    onLadder = Abs(CharX(player) - LADDER_X) < 22 And CharY(player) > LADDER_TOP - 2 And CharY(player) <= LADDER_BOTTOM + 2
+    If onLadder And moveY <> 0 And climbing = False
+        climbing = True
+        CharMode player, CHAR_FLY
+    ElseIf climbing And (onLadder = False Or jumpPressed)
+        climbing = False
+        CharMode player, CHAR_WALK
+    End If
+
+    CharMove player, moveX, moveY
+    CharHoldJump player, ActionDown("jump")
+    CharCrouch player, ActionDown("down") And climbing = False
+
+    If jumpPressed
+        If ActionDown("down") Then CharDrop player Else CharJump player
+    End If
+    If ActionHit("dash") Then CharDash player, CharFacing(player), 0, 0, 620, 0.16
+
+    PositionBody2D lift, 1240, 380 + Sin(seconds * 60) * 110
+
+    UpdateChar player
+
+    camX = camX + (CharX(player) - camX) * 0.12
+    camX = Clamp(camX, 480, 1120)
+
+    ClsColor 125, 180, 235 : Cls
+    Camera2D camX, 270
+
+    For i = 1 To boxes
+        If boxThin(i) Then Color 235, 235, 245 Else Color 95, 105, 125
+        Rect boxX(i), boxY(i), boxW(i), boxH(i)
+    Next
+    Color 95, 105, 125
+    Line 780, 500, 980, 400
+    Color 110, 140, 230
+    Rect Body2DX(lift) - 60, Body2DY(lift) - 8, 120, 16
+    Color 170, 120, 60
+    Rect Body2DX(crate) - 17, Body2DY(crate) - 17, 34, 34
+    Color 150, 110, 60
+    For y = LADDER_TOP To LADDER_BOTTOM - 10 Step 22
+        Rect LADDER_X - 14, y, 28, 5
+    Next
+
+    Select CharState(player)
+        Case "dash"      : Color 255, 255, 255
+        Case "wallslide" : Color 90, 220, 240
+        Case "jump"      : Color 250, 180, 70
+        Case "fall"      : Color 240, 130, 80
+        Default          : Color 230, 80, 70
+    End Select
+    Rect CharX(player) - 13, CharY(player) - CharHeight(player), 26, CharHeight(player)
+    Color 20, 20, 30
+    Rect CharX(player) + CharFacing(player) * 6 - 2, CharY(player) - CharHeight(player) + 8, 5, 5
+
+    Camera2DEnable False
+    Color 20, 30, 60
+    Text 16, 12, "State: " + CharState(player) + "   Grounded: " + CharGrounded(player) + "   On wall: " + CharOnWall(player)
+    Flip
+Wend
+End

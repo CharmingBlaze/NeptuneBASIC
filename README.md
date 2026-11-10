@@ -45,7 +45,8 @@ End
 * **Everything a game needs** – 2D and 3D graphics, custom
   meshes, animation, terrain, sprites, mirrors, cube maps, collisions,
   picking, sound, movies, keyboard/mouse/joysticks, files, banks, timers,
-  TCP/UDP networking and multiplayer games (TCP with LAN discovery).
+  TCP/UDP networking and multiplayer games over the local network or the
+  internet, with entities that sync themselves (`NetPlay`, `NetSpawn`).
 * **And more** – animated glTF/FBX models, rigid-body physics (Rapier),
   gamepads, fullscreen, graphics quality presets, sky boxes, PBR materials,
   decals, soft particles, level of detail, render-to-texture, shaders in
@@ -103,6 +104,8 @@ Two complete games show what a finished NeptuneBASIC program looks like:
 
 * `examples/games/starcourier.nb` – a 2D space shooter.
 * `examples/games/orbrun.nb` – a 3D collect-the-orbs game with an animated fox.
+* `examples/games/dirtbike.nb`, `jetski.nb`, `quadrace.nb` and `skyrace.nb` – commented racing
+  demos in the style of a 1990s console, built on the character controllers.
 
 ```bash
 neptune run examples/games/orbrun.nb
@@ -115,6 +118,7 @@ neptune run examples/games/orbrun.nb
 * [Language summary](docs/LANGUAGE.md): the whole language on one page
 * [Shaders, materials and post-processing](docs/SHADERS.md)
 * [Sound: playing, 3D sound, mixing and effects](docs/SOUND.md)
+* [Character controllers for 3D and 2D](docs/CHARACTERS.md)
 * [Making levels in Blender](docs/BLENDER.md)
 * [2D levels and sprites from Tiled and Aseprite](docs/TOOLS2D.md)
 * [Changelog](CHANGELOG.md): what changed, commit by commit

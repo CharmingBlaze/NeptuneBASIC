@@ -8,7 +8,7 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | Need | Look in |
 |---|---|
 | Lexer / parser / type checking | `crates/neptune-lang/src/{lexer,parser,sema}.rs` |
-| IR, bytecode, codegen | `crates/neptune-lang/src/{ir,bytecode,codegen}.rs` |
+| IR, bytecode, codegen, superinstructions | `crates/neptune-lang/src/{ir,bytecode,codegen,fuse}.rs` |
 | Command signature syntax | `crates/neptune-lang/src/commands.rs` |
 | VM, values, heap | `crates/neptune-vm/src/{vm,value}.rs` |
 | Console/math/string/file commands | `crates/neptune-vm/src/stdlib.rs` (`COMMANDS`) |
@@ -17,15 +17,18 @@ A Blitz3D-compatible BASIC for 3D games, written in Rust, running on Fyrox 1.0.
 | Blitz↔Fyrox coordinate mirror | `crates/neptune-runtime/src/transform.rs` |
 | Feature modules | runtime `collision`, `pick`, `mesh`, `model`, `anim`, `texture`, `material`, `classic` (fixed-function shader), `sprite`, `terrain`, `physics`, `sound`, `quality`, `buffer`, `draw2d`, `image2d`, `input`, `joy` (gamepads), `keyanim`, `mirror`, `screenshot`, `primitive` |
 | Blender levels (`LoadLevelFile`, custom properties) | runtime `level.rs`; add-on in `tools/blender`; guide `docs/BLENDER.md` |
-| 2D tool import | runtime `tiled.rs` (Tiled maps), `spritesheet.rs` (Aseprite, TexturePacker); guide `docs/TOOLS2D.md` |
+| 2D tool import | runtime `tiled.rs` (Tiled maps and the shared `MapDef`), `mapformats.rs` (LDtk, Ogmo, Sprite Fusion, Pyxel Edit, Aseprite tilemaps, Tiled worlds), `tilegrid.rs` (grid shapes), `inflate.rs`, `spritesheet.rs` (Aseprite, TexturePacker); guide `docs/TOOLS2D.md` |
+| Character controllers (`Char*`) | runtime `charcontrol.rs` (the rules, tested without the engine), `character.rs` (3D and 2D physics); guide `docs/CHARACTERS.md` |
 | Retained GUI (`Gui*`) | runtime `gui.rs` (core, DPI via `px`), `gui_lists.rs`, `gui_dialogs.rs`, `gui_editors.rs` |
 | Networking (TCP/UDP) | `crates/neptune-vm/src/net.rs` |
+| Multiplayer | rules `crates/neptune-vm/src/netgame.rs` (no sockets, tested alone); iroh transport `netlink.rs` (feature `online`); entity sync runtime `netsync.rs`; host-checked characters `netchar.rs` (rules, tested alone); examples `examples/games/coinrush.nb`, `examples/netcharacters.nb` |
 | Plugins (registry, C ABI) and shared-library loading | `crates/neptune-vm/src/{plugin,dynlib}.rs`; SDK in `sdk/` (C header, `neptune-plugin` crate, examples) |
 | CI (Windows, Linux, macOS) | `.github/workflows/ci.yml` |
 | Packaging (`neptune build`) | `crates/neptune-cli/src/package.rs` |
 | Language server (`neptune lsp`) | `crates/neptune-cli/src/lsp.rs` (+ `json.rs`) |
 | Debugger | VM side `crates/neptune-vm/src/debug.rs`; protocol (`neptune dap`) `crates/neptune-cli/src/dap.rs` |
 | Primitive shapes | `crates/neptune-runtime/src/primitive.rs` |
+| Stored entities (`StoreEntity`): out of the scene graph, so `ent()` fails and `entities()` skips them | runtime `store.rs` |
 | VS Code extension | `editors/vscode` (regenerate grammar with `python tools/gen_grammar.py`) |
 | IDE (egui, talks to `neptune lsp`/`dap`, never links Fyrox) | `crates/neptune-ide/src`: `editor.rs` (widget), `buffer.rs` (text, carets, undo), `lang.rs` (tokens, blocks), `app.rs` (state, actions), `view.rs`/`panels.rs`/`dialogs.rs` (drawing), `actions.rs` (menu and key table); guide `docs/IDE.md` |
 | Language tests | `crates/neptune-vm/tests/language.rs` |

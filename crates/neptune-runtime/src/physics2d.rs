@@ -288,7 +288,7 @@ impl Host3D<'_> {
         Ok((v.x * s, v.y * s, rb.ang_vel().to_degrees()))
     }
 
-    fn body_of_collider2d(&self, c: Handle<Node>) -> i32 {
+    pub fn body_of_collider2d(&self, c: Handle<Node>) -> i32 {
         self.world
             .bodies2d
             .iter()

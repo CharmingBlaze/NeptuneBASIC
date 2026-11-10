@@ -1,0 +1,360 @@
+; KART RACE - three laps against three rivals.
+; Run from the repository root: neptune run examples/games/kartrace.nb
+;
+; W or Up accelerates, S or Down brakes, A/D or Left/Right steer, Esc quits.
+;
+; Mechanics shown (each is explained in docs/GAMES3D.md):
+;   arcade car handling, a track built from a list of points, a road made
+;   as a mesh, slowing down off the road, checkpoints and laps so corners
+;   can't be cut, rivals that steer themselves, race positions, a countdown,
+;   a chase camera that widens with speed, and a mini-map.
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "Kart Race"
+
+Const ACCELERATION# = 16, BRAKING# = 34, DRAG# = 3, TOP_SPEED# = 36, GRASS_SPEED# = 13
+Const TURN_RATE# = 95, ROAD_HALF_WIDTH# = 6, GATE_RADIUS# = 12
+Const POINTS = 48, LAPS = 3, RIVALS = 3
+Const STATE_COUNTDOWN = 0, STATE_RACE = 1, STATE_FINISHED = 2
+
+BindKey "accelerate", KEY_W : BindKey "accelerate", KEY_UP
+BindKey "brake", KEY_S : BindKey "brake", KEY_DOWN
+BindKey "left", KEY_A : BindKey "left", KEY_LEFT
+BindKey "right", KEY_D : BindKey "right", KEY_RIGHT
+
+Global camera = CreateCamera()
+CameraRange camera, 0.3, 400
+CameraClsColor camera, 130, 185, 235
+sun = CreateLight(1)
+RotateEntity sun, 55, -40, 0
+LightShadows sun, True
+AmbientLight 90, 92, 100
+
+ground = CreatePlane()
+EntityColor ground, 80, 135, 70
+
+; ---- the track --------------------------------------------------------
+; The whole track is a list of points. Changing these formulas changes the
+; road, the checkpoints and how the rivals drive, all at once.
+Dim pathX#(POINTS)
+Dim pathZ#(POINTS)
+For i = 0 To POINTS - 1
+    angle# = 360.0 * i / POINTS
+    radius# = 55 + 14 * Sin(angle * 2) + 7 * Cos(angle * 3)
+    pathX(i) = radius * Cos(angle)
+    pathZ(i) = radius * Sin(angle) * 0.85
+Next
+
+; The road is one mesh: two corners at each point, joined up into a ribbon.
+road = CreateMesh()
+s = CreateSurface(road)
+For i = 0 To POINTS - 1
+    a = (i + POINTS - 1) Mod POINTS
+    b = (i + 1) Mod POINTS
+    ; the direction along the road, turned sideways, gives the road's edges
+    tx# = pathX(b) - pathX(a)
+    tz# = pathZ(b) - pathZ(a)
+    length# = Sqr(tx * tx + tz * tz)
+    sideX# = tz / length * ROAD_HALF_WIDTH
+    sideZ# = -tx / length * ROAD_HALF_WIDTH
+    AddVertex s, pathX(i) + sideX, 0.03, pathZ(i) + sideZ, 0, i
+    AddVertex s, pathX(i) - sideX, 0.03, pathZ(i) - sideZ, 1, i
+Next
+For i = 0 To POINTS - 1
+    j = (i + 1) Mod POINTS
+    AddTriangle s, i * 2, j * 2, i * 2 + 1
+    AddTriangle s, j * 2, j * 2 + 1, i * 2 + 1
+Next
+UpdateNormals road
+EntityColor road, 72, 72, 80
+
+; a white post on each side of the start line
+For side = -1 To 1 Step 2
+    post = CreateCylinder()
+    ScaleEntity post, 0.3, 3, 0.3
+    PositionEntity post, pathX(0), 3, pathZ(0) + side * (ROAD_HALF_WIDTH + 1)
+    EntityColor post, 240, 240, 240
+Next
+
+; Trees in the infield and around the outside give a sense of speed.
+For i = 1 To 90
+    angle = Rnd(360)
+    If Rand(0, 1)
+        radius = Rnd(8, 28)
+    Else
+        radius = Rnd(90, 130)
+    End If
+    tree = CreateCone(8)
+    ScaleEntity tree, 1.6, 3.5, 1.6
+    PositionEntity tree, radius * Cos(angle), 3.5, radius * Sin(angle)
+    EntityColor tree, 40, Rand(100, 150), 60
+Next
+
+; ---- cars -------------------------------------------------------------
+Type Car
+    Field ent
+    Field x#, z#, yaw#, speed#
+    Field gate, lap
+    Field lane#, skill#
+    Field isPlayer, finished
+    Field r, g, b
+End Type
+
+Function MakeCarModel(r, g, b)
+    root = CreatePivot()
+    hull = CreateCube(root)
+    ScaleEntity hull, 0.8, 0.3, 1.5
+    PositionEntity hull, 0, 0.55, 0
+    EntityColor hull, r, g, b
+    cab = CreateCube(root)
+    ScaleEntity cab, 0.55, 0.3, 0.6
+    PositionEntity cab, 0, 1.05, -0.2
+    EntityColor cab, 40, 45, 60
+    For wx = -1 To 1 Step 2
+        For wz = -1 To 1 Step 2
+            wheel = CreateCylinder(12, True, root)
+            ScaleEntity wheel, 0.38, 0.14, 0.38
+            RotateEntity wheel, 0, 0, 90
+            PositionEntity wheel, wx * 0.85, 0.38, wz
+            EntityColor wheel, 25, 25, 28
+        Next
+    Next
+    Return root
+End Function
+
+Function AddCar.Car(grid, isPlayer, r, g, b)
+    c.Car = New Car
+    c\ent = MakeCarModel(r, g, b)
+    c\isPlayer = isPlayer
+    c\r = r : c\g = g : c\b = b
+    ; line up behind the start, two across
+    k = (POINTS - 1 - grid / 2) Mod POINTS
+    m = (k + 1) Mod POINTS
+    dx# = pathX(m) - pathX(k)
+    dz# = pathZ(m) - pathZ(k)
+    length# = Sqr(dx * dx + dz * dz)
+    offset# = 3 * (grid Mod 2) * 2 - 3
+    c\x = pathX(k) + dz / length * offset
+    c\z = pathZ(k) - dx / length * offset
+    c\yaw = VectorYaw(dx, 0, dz)
+    c\lane = offset * 0.6
+    c\lap = -1
+    Return c
+End Function
+
+Global player.Car = AddCar(RIVALS, True, 230, 60, 50)
+For i = 0 To RIVALS - 1
+    rival.Car = AddCar(i, False, Rand(40, 200), Rand(40, 200), Rand(120, 255))
+    rival\skill = 0.86 + i * 0.05
+Next
+
+Global dust = CreateEmitter()
+EmitterRate dust, 0
+EmitterLife dust, 0.3, 0.7
+EmitterVelocity dust, 0, 2, 0, 2
+EmitterSize dust, 0.5, 1.5
+EmitterColor dust, 130, 110, 80, 160
+
+Global state = STATE_COUNTDOWN, countdown# = 3.5, raceTime#, finishPlace
+
+; ---- rules ------------------------------------------------------------
+Function OnRoad(x#, z#)
+    For i = 0 To POINTS - 1
+        dx# = x - pathX(i)
+        dz# = z - pathZ(i)
+        ; 6.8: the road's half width, plus the gap between two points
+        If dx * dx + dz * dz < (ROAD_HALF_WIDTH + 0.8) * (ROAD_HALF_WIDTH + 0.8) Then Return True
+    Next
+    Return False
+End Function
+
+; The same function drives every car; only where its controls come from differs.
+Function DriveCar(c.Car, throttle#, brake#, steer#, dt#)
+    ; speed: pedals change it, and drag slowly takes it away
+    c\speed = c\speed + throttle * ACCELERATION * dt - brake * BRAKING * dt
+    c\speed = c\speed - DRAG * dt * Sgn(c\speed)
+    limit# = TOP_SPEED
+    If c\isPlayer = False Then limit = TOP_SPEED * c\skill
+    roadSurface = OnRoad(c\x, c\z)
+    If roadSurface = False
+        limit = GRASS_SPEED
+        ; pull down towards the limit fast, but not in a single jolt
+        If c\speed > limit Then c\speed = c\speed - 40 * dt
+    ElseIf c\speed > limit
+        c\speed = limit
+    End If
+    If c\speed < -6 Then c\speed = -6
+    If Abs(c\speed) < 0.1 And throttle = 0 Then c\speed = 0
+
+    ; turning depends on speed: a parked car cannot turn on the spot
+    c\yaw = c\yaw + steer * TURN_RATE * dt * Clamp(c\speed / 10, -1, 1)
+    c\x = c\x - Sin(c\yaw) * c\speed * dt
+    c\z = c\z + Cos(c\yaw) * c\speed * dt
+    PositionEntity c\ent, c\x, 0, c\z
+    RotateEntity c\ent, 0, c\yaw, 0
+
+    If c\isPlayer And roadSurface = False And Abs(c\speed) > 4
+        PositionEntity dust, c\x, 0.3, c\z
+        EmitterRate dust, 40
+    ElseIf c\isPlayer
+        EmitterRate dust, 0
+    End If
+End Function
+
+; Checkpoints: a car must reach each point of the track in turn, so cutting
+; across the infield doesn't count. Reaching point 0 again ends a lap.
+Function CheckGates(c.Car)
+    dx# = c\x - pathX(c\gate)
+    dz# = c\z - pathZ(c\gate)
+    If dx * dx + dz * dz > GATE_RADIUS * GATE_RADIUS Then Return
+    If c\gate = 0
+        c\lap = c\lap + 1
+        If c\lap = LAPS And c\finished = 0
+            c\finished = 1
+            If c\isPlayer
+                state = STATE_FINISHED
+                finishPlace = PlaceOf(c)
+            End If
+        End If
+    End If
+    c\gate = (c\gate + 1) Mod POINTS
+End Function
+
+Function AngleBetween#(from#, target#)
+    Return ((target - from + 540) Mod 360) - 180
+End Function
+
+Function DriveRival(c.Car, dt#)
+    ; aim a little ahead on the track, and a little to the side to keep a lane
+    k = (c\gate + 1) Mod POINTS
+    m = (k + 1) Mod POINTS
+    dx# = pathX(m) - pathX(k)
+    dz# = pathZ(m) - pathZ(k)
+    length# = Sqr(dx * dx + dz * dz)
+    aimX# = pathX(k) + dz / length * c\lane
+    aimZ# = pathZ(k) - dx / length * c\lane
+    turn# = AngleBetween(c\yaw, VectorYaw(aimX - c\x, 0, aimZ - c\z))
+    ; a sharp corner means lift off the pedal
+    throttle# = 1
+    If Abs(turn) > 30 Then throttle = 0.2
+    DriveCar c, throttle, 0, Clamp(turn / 20, -1, 1), dt
+End Function
+
+; How far round the race a car is, as one number that can be compared.
+Function Progress#(c.Car)
+    Return c\lap * POINTS + c\gate
+End Function
+
+Function PlaceOf(c.Car)
+    place = 1
+    For other.Car = Each Car
+        If other <> c And Progress(other) > Progress(c) Then place = place + 1
+    Next
+    Return place
+End Function
+
+; Cars push each other apart when they overlap.
+Function BumpCars()
+    For a.Car = Each Car
+        For b.Car = Each Car
+            If a <> b
+                dx# = b\x - a\x
+                dz# = b\z - a\z
+                d# = Sqr(dx * dx + dz * dz)
+                If d < 2.6 And d > 0.01
+                    push# = (2.6 - d) / 2 / d
+                    a\x = a\x - dx * push
+                    a\z = a\z - dz * push
+                    b\x = b\x + dx * push
+                    b\z = b\z + dz * push
+                End If
+            End If
+        Next
+    Next
+End Function
+
+Function MoveCamera(dt#)
+    c.Car = player
+    ; where the camera would like to be: behind and above the car
+    wantX# = c\x + Sin(c\yaw) * 9
+    wantZ# = c\z - Cos(c\yaw) * 9
+    ; moving only part of the way each frame gives the camera some lag
+    k# = Clamp(7 * dt, 0, 1)
+    PositionEntity camera, EntityX(camera) + (wantX - EntityX(camera)) * k, 4.5, EntityZ(camera) + (wantZ - EntityZ(camera)) * k
+    PointEntity camera, c\ent
+    TurnEntity camera, -6, 0, 0
+    ; a wider view at speed makes the speed feel greater
+    CameraZoom camera, 1.25 - 0.4 * Abs(c\speed) / TOP_SPEED
+End Function
+
+Function DrawHUD()
+    w = GraphicsWidth()
+    Color 255, 255, 255
+    shownLap = Clamp(player\lap + 1, 1, LAPS)
+    Text 20, 16, "Lap " + shownLap + " / " + LAPS + "    Place " + PlaceOf(player) + " of " + (RIVALS + 1)
+    Text 20, 38, "Time " + FormatTime$(raceTime) + "    " + Int(Abs(player\speed) * 3) + " km/h"
+    If state = STATE_COUNTDOWN
+        If countdown > 0.5
+            Text w / 2, 240, Ceil(countdown - 0.5), True, True
+        Else
+            Text w / 2, 240, "GO!", True, True
+        End If
+    ElseIf state = STATE_FINISHED
+        Text w / 2, 240, "Finished in place " + finishPlace + "! Esc to quit.", True, True
+    End If
+    ; the map: every point of the track shrunk and drawn in a corner
+    mapX = w - 110
+    mapY = 110
+    Color 240, 240, 240
+    For i = 0 To POINTS - 1
+        Rect mapX + pathX(i) * 1.1, mapY + pathZ(i) * 1.1, 2, 2
+    Next
+    For c.Car = Each Car
+        Color c\r, c\g, c\b
+        Oval mapX + c\x * 1.1 - 4, mapY + c\z * 1.1 - 4, 8, 8
+    Next
+End Function
+
+Function FormatTime$(t#)
+    minutes = Floor(t / 60)
+    seconds# = t - minutes * 60
+    Return minutes + ":" + Right$("0" + Int(seconds * 100) / 100.0, 5)
+End Function
+
+; ---- the main loop -----------------------------------------------------
+MoveCamera 1
+lastTime = MilliSecs()
+While Not KeyHit(KEY_ESCAPE)
+    now = MilliSecs()
+    dt# = Clamp((now - lastTime) / 1000.0, 0, 0.05)
+    lastTime = now
+
+    Select state
+        Case STATE_COUNTDOWN
+            countdown = countdown - dt
+            If countdown <= 0.5 Then state = STATE_RACE
+        Case STATE_RACE
+            raceTime = raceTime + dt
+    End Select
+
+    For c.Car = Each Car
+        If state = STATE_COUNTDOWN
+            DriveCar c, 0, 0, 0, dt
+        ElseIf c\isPlayer And state = STATE_RACE
+            DriveCar c, ActionValue("accelerate"), ActionValue("brake"), ActionValue("left") - ActionValue("right"), dt
+        ElseIf c\isPlayer
+            DriveCar c, 0, 0.5, 0, dt ; coast to a stop after the finish
+        Else
+            DriveRival c, dt
+        End If
+        CheckGates c
+    Next
+    BumpCars
+    MoveCamera dt
+
+    UpdateWorld
+    RenderWorld
+    DrawHUD
+    Flip
+Wend
+End

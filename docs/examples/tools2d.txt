@@ -232,3 +232,150 @@ hero = LoadSheetImage("examples/media/tiled/hero.json")
 anim = CreateAnim2D(hero)
 Anim2DPlayTag anim, "idle"
 Print Anim2DTag(anim)
+
+=== CountTiledLevels
+; an LDtk project or Tiled world can hold several levels
+map = LoadTiledMap("examples/media/tiled/forest.ldtk")
+Print CountTiledLevels(map)           ; 1
+
+=== TiledLevelName
+; list the levels of a file
+map = LoadTiledMap("examples/media/tiled/forest.ldtk")
+For i = 1 To CountTiledLevels(map)
+    Print TiledLevelName(map, i)      ; Forest
+Next
+
+=== TiledLevelX
+; where the editor put the first level
+map = LoadTiledMap("examples/media/tiled/forest.ldtk")
+Print TiledLevelX(map, 1)
+
+=== TiledLevelY
+; where the editor put the first level
+map = LoadTiledMap("examples/media/tiled/forest.ldtk")
+Print TiledLevelY(map, 1)
+
+=== TiledMapLevel
+; which level was loaded
+map = LoadTiledMap("examples/media/tiled/forest.ldtk", "Forest")
+Print TiledMapLevel(map)              ; Forest
+
+=== TiledMapWidth
+; the size of a map in cells
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledMapWidth(map) + " cells wide"
+
+=== TiledMapHeight
+; the size of a map in cells
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledMapHeight(map) + " cells high"
+
+=== TiledMapTileWidth
+; the size of the grid
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledMapTileWidth(map)          ; 32
+
+=== TiledMapTileHeight
+; the size of the grid
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledMapTileHeight(map)         ; 32
+
+=== TiledMapPixelWidth
+; keep the camera inside a map of any shape
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+Print TiledMapPixelWidth(map)         ; 640
+
+=== TiledMapPixelHeight
+; keep the camera inside a map of any shape
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+Print TiledMapPixelHeight(map)        ; 320
+
+=== TiledMapOrientation
+; the shape of the grid
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+Print TiledMapOrientation(map)        ; isometric
+
+=== TiledMapBackground
+; clear the screen to the colour set in the editor
+Graphics 640, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+c = TiledMapBackground(map)
+If c >= 0 Then ClsColor c Shr 16, (c Shr 8) And 255, c And 255
+Cls
+
+=== TiledMapBody2D
+; solid only where the tileset has collision shapes
+Graphics 640, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+walls = TiledMapBody2D(map, "Props")
+
+=== TiledLayerProperty
+; a custom property of a layer
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledLayerProperty(map, "Ground", "music", "none")
+
+=== TiledLayerAlpha
+; fade a layer
+Graphics 640, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+TiledLayerAlpha map, "Props", 0.5
+
+=== TiledImageLayer
+; a picture layer as an image
+Graphics 640, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+hills = TiledImageLayer(map, "Hills")
+DrawImage hills, 0, 0
+
+=== TiledTileType
+; what kind of tile is at a cell
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+props = TiledLayer(map, "Props")
+t = GetTile(props, 8, 12)
+If t >= 0 Then Print TiledTileType(map, t)   ; hazard
+
+=== TiledTileProperty
+; data typed on a tile in the tileset
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+props = TiledLayer(map, "Props")
+t = GetTile(props, 8, 12)
+If t >= 0 Then Print TiledTileProperty(map, t, "damage", "0")   ; 1
+
+=== TiledObjectText
+; the words of each text object
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+For i = 1 To CountTiledObjects(map)
+    If TiledObjectShape(TiledObject(map, i)) = 6 Then Print TiledObjectText(TiledObject(map, i))
+Next
+
+=== DrawTiledObject
+; tile objects at their place, size and rotation
+Graphics 960, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+For i = 1 To CountTiledObjects(map, "coin")
+    DrawTiledObject TiledObject(map, i, "coin")
+Next
+
+=== TileMapPickX
+; the cell under a point on a map of any shape
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+ground = TiledLayer(map, "Ground")
+Print TileMapPickX(ground, 320, 170)
+
+=== TileMapPickY
+; the cell under a point on a map of any shape
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+ground = TiledLayer(map, "Ground")
+Print TileMapPickY(ground, 320, 170)
+
+=== TileMapCellCenterX
+; stand something in the middle of a cell
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+ground = TiledLayer(map, "Ground")
+Print TileMapCellCenterX(ground, 3, 4)
+
+=== TileMapCellCenterY
+; stand something in the middle of a cell
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+ground = TiledLayer(map, "Ground")
+Print TileMapCellCenterY(ground, 3, 4)

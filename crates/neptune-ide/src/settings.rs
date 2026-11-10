@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::document::BreakRule;
 use crate::json::{self, n, obj, parse, s, Json};
 
 #[derive(Clone, PartialEq)]
@@ -62,6 +63,7 @@ pub struct SavedDoc {
     pub line: usize,
     pub col: usize,
     pub breakpoints: Vec<usize>,
+    pub break_rules: Vec<(usize, BreakRule)>,
     pub bookmarks: Vec<usize>,
 }
 
@@ -184,6 +186,10 @@ impl Session {
                 if let (Json::Obj(m), Some(t)) = (&mut o, &d.text) {
                     m.insert("text".into(), s(t.clone()));
                 }
+                if let (Json::Obj(m), false) = (&mut o, d.break_rules.is_empty()) {
+                    let rules = d.break_rules.iter().map(|(l, r)| obj([("line", n(*l as u32)), ("condition", s(r.condition.clone())), ("hits", s(r.hits.clone()))])).collect();
+                    m.insert("breakRules".into(), Json::Arr(rules));
+                }
                 o
             })
             .collect();
@@ -227,6 +233,12 @@ impl Session {
                     line: d.get("line").num().unwrap_or(0.0) as usize,
                     col: d.get("col").num().unwrap_or(0.0) as usize,
                     breakpoints: read_nums(d.get("breakpoints")),
+                    break_rules: d
+                        .get("breakRules")
+                        .arr()
+                        .iter()
+                        .map(|r| (r.get("line").num().unwrap_or(0.0) as usize, BreakRule { condition: r.get("condition").str().unwrap_or("").to_string(), hits: r.get("hits").str().unwrap_or("").to_string() }))
+                        .collect(),
                     bookmarks: read_nums(d.get("bookmarks")),
                 })
                 .collect(),
@@ -272,6 +284,18 @@ mod tests {
         let st = Settings { theme: "Graphite".into(), tab_size: 2, minimap: false, ..Default::default() };
         let back = Settings::from_json(&parse(&st.to_json().to_string()).unwrap());
         assert!(back == st);
+    }
+
+    #[test]
+    fn breakpoint_conditions_are_remembered() {
+        let rule = BreakRule { condition: "a\\b = \"x\"".into(), hits: ">=3".into() };
+        let mut se = Session::default();
+        se.docs.push(SavedDoc { breakpoints: vec![4], break_rules: vec![(4, rule.clone())], ..Default::default() });
+        let back = Session::from_json(&parse(&se.to_json().to_string()).unwrap());
+        assert_eq!(back.docs[0].break_rules, vec![(4, rule)]);
+        // sessions saved before conditions existed still load
+        let old = Session::from_json(&parse(r#"{"docs":[{"breakpoints":[1]}]}"#).unwrap());
+        assert!(old.docs[0].break_rules.is_empty());
     }
 
     #[test]

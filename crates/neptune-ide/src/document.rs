@@ -1,6 +1,6 @@
 //! An open file: its text plus everything attached to its lines.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
 
@@ -15,6 +15,45 @@ pub struct Diag {
     pub message: String,
 }
 
+/// When a breakpoint stops: both empty means every time.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BreakRule {
+    /// Such as `lives < 2 And player\x > 10`.
+    pub condition: String,
+    /// Such as `5`, `>=5` or `%5`.
+    pub hits: String,
+}
+
+impl BreakRule {
+    pub fn is_empty(&self) -> bool {
+        self.condition.is_empty() && self.hits.is_empty()
+    }
+
+    /// Words for the breakpoint list and the margin's tooltip.
+    pub fn describe(&self) -> String {
+        match (self.condition.is_empty(), self.hits.is_empty()) {
+            (false, false) => format!("when {}, hit {}", self.condition, self.hits),
+            (false, true) => format!("when {}", self.condition),
+            (true, false) => format!("hit {}", self.hits),
+            (true, true) => String::new(),
+        }
+    }
+}
+
+/// True for what the debugger takes as a hit count: empty, `5`, `=5`, `==5`,
+/// `>5`, `>=5`, `<5`, `<=5` or `%5` (not `%0`).
+pub fn valid_hit_count(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return true;
+    }
+    if let Some(r) = t.strip_prefix('%') {
+        return r.trim().parse::<u32>().is_ok_and(|n| n > 0);
+    }
+    let r = [">=", "<=", "==", ">", "<", "="].iter().find_map(|op| t.strip_prefix(op)).unwrap_or(t);
+    r.trim().parse::<u32>().is_ok()
+}
+
 pub struct Doc {
     pub id: u64,
     pub path: Option<PathBuf>,
@@ -24,6 +63,8 @@ pub struct Doc {
     /// Old Blitz sources are often not UTF-8; they are saved back as they came.
     pub latin1: bool,
     pub breakpoints: BTreeSet<usize>,
+    /// Conditions of the breakpoints that have them (use the methods below).
+    pub break_rules: BTreeMap<usize, BreakRule>,
     pub bookmarks: BTreeSet<usize>,
     pub folded: BTreeSet<usize>,
     pub folds: Vec<(usize, usize)>,
@@ -58,6 +99,7 @@ impl Doc {
             crlf: cfg!(windows),
             latin1: false,
             breakpoints: BTreeSet::new(),
+            break_rules: BTreeMap::new(),
             bookmarks: BTreeSet::new(),
             folded: BTreeSet::new(),
             folds: Vec::new(),
@@ -138,6 +180,34 @@ impl Doc {
         }
     }
 
+    pub fn toggle_breakpoint(&mut self, line: usize) {
+        if self.breakpoints.contains(&line) {
+            self.remove_breakpoint(line);
+        } else {
+            self.breakpoints.insert(line);
+        }
+    }
+
+    pub fn remove_breakpoint(&mut self, line: usize) {
+        self.breakpoints.remove(&line);
+        self.break_rules.remove(&line);
+    }
+
+    pub fn clear_breakpoints(&mut self) {
+        self.breakpoints.clear();
+        self.break_rules.clear();
+    }
+
+    /// Sets a breakpoint on a line, replacing any rule it had.
+    pub fn set_breakpoint(&mut self, line: usize, rule: BreakRule) {
+        self.breakpoints.insert(line);
+        if rule.is_empty() {
+            self.break_rules.remove(&line);
+        } else {
+            self.break_rules.insert(line, rule);
+        }
+    }
+
     /// Keeps line marks in step with the text; call once per frame.
     pub fn sync(&mut self) {
         if self.buf.version != self.seen_version {
@@ -147,6 +217,7 @@ impl Doc {
             for s in &shifts {
                 let shift_set = |set: &mut BTreeSet<usize>| *set = set.iter().filter_map(|&l| s.apply(l)).collect();
                 shift_set(&mut self.breakpoints);
+                self.break_rules = std::mem::take(&mut self.break_rules).into_iter().filter_map(|(l, r)| Some((s.apply(l)?, r))).collect();
                 shift_set(&mut self.bookmarks);
                 shift_set(&mut self.folded);
                 self.diags.retain_mut(|d| match s.apply(d.start.line) {
@@ -282,6 +353,56 @@ impl Doc {
 mod tests {
     use super::*;
     use crate::buffer::EditKind;
+
+    fn rule(condition: &str) -> BreakRule {
+        BreakRule { condition: condition.into(), hits: String::new() }
+    }
+
+    #[test]
+    fn hit_counts_are_checked_as_the_debugger_reads_them() {
+        for good in ["", " ", "5", "=5", "==5", ">5", ">=5", "<5", "<=5", "%5", "> 5"] {
+            assert!(valid_hit_count(good), "{good:?}");
+        }
+        for bad in ["often", "%0", "%", ">", "-1", "5 or 6", ">>5"] {
+            assert!(!valid_hit_count(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_removed_breakpoint_forgets_its_condition() {
+        let mut d = Doc::new(1, "a\nb\nc\n");
+        d.set_breakpoint(1, rule("x > 1"));
+        d.toggle_breakpoint(1);
+        assert!(d.breakpoints.is_empty() && d.break_rules.is_empty());
+        d.toggle_breakpoint(1);
+        assert!(d.breakpoints.contains(&1) && d.break_rules.is_empty());
+    }
+
+    #[test]
+    fn an_empty_rule_makes_a_plain_breakpoint() {
+        let mut d = Doc::new(1, "a\nb\n");
+        d.set_breakpoint(0, rule("x"));
+        d.set_breakpoint(0, BreakRule::default());
+        assert!(d.breakpoints.contains(&0) && d.break_rules.is_empty());
+    }
+
+    #[test]
+    fn describing_a_rule() {
+        assert_eq!(rule("x > 1").describe(), "when x > 1");
+        assert_eq!(BreakRule { condition: String::new(), hits: "%5".into() }.describe(), "hit %5");
+        assert_eq!(BreakRule { condition: "x".into(), hits: "2".into() }.describe(), "when x, hit 2");
+    }
+
+    #[test]
+    fn conditions_follow_inserted_lines() {
+        let mut d = Doc::new(1, "a\nb\nc");
+        d.set_breakpoint(2, rule("x > 1"));
+        d.buf.set_caret(Pos::new(0, 1));
+        d.buf.insert("\nnew", EditKind::Other);
+        d.sync();
+        assert_eq!(d.break_rules.get(&3), Some(&rule("x > 1")));
+        assert!(d.breakpoints.contains(&3));
+    }
 
     #[test]
     fn breakpoints_follow_inserted_lines() {

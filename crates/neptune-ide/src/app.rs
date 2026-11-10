@@ -381,6 +381,7 @@ impl App {
             let mut doc = doc;
             doc.sync();
             doc.breakpoints = d.breakpoints.iter().copied().collect();
+            doc.break_rules = d.break_rules.iter().filter(|(l, _)| doc.breakpoints.contains(l)).cloned().collect();
             doc.bookmarks = d.bookmarks.iter().copied().collect();
             let p = doc.buf.clamp(Pos::new(d.line, d.col));
             doc.buf.set_caret(p);
@@ -404,6 +405,7 @@ impl App {
                     line: head.line,
                     col: head.col,
                     breakpoints: d.breakpoints.iter().copied().collect(),
+                    break_rules: d.break_rules.iter().map(|(l, r)| (*l, r.clone())).collect(),
                     bookmarks: d.bookmarks.iter().copied().collect(),
                 }
             })
@@ -1456,16 +1458,21 @@ impl App {
                 self.with_doc(|d| {
                     let lines: BTreeSet<usize> = d.buf.carets.iter().map(|c| c.head.line).collect();
                     for l in lines {
-                        if !d.breakpoints.remove(&l) {
-                            d.breakpoints.insert(l);
-                        }
+                        d.toggle_breakpoint(l);
                     }
                 });
                 self.send_breakpoints();
             }
+            A::EditBreakpoint => {
+                if let Some(Tab::Doc(id)) = self.panes[self.focus_pane].current() {
+                    if let Some(line) = self.docs.iter().find(|d| d.id == id).map(|d| d.buf.primary().head.line) {
+                        self.edit_breakpoint(id, line);
+                    }
+                }
+            }
             A::ClearBreakpoints => {
                 for d in &mut self.docs {
-                    d.breakpoints.clear();
+                    d.clear_breakpoints();
                 }
                 self.send_breakpoints();
             }
@@ -1587,6 +1594,7 @@ impl App {
                 editor::Out::GotoDefinition(w) => self.goto_definition(&w),
                 editor::Out::Eval(w) => self.debug_hover(w),
                 editor::Out::BreakpointsChanged => self.send_breakpoints(),
+                editor::Out::EditBreakpoint(id, line) => self.edit_breakpoint(id, line),
                 editor::Out::Zoom(z) => {
                     let d = if z > 1.0 { 1.0 } else { -1.0 };
                     self.zoom(d);

@@ -243,7 +243,7 @@ impl App {
                     self.queue.push(A::ToggleDebug);
                 }
                 ui.separator();
-                group(ui, self, &[Some(A::Pause), Some(A::StepOver), Some(A::StepIn), Some(A::StepOut), None, Some(A::ToggleBreakpoint), Some(A::ClearBreakpoints)]);
+                group(ui, self, &[Some(A::Pause), Some(A::StepOver), Some(A::StepIn), Some(A::StepOut), None, Some(A::ToggleBreakpoint), Some(A::EditBreakpoint), Some(A::ClearBreakpoints)]);
             });
             ui.menu_button("Help", |ui| {
                 ui.set_min_width(280.0);

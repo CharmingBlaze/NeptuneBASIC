@@ -76,6 +76,8 @@ pub enum Out {
     GotoDefinition(String),
     Eval(String),
     BreakpointsChanged,
+    /// Open the condition dialog for (document, line).
+    EditBreakpoint(u64, usize),
     Zoom(f32),
 }
 
@@ -895,6 +897,7 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, view: &mut View, sh: &mut Shared) {
         ui.separator();
         act(ui, Action::ToggleComment);
         act(ui, Action::ToggleBreakpoint);
+        act(ui, Action::EditBreakpoint);
         act(ui, Action::ToggleBookmark);
         act(ui, Action::ToggleFold);
         ui.separator();
@@ -911,9 +914,7 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, view: &mut View, sh: &mut Shared) {
         if gutter_resp.clicked() {
             resp.request_focus();
             if x < 20.0 {
-                if !doc.breakpoints.remove(&line) {
-                    doc.breakpoints.insert(line);
-                }
+                doc.toggle_breakpoint(line);
                 sh.out.push(Out::BreakpointsChanged);
             } else if x > gutter_w - 18.0 && doc.fold_at(line).is_some() {
                 doc.toggle_fold(line);
@@ -926,6 +927,15 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, view: &mut View, sh: &mut Shared) {
             let anchor = doc.buf.carets[0].anchor;
             let to = if line + 1 < doc.buf.line_count() { Pos::new(line + 1, 0) } else { Pos::new(line, doc.buf.line_len(line)) };
             doc.buf.select(anchor, to);
+        }
+        if gutter_resp.secondary_clicked() {
+            sh.out.push(Out::EditBreakpoint(doc.id, line));
+        }
+    }
+    if let Some(p) = gutter_resp.hover_pos() {
+        let row = ((p.y - g.gutter.top() + view.scroll.y) / row_h).floor().max(0.0) as usize;
+        if let Some(rule) = doc.break_rules.get(&doc.line_of_row(row)) {
+            gutter_resp.on_hover_text(rule.describe());
         }
     }
 
@@ -1320,6 +1330,10 @@ fn paint(ui: &mut Ui, doc: &mut Doc, view: &mut View, sh: &mut Shared, g: &Geo, 
         gp.text(Pos2::new(g.gutter.right() - 20.0, cy), Align2::RIGHT_CENTER, (line + 1).to_string(), g.font.clone(), num_colour);
         if doc.breakpoints.contains(&line) {
             gp.rect_filled(Rect::from_center_size(Pos2::new(gr.left() + 10.0, cy), Vec2::splat(10.0)), CornerRadius::ZERO, th.error);
+            // a hole in the middle: this one has a condition
+            if doc.break_rules.contains_key(&line) {
+                gp.rect_filled(Rect::from_center_size(Pos2::new(gr.left() + 10.0, cy), Vec2::splat(4.0)), CornerRadius::ZERO, th.bg);
+            }
         }
         if doc.bookmarks.contains(&line) {
             gp.rect_filled(Rect::from_min_size(Pos2::new(gr.left() + 1.0, gr.top() + 2.0), Vec2::new(3.0, g.row_h - 4.0)), 0.0, th.accent);

@@ -1,0 +1,1329 @@
+; RETRO64 - the toolkit behind the three racing demos:
+;     examples/games/dirtbike.nb    examples/games/jetski.nb    examples/games/quadrace.nb
+;
+; Nothing here is a game by itself. It is everything the demos share, so that
+; each demo can stay about its own world. Read this file to learn:
+;
+;   * how to get the look of a 1990s console out of a modern engine
+;   * how to build a whole landscape, and light it, from nothing but numbers
+;   * how to turn a character controller into a vehicle
+;   * how computer riders follow a track, and how to keep score in a race
+;
+; WHAT MAKES A WORLD LOOK LIKE A NINTENDO 64 GAME?
+;   1. Colour stored on the CORNERS of triangles and blended across them,
+;      with the lighting worked out once and painted in ("baked").
+;   2. Tiny blurry textures, repeated, and multiplied over those colours.
+;   3. Thick distance fog, because the console could not draw very far.
+;   4. Round shadow blobs under the characters instead of real shadows.
+;   5. Few triangles, and bright, simple shapes.
+; None of this is a filter over the picture: it is all in how the world is
+; built. Each of those is a function below.
+
+; ---- limits ------------------------------------------------------------
+Const MAP_MAX = 256           ; the land is at most this many squares a side
+Const SAMPLES_MAX = 1600      ; points along a race track
+Const CTRL_MAX = 64           ; hand-placed points that shape a track
+Const SOLIDS_MAX = 900        ; trees and rocks a vehicle can crash into
+
+; ---- what every demo shares --------------------------------------------
+Global camera, sunLight
+Global sunX#, sunY#, sunZ#                ; points TOWARDS the sun, length 1
+Global sunR#, sunG#, sunB#                ; sunlight colour, about 0 to 1.2
+Global ambR#, ambG#, ambB#                ; shadow colour, about 0 to 1
+Global autopilot = False
+
+; ---- one pseudo-random lattice that all noise reads from ---------------
+Dim noiseTab#(256, 256)
+
+; Sets the sun and the colour of the shade. Do this before baking anything.
+Function SetSun(dx#, dy#, dz#, r, g, b, ar, ag, ab)
+    d# = Sqr(dx * dx + dy * dy + dz * dz)
+    sunX = dx / d : sunY = dy / d : sunZ = dz / d
+    sunR = r / 255.0 : sunG = g / 255.0 : sunB = b / 255.0
+    ambR = ar / 255.0 : ambG = ag / 255.0 : ambB = ab / 255.0
+    ; Vehicles are the only things lit live, so they need a real light too.
+    ; Everything else has its light painted on.
+    If sunLight = 0 Then sunLight = CreateLight(1)
+    SetLightDirection sunLight, -sunX, -sunY, -sunZ
+    LightColor sunLight, r, g, b
+    AmbientLight ar, ag, ab
+End Function
+
+; Opens the window, the camera and the fog.
+Function RetroWindow(title$, fogR, fogG, fogB, fogNear#, fogFar#)
+    Graphics3D 1280, 720, 32, 2
+    AppTitle title
+
+    For i = 0 To 256
+        For j = 0 To 256
+            noiseTab(i, j) = Rnd(0, 1)
+        Next
+    Next
+
+    camera = CreateCamera()
+    CameraRange camera, 0.3, 2600
+    CameraClsColor camera, fogR, fogG, fogB
+    ; Look 3: fog hides the place where the world stops being drawn.
+    CameraFogMode camera, 1
+    CameraFogColor camera, fogR, fogG, fogB
+    CameraFogRange camera, fogNear, fogFar
+
+    InitFont
+    InitControls
+End Function
+
+; ---- noise: smooth randomness for hills, clouds and speckle -------------
+Function SmoothStep#(lo#, hi#, x#)
+    t# = (x - lo) / (hi - lo)
+    If t < 0 Then t = 0
+    If t > 1 Then t = 1
+    Return t * t * (3 - 2 * t)
+End Function
+
+; Smooth noise from 0 to 1. It repeats every `period` units, so a texture built
+; from it joins up with itself without a seam.
+Function Noise2#(x#, y#, period = 256)
+    ix = Floor(x)
+    iy = Floor(y)
+    fx# = x - ix
+    fy# = y - iy
+    ix = ((ix Mod period) + period) Mod period
+    iy = ((iy Mod period) + period) Mod period
+    jx = (ix + 1) Mod period
+    jy = (iy + 1) Mod period
+    fx = fx * fx * (3 - 2 * fx)
+    fy = fy * fy * (3 - 2 * fy)
+    a# = noiseTab(ix, iy) + (noiseTab(jx, iy) - noiseTab(ix, iy)) * fx
+    b# = noiseTab(ix, jy) + (noiseTab(jx, jy) - noiseTab(ix, jy)) * fx
+    Return a + (b - a) * fy
+End Function
+
+; Noise added to smaller copies of itself: big shapes with small detail on top.
+Function Fractal#(x#, y#, octaves)
+    sum# = 0
+    amp# = 0.5
+    total# = 0
+    For o = 1 To octaves
+        sum = sum + Noise2(x, y) * amp
+        total = total + amp
+        amp = amp * 0.5
+        x = x * 2.03 + 17.3
+        y = y * 2.03 + 9.1
+    Next
+    Return sum / total
+End Function
+
+; ---- colours packed into one whole number --------------------------------
+Function RGB(r, g, b)
+    Return (r Shl 16) Or (g Shl 8) Or b
+End Function
+
+Function MixRGB(a, b, t#)
+    If t < 0 Then t = 0
+    If t > 1 Then t = 1
+    r = ((a Shr 16) And 255) * (1 - t) + ((b Shr 16) And 255) * t
+    g = ((a Shr 8) And 255) * (1 - t) + ((b Shr 8) And 255) * t
+    c = (a And 255) * (1 - t) + (b And 255) * t
+    Return RGB(r, g, c)
+End Function
+
+; Brightens or darkens a colour by a random amount, so that nothing is flat.
+Function JitterRGB(c, amount)
+    n = Rand(-amount, amount)
+    r = Clamp(((c Shr 16) And 255) + n, 0, 255)
+    g = Clamp(((c Shr 8) And 255) + n, 0, 255)
+    b = Clamp((c And 255) + n, 0, 255)
+    Return RGB(r, g, b)
+End Function
+
+; ---- textures --------------------------------------------------------------
+; Look 2: a 64 x 64 grey speckle, tiled over everything. Multiplied over the
+; painted-on colours, it gives surfaces grain without a single texture file.
+Function MakeDetailTexture(lo, hi, scale#)
+    t = CreateTexture(64, 64, 1 + 8)
+    SetBuffer TextureBuffer(t)
+    For y = 0 To 63
+        For x = 0 To 63
+            n# = Noise2(x * scale / 64.0, y * scale / 64.0, scale) * 0.6 + Noise2(x * scale * 2 / 64.0, y * scale * 2 / 64.0, scale * 2) * 0.4
+            v = Clamp(lo + (hi - lo) * n, 0, 255)
+            WritePixel x, y, $FF000000 Or RGB(v, v, v)
+        Next
+    Next
+    SetBuffer BackBuffer()
+    Return t
+End Function
+
+; A soft white puff for dust and spray. Without a texture, particles are squares.
+Global puffTexture
+Function MakePuffTexture()
+    If puffTexture Then Return puffTexture
+    puffTexture = CreateTexture(32, 32, 1 + 2)
+    SetBuffer TextureBuffer(puffTexture)
+    For y = 0 To 31
+        For x = 0 To 31
+            d# = Sqr((x - 15.5) * (x - 15.5) + (y - 15.5) * (y - 15.5)) / 15.5
+            a = 255 * (1 - SmoothStep(0.25, 1.0, d))
+            WritePixel x, y, (a Shl 24) Or RGB(255, 255, 255)
+        Next
+    Next
+    SetBuffer BackBuffer()
+    Return puffTexture
+End Function
+
+; The sky is a box of six pictures around the camera. For every pixel of each
+; face we work out which way it looks, then choose a colour for that direction:
+; a blend from horizon to zenith, a glow around the sun, and clouds.
+Const SKY_SIZE = 128
+Function MakeSky(topR, topG, topB, horR, horG, horB, cloudR, cloudG, cloudB, cover#, glowR, glowG, glowB)
+    sky = CreateTexture(SKY_SIZE, SKY_SIZE, 1 + 128)
+    For face = 0 To 5
+        SetCubeFace sky, face
+        SetBuffer TextureBuffer(sky)
+        For py = 0 To SKY_SIZE - 1
+            For px = 0 To SKY_SIZE - 1
+                a# = px * 2.0 / (SKY_SIZE - 1) - 1
+                b# = 1 - py * 2.0 / (SKY_SIZE - 1)
+                Select face
+                    Case 0 : dx# = -1 : dy# = b : dz# = a
+                    Case 1 : dx# = a : dy# = b : dz# = 1
+                    Case 2 : dx# = 1 : dy# = b : dz# = -a
+                    Case 3 : dx# = -a : dy# = b : dz# = -1
+                    Case 4 : dx# = a : dy# = 1 : dz# = -b
+                    Default : dx# = a : dy# = -1 : dz# = b
+                End Select
+                l# = Sqr(dx * dx + dy * dy + dz * dz)
+                dx = dx / l : dy = dy / l : dz = dz / l
+
+                up# = Clamp(dy, 0, 1)
+                g# = Sqr(up)
+                r0# = horR + (topR - horR) * g
+                g0# = horG + (topG - horG) * g
+                b0# = horB + (topB - horB) * g
+
+                ; the glow gets stronger the closer this pixel looks at the sun
+                toSun# = Clamp(dx * sunX + dy * sunY + dz * sunZ, 0, 1)
+                glow# = toSun ^ 24 * 0.75 + toSun ^ 300 * 0.6
+                r0 = r0 + (glowR - r0) * glow
+                g0 = g0 + (glowG - g0) * glow
+                b0 = b0 + (glowB - b0) * glow
+
+                ; clouds: noise on a flat ceiling, faded out near the horizon
+                If dy > 0.02
+                    n# = Fractal(dx / (dy + 0.25) * 5 + 40, dz / (dy + 0.25) * 5 + 40, 4)
+                    k# = SmoothStep(1 - cover, 1 - cover + 0.18, n) * SmoothStep(0.02, 0.22, dy) * 0.92
+                    r0 = r0 + (cloudR - r0) * k
+                    g0 = g0 + (cloudG - g0) * k
+                    b0 = b0 + (cloudB - b0) * k
+                End If
+                WritePixel px, py, $FF000000 Or RGB(Clamp(r0, 0, 255), Clamp(g0, 0, 255), Clamp(b0, 0, 255))
+            Next
+        Next
+    Next
+    SetBuffer BackBuffer()
+    SkyBox sky
+End Function
+
+; ---- the land: a grid of heights, and a colour for every grid point --------
+Global mapN, mapCell#, mapX0#, mapZ0#
+Dim hMap#(MAP_MAX, MAP_MAX)   ; height of each grid point
+Dim cMap(MAP_MAX, MAP_MAX)    ; colour of each grid point
+Dim tDist#(MAP_MAX, MAP_MAX)  ; distance to the track, squared
+Dim tNear(MAP_MAX, MAP_MAX)   ; which track sample is the closest
+
+Function LandSetup(cells, cellSize#)
+    mapN = cells
+    mapCell = cellSize
+    mapX0 = -cells * cellSize / 2.0
+    mapZ0 = -cells * cellSize / 2.0
+End Function
+
+Function GridX#(i)
+    Return mapX0 + i * mapCell
+End Function
+
+Function GridZ#(j)
+    Return mapZ0 + j * mapCell
+End Function
+
+; The height of the land at any world position, blended between grid points.
+Function GroundY#(x#, z#)
+    fx# = Clamp((x - mapX0) / mapCell, 0, mapN - 0.001)
+    fz# = Clamp((z - mapZ0) / mapCell, 0, mapN - 0.001)
+    i = Floor(fx)
+    j = Floor(fz)
+    fx = fx - i
+    fz = fz - j
+    a# = hMap(i, j) + (hMap(i + 1, j) - hMap(i, j)) * fx
+    b# = hMap(i, j + 1) + (hMap(i + 1, j + 1) - hMap(i, j + 1)) * fx
+    Return a + (b - a) * fz
+End Function
+
+; Look 1: lights every grid point once, then builds the mesh with the result
+; painted on. Vertex colours and fog are all it needs, so it costs next to
+; nothing to draw, and the sun can throw soft shadows over the hills for free.
+Function BuildLand(detail, uvRepeat#)
+    mesh = CreateMesh()
+    surf = CreateSurface(mesh)
+    stepX# = sunX / Max(0.15, sunY) * mapCell * 2
+    stepZ# = sunZ / Max(0.15, sunY) * mapCell * 2
+    For j = 0 To mapN
+        For i = 0 To mapN
+            ; which way does the ground face here?
+            i0 = Max(i - 1, 0) : i1 = Min(i + 1, mapN)
+            j0 = Max(j - 1, 0) : j1 = Min(j + 1, mapN)
+            nx# = (hMap(i0, j) - hMap(i1, j)) / ((i1 - i0) * mapCell)
+            nz# = (hMap(i, j0) - hMap(i, j1)) / ((j1 - j0) * mapCell)
+            len# = Sqr(nx * nx + 1 + nz * nz)
+            light# = Max(0, (nx * sunX + sunY + nz * sunZ) / len)
+
+            ; Walk from here towards the sun. If the land rises above that
+            ; line of sight, this point is in shade.
+            shade# = 1
+            h# = hMap(i, j)
+            sx# = i
+            sz# = j
+            For k = 1 To 14
+                sx = sx + stepX / mapCell
+                sz = sz + stepZ / mapCell
+                If sx < 0 Or sz < 0 Or sx > mapN Or sz > mapN Then Exit
+                rayY# = h + k * mapCell * 2
+                over# = hMap(Int(sx), Int(sz)) - rayY
+                If over > 0
+                    shade = 0.45
+                    Exit
+                End If
+            Next
+            light = light * shade
+
+            c = cMap(i, j)
+            r# = ((c Shr 16) And 255) * Min(1.3, ambR + sunR * light)
+            g# = ((c Shr 8) And 255) * Min(1.3, ambG + sunG * light)
+            b# = (c And 255) * Min(1.3, ambB + sunB * light)
+            v = AddVertex(surf, GridX(i), hMap(i, j), GridZ(j), i / uvRepeat, j / uvRepeat)
+            VertexColor surf, v, Clamp(r, 0, 255), Clamp(g, 0, 255), Clamp(b, 0, 255)
+        Next
+    Next
+    For j = 0 To mapN - 1
+        For i = 0 To mapN - 1
+            a = j * (mapN + 1) + i
+            AddTriangle surf, a + mapN + 1, a + mapN + 2, a + 1
+            AddTriangle surf, a + mapN + 1, a + 1, a
+        Next
+    Next
+    UpdateNormals mesh
+    EntityFX mesh, 1 + 2           ; full bright, use the painted colours
+    If detail Then EntityTexture mesh, detail
+    ; The character controllers collide with physics bodies, so the land becomes
+    ; one: type 2 is static, shape 5 is "exactly this mesh".
+    EntityPhysics mesh, 2, 5
+    Return mesh
+End Function
+
+; ---- the track: a closed curve through a few hand-placed points ---------------
+Global ctrlCount, trackCount
+Dim ctrlX#(CTRL_MAX), ctrlZ#(CTRL_MAX), ctrlSample(CTRL_MAX)
+Dim trackX#(SAMPLES_MAX), trackY#(SAMPLES_MAX), trackZ#(SAMPLES_MAX)
+Dim trackDX#(SAMPLES_MAX), trackDZ#(SAMPLES_MAX)
+
+Function TrackPoint(x#, z#)
+    ctrlX(ctrlCount) = x
+    ctrlZ(ctrlCount) = z
+    ctrlCount = ctrlCount + 1
+End Function
+
+; Catmull-Rom: a smooth curve through the middle two of four points, with t
+; going from 0 to 1.
+Function CatRom#(p0#, p1#, p2#, p3#, t#)
+    Return 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t)
+End Function
+
+; Turns the hand-placed points into evenly spread samples, about `spacing`
+; metres apart. The land, the riders and the mini-map all read these.
+Function TrackBuild(spacing#)
+    trackCount = 0
+    n = ctrlCount
+    For i = 0 To n - 1
+        a = (i + n - 1) Mod n
+        b = (i + 1) Mod n
+        c = (i + 2) Mod n
+        ctrlSample(i) = trackCount    ; so jumps can be placed "just after point 3"
+        seg# = Sqr((ctrlX(b) - ctrlX(i)) ^ 2 + (ctrlZ(b) - ctrlZ(i)) ^ 2)
+        steps = Ceil(seg / spacing)
+        For k = 0 To steps - 1
+            t# = Float(k) / steps
+            trackX(trackCount) = CatRom(ctrlX(a), ctrlX(i), ctrlX(b), ctrlX(c), t)
+            trackZ(trackCount) = CatRom(ctrlZ(a), ctrlZ(i), ctrlZ(b), ctrlZ(c), t)
+            trackCount = trackCount + 1
+        Next
+    Next
+    For i = 0 To trackCount - 1
+        a = (i + trackCount - 1) Mod trackCount
+        b = (i + 1) Mod trackCount
+        dx# = trackX(b) - trackX(a)
+        dz# = trackZ(b) - trackZ(a)
+        l# = Sqr(dx * dx + dz * dz)
+        trackDX(i) = dx / l
+        trackDZ(i) = dz / l
+    Next
+End Function
+
+; Sits the track on the land, then irons out the bumps so it drives well.
+Function TrackFollowGround(passes)
+    For i = 0 To trackCount - 1
+        trackY(i) = GroundY(trackX(i), trackZ(i))
+    Next
+    TrackSmooth passes
+End Function
+
+Dim tempY#(SAMPLES_MAX)
+Function TrackSmooth(passes)
+    For p = 1 To passes
+        For i = 0 To trackCount - 1
+            a = (i + trackCount - 1) Mod trackCount
+            b = (i + 1) Mod trackCount
+            tempY(i) = (trackY(a) + trackY(i) * 2 + trackY(b)) / 4
+        Next
+        For i = 0 To trackCount - 1
+            trackY(i) = tempY(i)
+        Next
+    Next
+End Function
+
+; A ramp: rises `height` over `ramp` samples, then falls away sharply. Riders
+; leave the ground at the top without any special code in the race.
+Function TrackJump(at, ramp, height#, drop = 4)
+    For k = 0 To ramp + drop
+        s = (at + k) Mod trackCount
+        If k <= ramp
+            trackY(s) = trackY(s) + height * Float(k) / ramp
+        Else
+            trackY(s) = trackY(s) + height * (1 - Float(k - ramp) / drop)
+        End If
+    Next
+End Function
+
+; A row of bumps.
+Function TrackWhoops(at, count, height#)
+    For k = 0 To count * 5
+        s = (at + k) Mod trackCount
+        trackY(s) = trackY(s) + height * (0.5 - 0.5 * Cos(k * 72))
+    Next
+End Function
+
+; For every sample, tells the grid points around it "the track is this close".
+; Stamping is far quicker than measuring every point against every sample.
+Function TrackStamp(reach#, stride = 1)
+    For j = 0 To mapN
+        For i = 0 To mapN
+            tDist(i, j) = 1000000000
+            tNear(i, j) = -1
+        Next
+    Next
+    r = Ceil(reach / mapCell)
+    For s = 0 To trackCount - 1 Step stride
+        ci = Floor((trackX(s) - mapX0) / mapCell)
+        cj = Floor((trackZ(s) - mapZ0) / mapCell)
+        For i = Max(ci - r, 0) To Min(ci + r, mapN)
+            dx# = GridX(i) - trackX(s)
+            For j = Max(cj - r, 0) To Min(cj + r, mapN)
+                dz# = GridZ(j) - trackZ(s)
+                d# = dx * dx + dz * dz
+                If d < tDist(i, j)
+                    tDist(i, j) = d
+                    tNear(i, j) = s
+                End If
+            Next
+        Next
+    Next
+End Function
+
+; Presses the track into the land: flat across its width, fading back into the
+; natural ground over `shoulder` metres at each side.
+Function TrackCarve(halfWidth#, shoulder#)
+    For j = 0 To mapN
+        For i = 0 To mapN
+            s = tNear(i, j)
+            If s >= 0
+                k# = SmoothStep(halfWidth, halfWidth + shoulder, Sqr(tDist(i, j)))
+                hMap(i, j) = trackY(s) + (hMap(i, j) - trackY(s)) * k
+            End If
+        Next
+    Next
+End Function
+
+; How steep the land is around x, z: 0 is level, 1 is 45 degrees.
+Function SlopeAt#(x#, z#)
+    Return Max(Abs(GroundY(x + 2, z) - GroundY(x - 2, z)), Abs(GroundY(x, z + 2) - GroundY(x, z - 2))) / 4
+End Function
+
+; How far world position x, z is from the middle of the track.
+Function TrackDistanceAt#(x#, z#)
+    i = Clamp(Floor((x - mapX0) / mapCell + 0.5), 0, mapN)
+    j = Clamp(Floor((z - mapZ0) / mapCell + 0.5), 0, mapN)
+    Return TrackDistance(i, j)
+End Function
+
+; How far grid point i, j is from the middle of the track (big if nowhere near).
+Function TrackDistance#(i, j)
+    If tNear(i, j) < 0 Then Return 100000
+    Return Sqr(tDist(i, j))
+End Function
+
+; ---- scenery: thousands of triangles collected into one mesh --------------
+; Every tree could be its own entity, but one big mesh is much cheaper to draw.
+; Each triangle gets flat, baked colour, so scenery matches the land.
+Global propMesh, propSurf
+Global propCX#, propCY#, propCZ#
+
+Function PropsBegin()
+    propMesh = CreateMesh()
+    propSurf = CreateSurface(propMesh)
+End Function
+
+Function PropsEnd()
+    EntityFX propMesh, 1 + 2 + 16  ; full bright, painted colours, both sides
+End Function
+
+Function PropTri(ax#, ay#, az#, bx#, by#, bz#, cx#, cy#, cz#, c)
+    ux# = bx - ax : uy# = by - ay : uz# = bz - az
+    vx# = cx - ax : vy# = cy - ay : vz# = cz - az
+    nx# = uy * vz - uz * vy
+    ny# = uz * vx - ux * vz
+    nz# = ux * vy - uy * vx
+    l# = Sqr(nx * nx + ny * ny + nz * nz)
+    If l < 0.000001 Then Return
+    nx = nx / l : ny = ny / l : nz = nz / l
+    ; the shapes below say where their centre is, so a face knows which way is out
+    If (ax - propCX) * nx + (ay - propCY) * ny + (az - propCZ) * nz < 0
+        nx = -nx : ny = -ny : nz = -nz
+    End If
+    light# = Max(0, nx * sunX + ny * sunY + nz * sunZ)
+    r = Clamp(((c Shr 16) And 255) * (ambR + sunR * light), 0, 255)
+    g = Clamp(((c Shr 8) And 255) * (ambG + sunG * light), 0, 255)
+    b = Clamp((c And 255) * (ambB + sunB * light), 0, 255)
+    v0 = AddVertex(propSurf, ax, ay, az)
+    v1 = AddVertex(propSurf, bx, by, bz)
+    v2 = AddVertex(propSurf, cx, cy, cz)
+    VertexColor propSurf, v0, r, g, b
+    VertexColor propSurf, v1, r, g, b
+    VertexColor propSurf, v2, r, g, b
+    AddTriangle propSurf, v0, v1, v2
+End Function
+
+Function PropQuad(ax#, ay#, az#, bx#, by#, bz#, cx#, cy#, cz#, dx#, dy#, dz#, c)
+    PropTri ax, ay, az, bx, by, bz, cx, cy, cz, c
+    PropTri ax, ay, az, cx, cy, cz, dx, dy, dz, c
+End Function
+
+; A box standing at x, y, z (its base is at y), turned by yaw.
+Dim bxX#(8), bxZ#(8)
+Function PropBox(x#, y#, z#, hw#, h#, hd#, yaw#, c)
+    propCX = x : propCY = y + h / 2 : propCZ = z
+    co# = Cos(yaw) : si# = Sin(yaw)
+    For i = 0 To 3
+        lx# = hw : lz# = hd
+        If i = 1 Or i = 2 Then lx = -hw
+        If i >= 2 Then lz = -hd
+        bxX(i) = x + lx * co - lz * si
+        bxZ(i) = z + lx * si + lz * co
+    Next
+    For i = 0 To 3
+        k = (i + 1) Mod 4
+        PropQuad bxX(i), y, bxZ(i), bxX(k), y, bxZ(k), bxX(k), y + h, bxZ(k), bxX(i), y + h, bxZ(i), c
+    Next
+    PropQuad bxX(0), y + h, bxZ(0), bxX(1), y + h, bxZ(1), bxX(2), y + h, bxZ(2), bxX(3), y + h, bxZ(3), c
+End Function
+
+; A tube that can narrow towards the top. With rTop = 0 it is a cone.
+Function PropTube(x#, y#, z#, rBase#, rTop#, h#, sides, c, cTop = -1)
+    propCX = x : propCY = y + h / 2 : propCZ = z
+    If cTop = -1 Then cTop = c
+    For i = 0 To sides - 1
+        a0# = 360.0 * i / sides + 13
+        a1# = 360.0 * (i + 1) / sides + 13
+        col = MixRGB(c, cTop, (i Mod 2) * 0.4)
+        PropTri x + Cos(a0) * rBase, y, z + Sin(a0) * rBase, x + Cos(a1) * rBase, y, z + Sin(a1) * rBase, x + Cos(a1) * rTop, y + h, z + Sin(a1) * rTop, col
+        If rTop > 0
+            PropTri x + Cos(a0) * rBase, y, z + Sin(a0) * rBase, x + Cos(a1) * rTop, y + h, z + Sin(a1) * rTop, x + Cos(a0) * rTop, y + h, z + Sin(a0) * rTop, col
+        End If
+    Next
+End Function
+
+; A list of things a vehicle can crash into, checked with simple distances.
+Global solidCount
+Dim solidX#(SOLIDS_MAX), solidZ#(SOLIDS_MAX), solidR#(SOLIDS_MAX)
+
+Function AddSolid(x#, z#, r#)
+    If solidCount >= SOLIDS_MAX Then Return
+    solidX(solidCount) = x
+    solidZ(solidCount) = z
+    solidR(solidCount) = r
+    solidCount = solidCount + 1
+End Function
+
+Function PropPine(x#, y#, z#, size#, leaves)
+    PropTube x, y, z, 0.35 * size, 0.2 * size, 1.6 * size, 5, RGB(84, 56, 36)
+    PropTube x, y + 1.2 * size, z, 2.3 * size, 0, 3.0 * size, 6, leaves, MixRGB(leaves, RGB(255, 255, 255), 0.1)
+    PropTube x, y + 2.9 * size, z, 1.7 * size, 0, 2.6 * size, 6, leaves, MixRGB(leaves, RGB(255, 255, 255), 0.15)
+    PropTube x, y + 4.4 * size, z, 1.1 * size, 0, 2.2 * size, 5, leaves, MixRGB(leaves, RGB(255, 255, 255), 0.2)
+    AddSolid x, z, 0.5 * size
+End Function
+
+Function PropRock(x#, y#, z#, size#, c)
+    PropTube x, y - 0.4 * size, z, 1.1 * size, 0.75 * size, 0.9 * size, 6, c, JitterRGB(c, 18)
+    PropTube x, y + 0.5 * size, z, 0.75 * size, 0, 0.55 * size, 6, MixRGB(c, RGB(255, 255, 255), 0.12)
+    AddSolid x, z, 0.9 * size
+End Function
+
+; A palm: a leaning trunk in a few segments, and drooping fronds.
+Function PropPalm(x#, y#, z#, size#)
+    lean# = Rnd(360)
+    lx# = Cos(lean) * 0.25 * size
+    lz# = Sin(lean) * 0.25 * size
+    cx# = x : cy# = y : cz# = z
+    For s = 0 To 3
+        PropTube cx, cy, cz, (0.34 - s * 0.05) * size, (0.3 - s * 0.05) * size, 1.6 * size, 5, RGB(128, 96, 60), RGB(150, 118, 78)
+        cx = cx + lx * s
+        cy = cy + 1.55 * size
+        cz = cz + lz * s
+    Next
+    propCX = cx : propCY = cy - 4 * size : propCZ = cz
+    For f = 0 To 6
+        a# = f * 51.4 + Rnd(-12, 12)
+        ca# = Cos(a) : sa# = Sin(a)
+        px# = cx : py# = cy : pz# = cz
+        For s = 1 To 3
+            nx# = cx + ca * s * 1.35 * size
+            nz# = cz + sa * s * 1.35 * size
+            ny# = cy + (0.5 * s - 0.42 * s * s) * size
+            w0# = (0.5 - (s - 1) * 0.13) * size
+            w1# = (0.5 - s * 0.13) * size
+            PropQuad px - sa * w0, py, pz + ca * w0, px + sa * w0, py, pz - ca * w0, nx + sa * w1, ny, nz - ca * w1, nx - sa * w1, ny, nz + ca * w1, RGB(46 + s * 8, 132 + s * 8, 52)
+            px = nx : py = ny : pz = nz
+        Next
+    Next
+    AddSolid x, z, 0.5 * size
+End Function
+
+; A striped arch across the track at sample s: the start and finish line.
+Function PropArch(s, halfWidth#, height#, c1, c2)
+    x# = trackX(s) : y# = trackY(s) : z# = trackZ(s)
+    px# = trackDZ(s) : pz# = -trackDX(s)
+    yaw# = ATan2(pz, px)         ; the way the bar runs across the track
+    For side = -1 To 1 Step 2
+        PropTube x + px * side * halfWidth, y - 1, z + pz * side * halfWidth, 0.7, 0.55, height + 1, 6, c1, c2
+        AddSolid x + px * side * halfWidth, z + pz * side * halfWidth, 0.9
+    Next
+    propCX = x : propCY = y + height : propCZ = z
+    tiles = 12
+    tileW# = halfWidth * 2.0 / tiles
+    For i = 0 To tiles - 1
+        col = c1
+        If i Mod 2 = 1 Then col = c2
+        lx# = -halfWidth + i * tileW
+        PropBox x + px * (lx + tileW / 2), y + height, z + pz * (lx + tileW / 2), tileW / 2, 1.7, 0.2, yaw, col
+    Next
+End Function
+
+; Mountains so far away that they are just a shape: a ring of triangles that
+; ignores the fog, so it stays visible behind everything.
+Function FarMountains(radius#, base#, peak#, count, c, tips)
+    PropsBegin
+    propCX = 0 : propCY = base : propCZ = 0
+    For i = 0 To count - 1
+        a0# = 360.0 * (i - Rnd(0.2, 0.9)) / count
+        a1# = 360.0 * (i + Rnd(0.2, 0.9)) / count
+        am# = (a0 + a1) / 2
+        h# = base + Rnd(0.45, 1.0) * (peak - base)
+        x0# = Cos(a0) * radius : z0# = Sin(a0) * radius
+        x1# = Cos(a1) * radius : z1# = Sin(a1) * radius
+        xm# = Cos(am) * radius : zm# = Sin(am) * radius
+        col = JitterRGB(c, 8)
+        v0 = AddVertex(propSurf, x0, base, z0)
+        v1 = AddVertex(propSurf, x1, base, z1)
+        v2 = AddVertex(propSurf, xm, h, zm)
+        VertexColor propSurf, v0, (col Shr 16) And 255, (col Shr 8) And 255, col And 255
+        VertexColor propSurf, v1, (col Shr 16) And 255, (col Shr 8) And 255, col And 255
+        VertexColor propSurf, v2, (tips Shr 16) And 255, (tips Shr 8) And 255, tips And 255
+        AddTriangle propSurf, v0, v1, v2
+    Next
+    EntityFX propMesh, 1 + 2 + 8 + 16  ; 8 means "ignores the fog"
+End Function
+
+; ---- building vehicles out of boxes ----------------------------------------
+Function PartBox(parent, x#, y#, z#, sx#, sy#, sz#, r, g, b)
+    e = CreateCube(parent)
+    ScaleEntity e, sx, sy, sz
+    PositionEntity e, x, y, z
+    EntityColor e, r, g, b
+    Return e
+End Function
+
+Function PartBall(parent, x#, y#, z#, sx#, sy#, sz#, r, g, b)
+    e = CreateSphere(6, parent)
+    ScaleEntity e, sx, sy, sz
+    PositionEntity e, x, y, z
+    EntityColor e, r, g, b
+    Return e
+End Function
+
+; A wheel is a pivot holding a tyre, so spinning the pivot spins the wheel.
+; The bright spokes are there so that you can see it turn.
+Function PartWheel(parent, x#, y#, z#, radius#, width#)
+    pivot = CreatePivot(parent)
+    PositionEntity pivot, x, y, z
+    tyre = CreateCylinder(8, True, pivot)
+    RotateEntity tyre, 0, 0, 90
+    ScaleEntity tyre, radius, width, radius
+    EntityColor tyre, 28, 28, 34
+    PartBox pivot, 0, 0, 0, width * 1.1, radius * 0.72, radius * 0.1, 210, 210, 220
+    PartBox pivot, 0, 0, 0, width * 1.1, radius * 0.1, radius * 0.72, 210, 210, 220
+    Return pivot
+End Function
+
+; ---- a rider: a character controller driven like a vehicle --------------------
+; The character controller walks up slopes, rides over bumps and stops at
+; walls for us. What it does not know is that it is a motorbike, so each
+; rider adds those rules on top: momentum, steering that needs speed, slowing
+; on hills, and taking off over the tops of jumps.
+Type Rider
+    Field ent, tilt, body, ctrl       ; root, ground-hugging pivot, leaning pivot, controller
+    Field blob, dust                  ; shadow and dust/spray emitter
+    Field extra                       ; a second emitter, for demos that want one
+    Field wheel1, wheel2, wheel3, wheel4, steer1, steer2, radius#
+    Field yaw#, speed#, steer#
+    Field top#, accel#, turn#
+    Field nx#, ny#, nz#               ; smoothed "which way is up" for the model
+    Field lastNX#, lastNY#, lastNZ#   ; ground under it on the previous frame
+    Field air#, hop#, squash#, stuck#, bestProgress
+    Field bob#, bobSpeed#, posePitch#, poseRoll#  ; pose of vehicles that float
+    Field pitch#, boost#, rollTime#, rollDir, lastHoop  ; for vehicles that fly
+    Field sample, progress, start     ; where along the track it is, and where it began
+    Field lane#, skill#, seed#
+    Field isPlayer, finished, finishTime#
+    Field r, g, b, name$
+End Type
+
+Global player.Rider
+Global crestLaunch = True      ; False where the ground is not in hMap (on water)
+Global aiThrottle#, aiBrake#, aiSteer#
+
+; Makes a rider standing on the track. Build its look under v\body afterwards.
+Function NewRider.Rider(name$, isPlayer, startSample, lane#, top#, accel#, turn#, r, g, b)
+    v.Rider = New Rider
+    v\name = name : v\isPlayer = isPlayer
+    v\top = top : v\accel = accel : v\turn = turn
+    v\r = r : v\g = g : v\b = b
+    v\lane = lane
+    v\skill = 1
+    v\seed = Rnd(1000)
+    v\ny = 1
+    v\radius = 0.5
+    v\start = startSample
+    v\progress = startSample
+    v\bestProgress = startSample
+
+    v\ent = CreatePivot()
+    v\tilt = CreatePivot(v\ent)
+    v\body = CreatePivot(v\tilt)
+
+    ; Look 4: the shadow is a dark disc, solid in the middle and see-through at
+    ; the rim. The alpha blends across each triangle, so it needs no texture.
+    v\blob = CreateMesh()
+    s = CreateSurface(v\blob)
+    middle = AddVertex(s, 0, 0, 0)
+    VertexColor s, middle, 12, 10, 24, 0.62
+    For k = 0 To 9
+        rim = AddVertex(s, Cos(k * 40) * 1.7, 0, Sin(k * 40) * 1.7)
+        VertexColor s, rim, 12, 10, 24, 0
+        If k > 0 Then AddTriangle s, middle, rim - 1, rim
+    Next
+    UpdateNormals v\blob
+    EntityFX v\blob, 1 + 2 + 16 + 32   ; 32 means "blend with what is behind"
+
+    v\ctrl = CreateCharController(v\ent, 0.55, 1.5)
+    ; speed is the top speed. We set how much of it we want each frame through
+    ; CharMove, so acceleration here only needs to be very quick.
+    CharSet v\ctrl, "speed", top
+    CharSet v\ctrl, "acceleration", 400
+    CharSet v\ctrl, "friction", 400
+    CharSet v\ctrl, "air_acceleration", 3    ; barely any steering in the air
+    CharSet v\ctrl, "air_friction", 0        ; and nothing slows it down up there
+    CharSet v\ctrl, "gravity", 26
+    CharSet v\ctrl, "max_fall", 70
+    CharSet v\ctrl, "jump_speed", 8
+    CharSet v\ctrl, "max_slope", 52          ; anything steeper acts as a wall
+    CharSet v\ctrl, "step_height", 0.25
+    CharSet v\ctrl, "snap", 0.5              ; hugs the ground over small bumps
+
+    PlaceRider v, startSample
+    Return v
+End Function
+
+; Stops a rider on the track at a sample, facing the way the track runs.
+Function PlaceRider(v.Rider, s)
+    s = ((s Mod trackCount) + trackCount) Mod trackCount
+    x# = trackX(s) + trackDZ(s) * v\lane
+    z# = trackZ(s) - trackDX(s) * v\lane
+    PositionChar v\ctrl, x, trackY(s) + 0.8, z
+    SetCharVelocity v\ctrl, 0, 0, 0
+    v\yaw = ATan2(-trackDX(s), trackDZ(s))
+    v\speed = 0
+    v\steer = 0
+    v\sample = s
+    RotateEntity v\ent, 0, v\yaw, 0
+End Function
+
+; Back on the track after going somewhere it cannot return from.
+Function RespawnRider(v.Rider)
+    PlaceRider v, v\sample
+    v\air = 0
+    v\stuck = 0
+End Function
+
+Function AngleDiff#(from#, target#)
+    d# = (target - from) Mod 360
+    If d > 180 Then d = d - 360
+    If d < -180 Then d = d + 360
+    Return d
+End Function
+
+; The heart of the vehicles. Pedals and steering go in, and the character
+; controller does the actual moving. `limit` is the top speed on this surface.
+Function DriveRider(v.Rider, throttle#, brake#, steer#, limit#, dt#)
+    c = v\ctrl
+    x# = CharX(c) : z# = CharZ(c)
+    fx# = -Sin(v\yaw) : fz# = Cos(v\yaw)
+    onGround = CharGrounded(c)
+    v\steer = v\steer + (steer - v\steer) * Clamp(9 * dt, 0, 1)
+
+    If onGround
+        v\air = 0
+        ; pedals, and air resistance that grows with speed
+        If throttle > 0 Then v\speed = v\speed + throttle * v\accel * dt
+        If brake > 0
+            If v\speed > 0.5
+                v\speed = v\speed - brake * 36 * dt
+            Else
+                v\speed = v\speed - brake * 10 * dt     ; reverse, gently
+            End If
+        End If
+        v\speed = v\speed - v\speed * 0.22 * dt
+
+        ; hills: uphill costs speed and downhill gives it back
+        nx# = CharGroundNX(c) : ny# = CharGroundNY(c) : nz# = CharGroundNZ(c)
+        If ny > 0.1 Then v\speed = v\speed + (nx * fx + nz * fz) / ny * 9 * dt
+
+        ; off the good surface, ease down to its speed limit
+        If v\speed > limit Then v\speed = Max(limit, v\speed - 32 * dt)
+        If v\speed < -9 Then v\speed = -9
+        If throttle = 0 And brake = 0 And Abs(v\speed) < 0.3 Then v\speed = 0
+    Else
+        v\air = v\air + dt
+    End If
+
+    ; Steering needs movement. At high speed the turn widens, so corners matter.
+    grip# = Clamp(v\speed / 7, -1, 1) * (1 - 0.42 * Min(1, Abs(v\speed) / v\top))
+    If onGround = 0 Then grip = grip * 0.35
+    v\yaw = v\yaw + v\steer * v\turn * grip * dt
+    RotateEntity v\ent, 0, v\yaw, 0
+    fx = -Sin(v\yaw) : fz = Cos(v\yaw)
+
+    ; This is the only line that moves it: "go this way, this much of top speed".
+    CharMove c, fx * v\speed / v\top, 0, fz * v\speed / v\top
+
+    ; Remember the ground, because it is gone once we have left it.
+    If onGround
+        v\lastNX = CharGroundNX(c) : v\lastNY = CharGroundNY(c) : v\lastNZ = CharGroundNZ(c)
+    End If
+    vx# = CharVX(c) : vz# = CharVZ(c) : vy# = CharVY(c)
+
+    UpdateChar c, dt
+
+    ; In the air, a cliff would deflect a fast rider upward and let it drive up
+    ; the wall. Nothing but a ramp should lift it, so take that climb away.
+    If onGround = 0 And CharVY(c) > vy + 0.5
+        SetCharVelocity c, CharVX(c), Min(vy, 0), CharVZ(c)
+        v\speed = v\speed * 0.85
+    End If
+
+    ; A controller stops dead at walls, so the speed we keep must agree.
+    newX# = CharVX(c) : newZ# = CharVZ(c)
+    actual# = Sqr(newX * newX + newZ * newZ)
+    If CharGrounded(c) And Abs(v\speed) > actual + 4 Then v\speed = Sgn(v\speed) * (actual + 4)
+
+    ; Taking off. The controller keeps a rider glued to the ground, with no
+    ; upward speed. So when a rider really leaves the ground, we hand over the
+    ; speed the slope was lifting it at. That is what makes ramps throw you.
+    v\hop = v\hop - dt
+    If CharLeftGround(c) And v\lastNY > 0.1
+        rise# = -(v\lastNX * vx + v\lastNZ * vz) / v\lastNY
+        If rise > 0.3 Then CharImpulse c, 0, rise, 0 : v\hop = 0.3
+    End If
+
+    ; Crests. "Snap" holds a rider to the ground over bumps, which also holds
+    ; it over the top of a jump. So look at the ground ahead and behind: if it
+    ; falls away faster than gravity could pull the rider down, it must fly.
+    If crestLaunch And CharGrounded(c) And v\hop <= 0 And v\speed > 11
+        d# = Max(3, v\speed * 0.1)
+        h0# = GroundY(CharX(c), CharZ(c))
+        riseNow# = (h0 - GroundY(CharX(c) - fx * d, CharZ(c) - fz * d)) / d
+        riseNext# = (GroundY(CharX(c) + fx * d, CharZ(c) + fz * d) - h0) / d
+        If (riseNow - riseNext) * v\speed * v\speed / d > 40
+            CharImpulse c, 0, Max(riseNow * v\speed, 0.5), 0
+            v\hop = 0.35
+        End If
+    End If
+
+    If CharLanded(c)
+        v\hop = 0.25
+        v\squash = Min(1, CharImpact(c) / 20)
+    End If
+    v\squash = Max(0, v\squash - 4 * dt)
+
+    ; Spin the wheels: distance rolled, turned into degrees.
+    roll# = v\speed * dt * 57.3 / v\radius
+    If v\wheel1 Then TurnEntity v\wheel1, roll, 0, 0
+    If v\wheel2 Then TurnEntity v\wheel2, roll, 0, 0
+    If v\wheel3 Then TurnEntity v\wheel3, roll, 0, 0
+    If v\wheel4 Then TurnEntity v\wheel4, roll, 0, 0
+    If v\steer1 Then RotateEntity v\steer1, 0, v\steer * 26, 0
+    If v\steer2 Then RotateEntity v\steer2, 0, v\steer * 26, 0
+
+    CrashIntoSolids v
+    UpdateProgress v
+End Function
+
+; Trees and rocks: if we are inside one, get pushed out and lose most of the speed.
+Function CrashIntoSolids(v.Rider)
+    x# = CharX(v\ctrl) : z# = CharZ(v\ctrl)
+    For i = 0 To solidCount - 1
+        dx# = x - solidX(i)
+        If Abs(dx) < 4
+            dz# = z - solidZ(i)
+            r# = solidR(i) + 0.6
+            d2# = dx * dx + dz * dz
+            If Abs(dz) < 4 And d2 < r * r And d2 > 0.0001
+                d# = Sqr(d2)
+                PositionChar v\ctrl, solidX(i) + dx / d * r, CharY(v\ctrl), solidZ(i) + dz / d * r
+                If v\speed > 6
+                    v\speed = v\speed * 0.35
+                    If v\isPlayer Then CameraShake camera, 0.6, 0.3
+                End If
+            End If
+        End If
+    Next
+End Function
+
+; Poses the model: hugs the ground, and leans when it turns. `pitch` and `roll`
+; are the extras each vehicle wants, such as wheelies.
+Function PoseRider(v.Rider, nx#, ny#, nz#, yOffset#, pitch#, roll#, dt#, spin# = 0)
+    k# = Clamp(12 * dt, 0, 1)
+    v\nx = v\nx + (nx - v\nx) * k
+    v\ny = v\ny + (ny - v\ny) * k
+    v\nz = v\nz + (nz - v\nz) * k
+    ; Square up with the parent's heading, then swing to match the ground.
+    RotateEntity v\tilt, 0, 0, 0
+    AlignToVector v\tilt, v\nx, v\ny, v\nz, 2, 1
+    PositionEntity v\tilt, 0, yOffset - v\squash * 0.25, 0
+    RotateEntity v\body, pitch, spin, roll
+    ; the shadow lies on whatever is beneath, however high the rider is flying
+    x# = CharX(v\ctrl) : z# = CharZ(v\ctrl)
+    PositionEntity v\blob, x, GroundOrWater(x, z) + 0.18, z
+    RotateEntity v\blob, 0, v\yaw, 0
+End Function
+
+; The height of the surface the shadow should rest on.
+Global waterLevel# = -1000
+Function GroundOrWater#(x#, z#)
+    Return Max(GroundY(x, z), waterLevel)
+End Function
+
+; ---- following the track ----------------------------------------------------
+; Looks only a short way ahead of where a rider was. That means nobody can skip
+; part of the lap by cutting across, so we need no invisible checkpoints.
+Function UpdateProgress(v.Rider)
+    x# = CharX(v\ctrl) : z# = CharZ(v\ctrl)
+    best# = 1000000000
+    bestK = 0
+    For k = -4 To 40
+        s = (v\sample + k + trackCount) Mod trackCount
+        dx# = trackX(s) - x
+        dz# = trackZ(s) - z
+        d# = dx * dx + dz * dz
+        If d < best
+            best = d
+            bestK = k
+        End If
+    Next
+    v\sample = (v\sample + bestK + trackCount) Mod trackCount
+    v\progress = v\progress + bestK
+End Function
+
+; Nobody stays lost for long: if a rider has not got further round the track
+; for four seconds, or has fallen out of the world, put it back.
+Function CheckStuck(v.Rider, dt#)
+    If raceState <> STATE_RACE Or v\finished Then Return
+    If v\progress > v\bestProgress
+        v\bestProgress = v\progress
+        v\stuck = 0
+    Else
+        v\stuck = v\stuck + dt
+    End If
+    If v\stuck > 4 Or CharY(v\ctrl) < -20 Then RespawnRider v
+End Function
+
+; How a computer rider decides what to do. It aims at a point on the track
+; ahead of it, and eases off when that point is far to one side.
+Function ThinkAI(v.Rider, halfWidth#, seconds#)
+    ahead = 5 + Abs(v\speed) * 0.42
+    k = (v\sample + ahead) Mod trackCount
+    ; wander slowly across the track, so that riders do not form a line
+    lane# = v\lane + Sin(seconds * 19 + v\seed) * halfWidth * 0.3
+    aimX# = trackX(k) + trackDZ(k) * lane
+    aimZ# = trackZ(k) - trackDX(k) * lane
+    turn# = AngleDiff(v\yaw, ATan2(-(aimX - CharX(v\ctrl)), aimZ - CharZ(v\ctrl)))
+    aiSteer = Clamp(turn / 14, -1, 1)
+    aiThrottle = 1
+    aiBrake = 0
+    If Abs(turn) > 26 Then aiThrottle = 0.35
+    If Abs(turn) > 55 And v\speed > 14 Then aiBrake = 1 : aiThrottle = 0
+End Function
+
+; Keeps the pack together. A human leading by miles is a dull race.
+Function RubberBand#(v.Rider)
+    If v\isPlayer Then Return 1
+    gap = v\progress - player\progress
+    Return v\skill * Clamp(1 - gap * 0.0009, 0.88, 1.08)
+End Function
+
+; ---- race bookkeeping ---------------------------------------------------------
+Const STATE_COUNTDOWN = 0, STATE_RACE = 1, STATE_DONE = 2
+Global raceState, countdown#, raceTime#, totalLaps, lastBeep
+Global sndBeep, sndGo
+
+Function StartRace(laps)
+    totalLaps = laps
+    raceState = STATE_COUNTDOWN
+    countdown = 3.9
+    raceTime = 0
+    lastBeep = 4
+End Function
+
+; Everyone back on the grid.
+Function RestartRace()
+    For v.Rider = Each Rider
+        v\progress = v\start
+        v\bestProgress = v\start
+        v\finished = False
+        v\finishTime = 0
+        PlaceRider v, v\start
+    Next
+    StartRace totalLaps
+End Function
+
+Function PlaceOf(v.Rider)
+    place = 1
+    For o.Rider = Each Rider
+        If o <> v
+            If o\progress > v\progress Then place = place + 1
+        End If
+    Next
+    Return place
+End Function
+
+; Runs the clock and notices who has finished. Call once a frame.
+Function UpdateRace(dt#)
+    If raceState = STATE_COUNTDOWN
+        countdown = countdown - dt
+        n = Ceil(countdown)
+        If n <> lastBeep And n > 0
+            lastBeep = n
+            If n <= 3 And sndBeep Then PlaySound sndBeep
+        End If
+        If countdown <= 0
+            raceState = STATE_RACE
+            If sndGo Then PlaySound sndGo
+        End If
+    ElseIf raceState = STATE_RACE
+        raceTime = raceTime + dt
+    End If
+    For v.Rider = Each Rider
+        If v\finished = 0 And v\progress >= totalLaps * trackCount
+            v\finished = True
+            v\finishTime = raceTime
+            If v\isPlayer Then raceState = STATE_DONE
+        End If
+    Next
+End Function
+
+Function PlaceName$(n)
+    If n = 1 Then Return "1ST"
+    If n = 2 Then Return "2ND"
+    If n = 3 Then Return "3RD"
+    Return Str(n) + "TH"
+End Function
+
+Function ClockText$(t#)
+    minutes = Int(Floor(t / 60))
+    rest# = t - minutes * 60
+    whole = Int(Floor(rest))
+    hundredths = Int(Floor((rest - whole) * 100))
+    Return minutes + ":" + Right$("0" + whole, 2) + "." + Right$("0" + hundredths, 2)
+End Function
+
+; ---- input ------------------------------------------------------------------
+; Actions, not keys: the same game then works on a keyboard and a gamepad.
+Function InitControls()
+    BindKey "gas", KEY_W : BindKey "gas", KEY_UP : BindJoy "gas", JOY_A
+    BindKey "brake", KEY_S : BindKey "brake", KEY_DOWN : BindJoy "brake", JOY_B
+    BindKey "left", KEY_A : BindKey "left", KEY_LEFT : BindJoyAxis "left", "x", -1
+    BindKey "right", KEY_D : BindKey "right", KEY_RIGHT : BindJoyAxis "right", "x", 1
+    BindKey "jump", KEY_SPACE : BindJoy "jump", JOY_X
+    BindKey "reset", KEY_R : BindJoy "reset", JOY_Y
+    BindKey "auto", KEY_P
+End Function
+
+; ---- chunky text, drawn as little squares -------------------------------------
+Dim glyphBits(127)
+
+Function Glyph(c$, pattern$)
+    bits = 0
+    For i = 1 To 15
+        bits = bits * 2 + (Mid$(pattern, i, 1) = "1")
+    Next
+    glyphBits(Asc(c)) = bits
+End Function
+
+; Each letter is 3 dots wide and 5 dots tall, written row by row.
+Function InitFont()
+    Glyph "0", "111101101101111" : Glyph "1", "010110010010111" : Glyph "2", "111001111100111"
+    Glyph "3", "111001111001111" : Glyph "4", "101101111001001" : Glyph "5", "111100111001111"
+    Glyph "6", "111100111101111" : Glyph "7", "111001001010010" : Glyph "8", "111101111101111"
+    Glyph "9", "111101111001111" : Glyph "A", "010101111101101" : Glyph "B", "110101110101110"
+    Glyph "C", "011100100100011" : Glyph "D", "110101101101110" : Glyph "E", "111100110100111"
+    Glyph "F", "111100110100100" : Glyph "G", "011100101101011" : Glyph "H", "101101111101101"
+    Glyph "I", "111010010010111" : Glyph "J", "001001001101010" : Glyph "K", "101101110101101"
+    Glyph "L", "100100100100111" : Glyph "M", "101111111101101" : Glyph "N", "110101101101101"
+    Glyph "O", "010101101101010" : Glyph "P", "110101110100100" : Glyph "Q", "010101101110011"
+    Glyph "R", "110101110101101" : Glyph "S", "011100010001110" : Glyph "T", "111010010010010"
+    Glyph "U", "101101101101111" : Glyph "V", "101101101101010" : Glyph "W", "101101111111101"
+    Glyph "X", "101101010101101" : Glyph "Y", "101101010010010" : Glyph "Z", "111001010100111"
+    Glyph ":", "000010000010000" : Glyph ".", "000000000000010" : Glyph "!", "010010010000010"
+    Glyph "/", "001001010100100" : Glyph "-", "000000111000000" : Glyph "+", "000010111010000"
+End Function
+
+Function TextWidth2(s$, size)
+    Return Len(s) * 4 * size - size
+End Function
+
+Function DrawGlyphs(x, y, s$, size)
+    For n = 1 To Len(s)
+        c = Asc(Upper$(Mid$(s, n, 1)))
+        If c < 128
+            bits = glyphBits(c)
+            If bits
+                For b = 0 To 14
+                    If (bits Shr (14 - b)) And 1 Then Rect x + (b Mod 3) * size, y + (b / 3) * size, size, size
+                Next
+            End If
+        End If
+        x = x + 4 * size
+    Next
+End Function
+
+; Text with a hard drop shadow, in the style of the time.
+Function BigText(x, y, s$, size, r, g, b, centred = False)
+    If centred Then x = x - TextWidth2(s, size) / 2
+    Color 12, 12, 30
+    DrawGlyphs x + size / 2 + 1, y + size / 2 + 1, s, size
+    Color r, g, b
+    DrawGlyphs x, y, s, size
+End Function
+
+; ---- the heads-up display ------------------------------------------------------
+Function DrawMiniMap(cx, cy, scale#)
+    Color 16, 18, 40
+    For s = 0 To trackCount - 1 Step 6
+        Rect cx + trackX(s) * scale - 2, cy - trackZ(s) * scale - 2, 5, 5
+    Next
+    Color 240, 240, 230
+    For s = 0 To trackCount - 1 Step 6
+        Rect cx + trackX(s) * scale - 1, cy - trackZ(s) * scale - 1, 3, 3
+    Next
+    For v.Rider = Each Rider
+        size = 7
+        If v\isPlayer Then size = 11
+        Color 16, 18, 40
+        Rect cx + CharX(v\ctrl) * scale - size / 2 - 1, cy - CharZ(v\ctrl) * scale - size / 2 - 1, size + 2, size + 2
+        Color v\r, v\g, v\b
+        Rect cx + CharX(v\ctrl) * scale - size / 2, cy - CharZ(v\ctrl) * scale - size / 2, size, size
+    Next
+End Function
+
+; A speedometer built from blocks that change colour towards the top.
+Function DrawSpeedBar(x, y, kmh, frac#)
+    blocks = 16
+    For i = 0 To blocks - 1
+        Color 16, 18, 40
+        Rect x + i * 15 - 2, y - 2, 15, 26
+        If Float(i) / blocks < frac
+            Color Min(255, i * 34), 255 - Max(0, i - 8) * 26, 50
+        Else
+            Color 60, 60, 80
+        End If
+        Rect x + i * 15, y, 11, 22
+    Next
+    BigText x, y - 42, kmh + " KM/H", 6, 255, 240, 120
+End Function
+
+; Everything a race shows on top of the picture.
+Function DrawRaceHud(demoName$)
+    w = GraphicsWidth()
+    h = GraphicsHeight()
+    lap = Int(Clamp(player\progress / trackCount + 1, 1, totalLaps))
+    BigText 24, 20, PlaceName(PlaceOf(player)), 12, 255, 220, 70
+    BigText 24, 96, "LAP " + lap + "/" + totalLaps, 5, 255, 255, 255
+    BigText 24, 132, ClockText(raceTime), 5, 190, 240, 255
+    DrawSpeedBar 24, h - 46, Abs(player\speed) * 3.6, Abs(player\speed) / player\top
+    DrawMiniMap w - 150, 150, 0.32
+
+    If raceState = STATE_COUNTDOWN
+        n = Ceil(countdown)
+        If n <= 3 Then BigText w / 2, h / 2 - 120, Str(n), 26, 255, 90, 60, True
+        If n > 3 Then BigText w / 2, h / 2 - 70, demoName, 12, 255, 255, 255, True
+    ElseIf raceState = STATE_RACE And raceTime < 1
+        BigText w / 2, h / 2 - 120, "GO!", 26, 100, 255, 110, True
+    ElseIf raceState = STATE_DONE
+        DrawResults
+    End If
+    If autopilot And raceState <> STATE_DONE Then BigText w / 2, h - 44, "DEMO MODE - P TO TAKE OVER", 4, 255, 255, 255, True
+End Function
+
+Function DrawResults()
+    w = GraphicsWidth()
+    y = 170
+    BigText w / 2, y, "FINISH!", 18, 255, 240, 110, True
+    y = y + 120
+    For place = 1 To 8
+        For v.Rider = Each Rider
+            If PlaceOf(v) = place And place <= 8
+                t$ = "RACING"
+                If v\finished Then t = ClockText(v\finishTime)
+                If v\isPlayer
+                    BigText w / 2, y, PlaceName(place) + " " + v\name + " " + t, 5, 255, 230, 90, True
+                Else
+                    BigText w / 2, y, PlaceName(place) + " " + v\name + " " + t, 5, 235, 235, 245, True
+                End If
+                y = y + 40
+                Exit
+            End If
+        Next
+    Next
+    BigText w / 2, y + 16, "R TO RACE AGAIN", 5, 150, 255, 150, True
+End Function
+
+; ---- the camera -------------------------------------------------------------
+Global camX#, camY#, camZ#, camLook
+
+Function ChaseCamera(v.Rider, dist#, height#, snap, dt#, lift# = 0)
+    If camLook = 0 Then camLook = CreatePivot()
+    fx# = -Sin(v\yaw) : fz# = Cos(v\yaw)
+    x# = CharX(v\ctrl) : y# = CharY(v\ctrl) + lift : z# = CharZ(v\ctrl)
+    k# = Clamp(7 * dt, 0, 1)
+    If snap Then k = 1
+    camX = camX + (x - fx * dist - camX) * k
+    camZ = camZ + (z - fz * dist - camZ) * k
+    floorY# = GroundOrWater(camX, camZ) + 1.3
+    want# = Max(y + height, floorY)
+    camY = camY + (want - camY) * Clamp(5 * dt, 0, 1)
+    If snap Then camY = want
+    If camY < floorY Then camY = floorY     ; never sink into a hillside
+    PositionEntity camera, camX, camY, camZ
+    PositionEntity camLook, x + fx * 5, y + 1.6, z + fz * 5
+    PointEntity camera, camLook
+    ; a wider view at speed makes the speed feel greater
+    CameraZoom camera, 1.2 - 0.32 * Min(1, Abs(v\speed) / v\top)
+End Function
+
+; ---- home-made sound -------------------------------------------------------
+; The demos need no sound files: they write small WAV files of their own to the
+; user's data folder, then load them like any other sound.
+Function WavHeader(f, samples, rate)
+    WriteLine2 f, "RIFF"
+    WriteInt f, 36 + samples
+    WriteLine2 f, "WAVEfmt "
+    WriteInt f, 16
+    WriteShort f, 1                 ; plain PCM
+    WriteShort f, 1                 ; mono
+    WriteInt f, rate
+    WriteInt f, rate
+    WriteShort f, 1
+    WriteShort f, 8                 ; 8 bits a sample, lovely and crunchy
+    WriteLine2 f, "data"
+    WriteInt f, samples
+End Function
+
+Function WriteLine2(f, s$)
+    For i = 1 To Len(s)
+        WriteByte f, Asc(Mid$(s, i, 1))
+    Next
+End Function
+
+; An engine: a buzzing wave at hz with a little noise. Because it is looped
+; and its pitch changes with speed, it sounds like revving.
+Function MakeEngine(name$, hz, noisy#)
+    path$ = UserFolder("NeptuneDemos") + name + ".wav"
+    rate = 11025
+    period = rate / hz
+    samples = period * 16
+    f = WriteFile(path)
+    WavHeader f, samples, rate
+    For i = 0 To samples - 1
+        phase# = Float(i Mod period) / period
+        half# = Float(i Mod (period * 2)) / (period * 2)
+        v# = (phase * 2 - 1) * 0.55 + (half * 2 - 1) * 0.3 + Rnd(-1, 1) * noisy
+        WriteByte f, Clamp(128 + v * 75, 2, 253)
+    Next
+    CloseFile f
+    snd = LoadSound(path)
+    If snd Then LoopSound snd
+    Return snd
+End Function
+
+; One plain tone, for the countdown.
+Function MakeBeep(name$, hz#, seconds#)
+    path$ = UserFolder("NeptuneDemos") + name + ".wav"
+    rate = 11025
+    samples = rate * seconds
+    f = WriteFile(path)
+    WavHeader f, samples, rate
+    For i = 0 To samples - 1
+        fade# = 1 - Float(i) / samples
+        v# = Sgn(Sin(360.0 * hz * i / rate)) * fade
+        WriteByte f, 128 + v * 60
+    Next
+    CloseFile f
+    Return LoadSound(path)
+End Function
+
+Function InitBeeps()
+    sndBeep = MakeBeep("beep", 660, 0.18)
+    sndGo = MakeBeep("go", 1040, 0.5)
+End Function
+
+; ---- each frame ---------------------------------------------------------------
+Global lastMillis
+Function LastFrameTime#()
+    now = MilliSecs()
+    If lastMillis = 0 Then lastMillis = now
+    dt# = Clamp((now - lastMillis) / 1000.0, 0.001, 0.05)
+    lastMillis = now
+    Return dt
+End Function
+
+; The keys every demo shares, and the frame flip.
+Function RetroFlip()
+    If ActionHit("auto") Then autopilot = Not autopilot
+    Flip
+End Function

@@ -13,7 +13,10 @@
 pub mod ai;
 pub mod anim;
 pub mod behavior;
+pub mod blended;
 pub mod buffer;
+pub mod character;
+pub mod charcontrol;
 pub mod classic;
 pub mod collision;
 pub mod commands;
@@ -31,6 +34,8 @@ pub mod mesh;
 pub mod mirror;
 pub mod navquery;
 pub mod model;
+pub mod netchar;
+pub mod netsync;
 pub mod movie;
 pub mod loading;
 pub mod scenefile;
@@ -78,8 +83,12 @@ pub mod quality;
 pub mod screenshot;
 pub mod spritesheet;
 pub mod tiled;
+pub mod tilegrid;
+pub mod inflate;
+pub mod mapformats;
 pub mod sound;
 pub mod sprite;
+pub mod store;
 pub mod terrain;
 pub mod texture;
 pub mod transform;
@@ -201,8 +210,14 @@ pub fn run_vm(mut vm: Vm, mut debug: Option<Box<dyn DebugClient>>) -> Result<(),
     if world.fullscreen {
         attrs.fullscreen = Some(fyrox::window::Fullscreen::Borderless(None));
     }
+    // `neptune run --players n`: lay the copies out side by side
+    if let Some(slot) = std::env::var("NEPTUNE_WINDOW_SLOT").ok().and_then(|v| v.parse::<u32>().ok()) {
+        let (x, y) = (20 + (slot % 2) * (world.width + 8), 40 + (slot / 2) * (world.height + 40));
+        attrs.position = Some(fyrox::dpi::LogicalPosition::new(x as f64, y as f64).into());
+    }
     // from now on Print/Write draw on the screen, like Blitz3D in graphics mode
     vm.core.output = neptune_vm::stdlib::Output::Shared(world.print_sink.clone());
+    world.net = vm.core.net.clone();
     // `neptune run --uncapped` (benchmarks): no vsync and one game update
     // per rendered frame, so programs run as fast as the machine allows
     let uncapped = std::env::var("NEPTUNE_UNCAPPED").is_ok_and(|v| v != "0");
@@ -225,7 +240,7 @@ pub fn run_vm(mut vm: Vm, mut debug: Option<Box<dyn DebugClient>>) -> Result<(),
         executor.set_throttle_threshold(0.0);
         executor.set_throttle_frame_interval(0);
     }
-    let state = PluginState { vm: Some(vm), world, input, scene: Handle::NONE, error: None, overlay: Default::default(), scale: 1.0, debug, held: false };
+    let state = PluginState { vm: Some(vm), world, input, scene: Handle::NONE, error: None, overlay: Default::default(), scale: 1.0, debug, held: false, shot_since: None };
     let state = std::rc::Rc::new(std::cell::RefCell::new(state));
     executor.add_plugin(NeptunePlugin { state: state.clone() });
     executor.run();
@@ -248,6 +263,8 @@ struct PluginState {
     debug: Option<Box<dyn DebugClient>>,
     /// Stopped in the debugger: the window stays alive but the world is still.
     held: bool,
+    /// When the program began waiting for a screenshot (`SaveBuffer`).
+    shot_since: Option<std::time::Instant>,
 }
 
 /// Fyrox plugin that owns the VM and executes it frame by frame.
@@ -320,16 +337,8 @@ impl Plugin for NeptunePlugin {
                 }
             }
         }
-        // a screenshot asked for last frame: the frame now on screen
-        if let Some(path) = st.world.pending_screenshot.take() {
-            if let GraphicsContext::Initialized(g) = &*context.graphics_context {
-                let size = g.window.inner_size();
-                let r = screenshot::capture(g.renderer.graphics_server(), size.width, size.height).and_then(|img| screenshot::save(&img, &path));
-                if let Err(e) = r {
-                    eprintln!("SaveBuffer: {e}");
-                }
-            }
-        }
+        // SaveBuffer of the screen: save the frame read since the last update
+        screenshot::service(&mut st.world, &mut st.shot_since, context.graphics_context);
         st.input.joys.poll();
         st.input.update_actions();
         if let GraphicsContext::Initialized(g) = &*context.graphics_context {
@@ -343,6 +352,9 @@ impl Plugin for NeptunePlugin {
         // (ext) the post-processing render pass, once the renderer exists
         if !st.world.postfx.registered {
             if let GraphicsContext::Initialized(g) = &mut *context.graphics_context {
+                // see-through surfaces first, so that post-processing includes them
+                let blended = blended::BlendedPass::new(std::any::TypeId::of::<NeptunePlugin>());
+                g.renderer.add_render_pass(std::rc::Rc::new(std::cell::RefCell::new(blended)));
                 let pass = postfx::PostPass::new(st.world.postfx.frame.clone(), st.world.postfx.failed.clone(), std::any::TypeId::of::<NeptunePlugin>());
                 g.renderer.add_render_pass(std::rc::Rc::new(std::cell::RefCell::new(pass)));
                 st.world.postfx.registered = true;
@@ -385,6 +397,8 @@ impl Plugin for NeptunePlugin {
             }
             r
         };
+        // SaveBuffer of the screen, just asked for: read the next frame drawn
+        screenshot::service(&mut st.world, &mut st.shot_since, context.graphics_context);
         // show the 2D frame published by Flip
         if let Some(items) = st.world.canvas.published.take() {
             let screen = fyrox::core::algebra::Vector2::new(st.world.width as f32, st.world.height as f32) * st.scale;

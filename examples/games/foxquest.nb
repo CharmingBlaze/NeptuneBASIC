@@ -1,0 +1,274 @@
+; FOX QUEST - a third-person adventure in a level made in Blender.
+; Run from the repository root: neptune run examples/games/foxquest.nb
+;
+; Collect the gems, carry a crate onto the glowing plate to open the way,
+; then reach the blue gate. Mouse turns the camera, W A S D move, Shift
+; runs, Space jumps, E picks up or puts down, F throws, Esc quits.
+;
+; Mechanics shown (each is explained in docs/GAMES3D.md):
+;   moving relative to the camera, an orbit camera that won't go through
+;   walls, turning a model smoothly, animation driven by speed, physics
+;   ground checks, carrying and throwing, a pressure plate that opens a
+;   way, objects found through level properties and a talking character.
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "Fox Quest"
+
+Const WALK_SPEED# = 3, RUN_SPEED# = 7, JUMP_SPEED# = 7, TURN_RATE# = 12
+Const CAMERA_DISTANCE# = 7, LOOK_SPEED# = 0.15
+Const PLATE_X# = -5, PLATE_Z# = -9
+
+BindKey "forward", KEY_W : BindKey "back", KEY_S
+BindKey "left", KEY_A : BindKey "right", KEY_D
+BindKey "run", KEY_LSHIFT
+BindKey "jump", KEY_SPACE
+BindKey "grab", KEY_E
+BindKey "throw", KEY_F
+
+AmbientLight 40, 42, 52
+Global level = LoadLevelFile("examples/media/courtyard.glb")
+If level = 0 Then RuntimeError "run this from the repository root (media not found)"
+
+Global camera = CreateCamera()
+CameraClsColor camera, 120, 160, 210
+CameraRange camera, 0.1, 200
+
+; ---- the player -------------------------------------------------------
+; Two parts. An invisible capsule does the physics: a capsule slides over
+; bumps and never trips. The fox only draws where the capsule is. Keeping
+; them apart means the animation can never disturb the physics.
+start = LevelObject(level, 1, "spawn")
+Global body = CreateCylinder()
+ScaleEntity body, 0.4, 0.9, 0.4
+PositionEntity body, EntityX(start, True), EntityY(start, True), EntityZ(start, True)
+EntityPhysics body, 1, 3, 70
+LockRotation body, 1, 1, 1
+EntityFriction body, 0
+HideEntity body
+
+Global fox = LoadAnimMesh("examples/media/Fox.glb")
+ScaleEntity fox, 0.02, 0.02, 0.02
+
+; The animation follows one number. 0 stands, 1 walks, 3 runs, and in between
+; the sequences blend, so the feet match the speed at every speed.
+moves = CreateBlendSpace()
+BlendSpacePoint moves, 0, 0
+BlendSpacePoint moves, 1, 1
+BlendSpacePoint moves, 2, 3
+AddBlendState fox, "move", moves, "speed"
+StartAnimStates fox, "move"
+
+Global camYaw# = 180, camPitch# = 18, camDistance# = CAMERA_DISTANCE
+Global foxYaw# = 180, moveAmount#, held, gemsLeft, score, gateOpen, won, onGround
+
+; ---- things placed in Blender ----------------------------------------
+gemsLeft = CountLevelObjects(level, "gem")
+Dim gems(gemsLeft)
+For i = 1 To gemsLeft
+    gems(i) = LevelObject(level, i, "gem")
+Next
+Global gemCount = gemsLeft
+Global gate = LevelObject(level, 1, "exit")
+Global npc = LevelObject(level, 1, "npc")
+Animate npc, 1, 1, 0
+
+; ---- things made here ------------------------------------------------
+Global plate = CreateCylinder(24)
+ScaleEntity plate, 1.3, 0.05, 1.3
+PositionEntity plate, PLATE_X, 0.05, PLATE_Z
+EntityColor plate, 90, 90, 110
+EntityEmissive plate, 255, 120, 30, 1
+
+Global blip = LoadSound("examples/media/blip.wav")
+
+; ---- each part of a frame ---------------------------------------------
+Function AngleBetween#(from#, target#)
+    ; the short way round, from -180 to 180, so a turn never goes the long way
+    Return ((target - from + 540) Mod 360) - 180
+End Function
+
+Function MovePlayer(dt#)
+    ; W means "away from the camera", whichever way the camera faces. These
+    ; are the camera's forward and right directions, flat on the ground.
+    fx# = -Sin(camYaw) : fz# = Cos(camYaw)
+    rx# = Cos(camYaw)  : rz# = Sin(camYaw)
+    ahead# = ActionValue("forward") - ActionValue("back")
+    side# = ActionValue("right") - ActionValue("left")
+    wishX# = fx * ahead + rx * side
+    wishZ# = fz * ahead + rz * side
+    length# = Sqr(wishX * wishX + wishZ * wishZ)
+    speed# = 0
+    If length > 0.01
+        If length > 1
+            wishX = wishX / length
+            wishZ = wishZ / length
+        End If
+        speed = WALK_SPEED
+        If ActionDown("run") Then speed = RUN_SPEED
+        ; turn the fox a part of the way towards where it is heading
+        foxYaw = foxYaw + AngleBetween(foxYaw, VectorYaw(wishX, 0, wishZ)) * Clamp(TURN_RATE * dt, 0, 1)
+    End If
+
+    ; On the ground means touching something and not rising or falling.
+    ; Touching a wall in mid-air doesn't count, because then you are falling.
+    x# = EntityX(body) : y# = EntityY(body) : z# = EntityZ(body)
+    onGround = CountContacts(body) > 0 And Abs(VelocityY(body)) < 0.5
+
+    ; physics keeps the falling speed; the program sets the rest
+    vy# = VelocityY(body)
+    If ActionHit("jump") And onGround Then vy = JUMP_SPEED
+    SetVelocity body, wishX * speed, vy, wishZ * speed
+
+    ; the model follows the capsule, with its feet at the capsule's bottom
+    PositionEntity fox, x, y - 0.9, z
+    RotateEntity fox, 0, foxYaw, 0
+    moveAmount = moveAmount + (Min(length, 1) * speed / WALK_SPEED - moveAmount) * Clamp(10 * dt, 0, 1)
+    SetAnimParam fox, "speed", moveAmount
+End Function
+
+Function MoveCamera(dt#)
+    camYaw = camYaw - MouseXSpeed() * LOOK_SPEED
+    camPitch = Clamp(camPitch + MouseYSpeed() * LOOK_SPEED, -10, 60)
+
+    ; what the camera circles: above the capsule, so its own body is not hit
+    tx# = EntityX(body) : ty# = EntityY(body) + 1.3 : tz# = EntityZ(body)
+    ; the direction from there back to the camera
+    dx# = Sin(camYaw) * Cos(camPitch)
+    dy# = Sin(camPitch)
+    dz# = -Cos(camYaw) * Cos(camPitch)
+
+    ; If a wall is in the way, come in front of it at once. Moving back out
+    ; is gentle, or the view would jump whenever something passes behind.
+    want# = CAMERA_DISTANCE
+    If PhysicsRayCast(tx, ty, tz, dx * want, dy * want, dz * want)
+        hx# = PickedX() - tx : hy# = PickedY() - ty : hz# = PickedZ() - tz
+        want = Clamp(Sqr(hx * hx + hy * hy + hz * hz) - 0.3, 1, CAMERA_DISTANCE)
+    End If
+    If want < camDistance
+        camDistance = want
+    Else
+        camDistance = camDistance + (want - camDistance) * Clamp(4 * dt, 0, 1)
+    End If
+
+    PositionEntity camera, tx + dx * camDistance, ty + dy * camDistance, tz + dz * camDistance
+    RotateEntity camera, camPitch, camYaw, 0
+End Function
+
+Function NearestCrate()
+    best = 0
+    bestDistance# = 2.8
+    For i = 1 To CountLevelObjects(level, "crate")
+        c = LevelObject(level, i, "crate")
+        d# = EntityDistance(c, body)
+        If d < bestDistance
+            bestDistance = d
+            best = c
+        End If
+    Next
+    Return best
+End Function
+
+Function UpdateCarrying()
+    If ActionHit("grab")
+        If held
+            held = 0
+        Else
+            held = NearestCrate()
+        End If
+    End If
+    If held = 0 Then Return
+    ; A held crate is still a physics body: it is pulled towards a point in
+    ; front of the fox, so it bumps into walls instead of passing through.
+    fx# = -Sin(foxYaw) : fz# = Cos(foxYaw)
+    hx# = EntityX(body) + fx * 1.7
+    hy# = EntityY(body) + 0.5
+    hz# = EntityZ(body) + fz * 1.7
+    SetVelocity held, (hx - EntityX(held)) * 10, (hy - EntityY(held)) * 10, (hz - EntityZ(held)) * 10
+    SetAngularVelocity held, 0, 0, 0
+    If ActionHit("throw")
+        SetVelocity held, fx * 11, 4, fz * 11
+        held = 0
+    End If
+End Function
+
+Function UpdatePlate()
+    If gateOpen Then Return
+    For i = 1 To CountLevelObjects(level, "crate")
+        c = LevelObject(level, i, "crate")
+        dx# = EntityX(c) - PLATE_X
+        dz# = EntityZ(c) - PLATE_Z
+        ; a crate resting on it: close, low and not still being carried
+        If c <> held And dx * dx + dz * dz < 1.7 And EntityY(c) < 1.2
+            gateOpen = True
+            EntityEmissive plate, 40, 255, 120, 1
+            ; the invisible wall placed in Blender is simply removed
+            FreeEntity FindChild(level, "hit_GateFence")
+            CameraShake camera, 0.5, 0.5
+            PlaySound blip
+            Return
+        End If
+    Next
+End Function
+
+Function UpdateGems(dt#)
+    For i = 1 To gemCount
+        If gems(i)
+            TurnEntity gems(i), 0, 90 * dt, 0
+            If EntityDistance(body, gems(i)) < 1.5
+                score = score + EntityPropertyInt(gems(i), "points", 10)
+                FreeEntity gems(i)
+                gems(i) = 0
+                gemsLeft = gemsLeft - 1
+                PlaySound blip
+            End If
+        End If
+    Next
+End Function
+
+Function DrawHUD()
+    h = GraphicsHeight()
+    Color 255, 255, 255
+    Text 20, 16, "Score " + score + "    Gems left " + gemsLeft
+    ; what to say depends on where the player is and what is done so far
+    If won
+        message$ = "You did it! Press Esc to leave."
+    ElseIf EntityDistance(body, npc) < 4
+        If gemsLeft > 0
+            message = "Fox: Gather every gem in the courtyard, friend."
+        ElseIf gateOpen = False
+            message = "Fox: Something heavy on that plate might help."
+        Else
+            message = "Fox: The way is open. Go on!"
+        End If
+    ElseIf held
+        message = "E puts down, F throws"
+    ElseIf NearestCrate()
+        message = "E picks up the crate"
+    Else
+        message = ""
+    End If
+    If message <> "" Then Text GraphicsWidth() / 2, h - 60, message, True, False
+End Function
+
+; ---- the main loop -----------------------------------------------------
+CaptureMouse True
+lastTime = MilliSecs()
+While Not KeyHit(KEY_ESCAPE)
+    now = MilliSecs()
+    dt# = Clamp((now - lastTime) / 1000.0, 0, 0.05)
+    lastTime = now
+
+    MovePlayer dt
+    UpdateCarrying
+    UpdatePlate
+    UpdateGems dt
+    If gemsLeft = 0 And gateOpen And EntityDistance(body, gate) < 3 Then won = True
+
+    UpdateWorld
+    ; the camera moves last, so it sees everything where it ended up
+    MoveCamera dt
+    RenderWorld
+    DrawHUD
+    Flip
+Wend
+End

@@ -241,6 +241,52 @@ fn stop_on_entry_and_breakpoints_set_while_running() {
 }
 
 #[test]
+fn the_adapter_offers_conditional_breakpoints() {
+    let mut e = Editor::start("caps", "a = 1\n");
+    let r = e.request("initialize", obj([("adapterID", s("neptunebasic"))]));
+    assert_eq!(r.at("body.supportsConditionalBreakpoints"), &Json::Bool(true));
+    assert_eq!(r.at("body.supportsHitConditionalBreakpoints"), &Json::Bool(true));
+}
+
+#[test]
+fn conditions_and_hit_counts_decide_where_it_stops() {
+    let mut e = Editor::start("cond", "For i = 1 To 6\n    a = i\n    b = i\nNext\n");
+    e.launch(&[], true);
+    assert_eq!(e.event("stopped").at("body.reason").str(), Some("entry"));
+    let path = e.path();
+    let bps = Json::Arr(vec![obj([("line", n(2)), ("condition", s("i = 3"))]), obj([("line", n(3)), ("hitCondition", s("5"))])]);
+    let r = e.request("setBreakpoints", obj([("source", obj([("path", s(path))])), ("breakpoints", bps)]));
+    assert!(r.at("body.breakpoints").arr().iter().all(|b| b.get("verified") == &Json::Bool(true)), "{r}");
+
+    e.request("continue", obj([("threadId", n(1))]));
+    assert_eq!(e.event("stopped").at("body.reason").str(), Some("breakpoint"));
+    assert_eq!((e.top_line(), e.eval("i")), (2, "3".to_string()));
+    e.request("continue", obj([("threadId", n(1))]));
+    assert_eq!(e.event("stopped").at("body.reason").str(), Some("breakpoint"));
+    assert_eq!((e.top_line(), e.eval("i")), (3, "5".to_string()));
+    e.request("continue", obj([("threadId", n(1))]));
+    assert_eq!(e.event("exited").at("body.exitCode").num(), Some(0.0));
+}
+
+#[test]
+fn bad_rules_are_reported() {
+    let mut e = Editor::start("badrule", "For i = 1 To 3\n    a = i\nNext\n");
+    e.launch(&[], true);
+    e.event("stopped");
+    let path = e.path();
+    let bps = Json::Arr(vec![obj([("line", n(2)), ("hitCondition", s("often"))])]);
+    let r = e.request("setBreakpoints", obj([("source", obj([("path", s(path.clone()))])), ("breakpoints", bps)]));
+    assert_eq!(r.at("body.breakpoints").arr()[0].get("verified"), &Json::Bool(false));
+
+    let bps = Json::Arr(vec![obj([("line", n(2)), ("condition", s("nothing > 1"))])]);
+    e.request("setBreakpoints", obj([("source", obj([("path", s(path))])), ("breakpoints", bps)]));
+    e.request("continue", obj([("threadId", n(1))]));
+    let stop = e.event("stopped");
+    assert_eq!(stop.at("body.reason").str(), Some("breakpoint"));
+    assert_eq!(stop.at("body.text").str(), Some("Breakpoint condition: 'nothing' is not a variable here"));
+}
+
+#[test]
 fn runtime_errors_stop_the_program_where_they_happen() {
     let mut e = Editor::start("error", "x = 0\nPrint 1 / x\n");
     e.launch(&[], false);

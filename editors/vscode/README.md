@@ -9,7 +9,9 @@
     your own functions, types, globals and labels,
   * hover help and signature help while typing arguments,
   * outline (document symbols) and go to definition.
-* **F5** (or the debug button) debugs the current program: breakpoints,
+* **F5** (or the debug button) debugs the current program: breakpoints
+  (right-click one to add a condition such as `lives < 2 And player\x > 10`,
+  or a hit count such as `5`, `>=5` or `%5`),
   stepping into, over and out of functions, pause, the call stack, locals,
   globals, `Dim` arrays and objects you can open, watches and values on hover.
   It also stops on a runtime error, at the line where it happened, and at a

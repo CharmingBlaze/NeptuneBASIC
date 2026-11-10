@@ -121,6 +121,8 @@ pub enum Op {
     /// Installs an error handler jumping to `handler`.
     TryBegin { handler: u32 },
     TryEnd,
+    /// Removes the innermost `n` error handlers (a `Goto` leaving `Try` blocks).
+    TryLeave(u32),
     /// `[message] -> !`
     Throw,
     End,
@@ -128,6 +130,83 @@ pub enum Op {
 
     /// Superinstruction: `local += imm` for Int locals (loop counters).
     IncLocalI(u32, i32),
+
+    // Superinstructions made by `fuse.rs` from short runs of the
+    // instructions above. Each does exactly what the run it replaces did.
+    /// `[] -> [a, b]`: two locals.
+    LoadLocal2(u32, u32),
+    /// `[a] -> [a op local]`
+    AddIL(u32), SubIL(u32), MulIL(u32),
+    AddFL(u32), SubFL(u32), MulFL(u32), DivFL(u32),
+    /// `[a] -> [a op constant]`; the divisor of `DivIK`/`ModIK` is never 0.
+    AddIK(i32), MulIK(i32), DivIK(i32), ModIK(i32),
+    AddFK(f32), MulFK(f32), DivFK(f32),
+    /// `[obj local] -> [value]`: a field of the object in a local.
+    LoadLocalField(u32, u32),
+    /// `[] -> [value]`: a one-dimensional array indexed by a local.
+    LoadArrayL { array: u32, slot: u32 },
+    /// `[a, b] -> []`, jumps if `a cmp b`.
+    JumpCmpI(Cmp, u32),
+    /// `[a, b] -> []`, jumps if `a cmp b` / if not `a cmp b` (different for NaN).
+    JumpCmpF(Cmp, u32),
+    JumpNotCmpF(Cmp, u32),
+    /// `[a] -> []`, jumps if `a cmp local`.
+    JumpCmpIL { c: Cmp, slot: u16, target: u32 },
+    /// `[a] -> []`, jumps if `a cmp k`.
+    JumpCmpIK { c: Cmp, k: i32, target: u32 },
+    /// Jumps if `local a cmp local b`.
+    JumpCmpILL { c: Cmp, a: u16, b: u16, target: u32 },
+    /// Jumps if `local cmp k`.
+    JumpCmpILK { c: Cmp, slot: u16, k: i32, target: u32 },
+    /// `local += d`, then jumps (the end of a `For` loop).
+    IncLocalJump { slot: u16, d: i16, target: u32 },
+}
+
+impl Op {
+    /// The instruction this one may jump to (`Try` handlers included).
+    pub fn target(&self) -> Option<u32> {
+        match *self {
+            Op::Jump(t) | Op::JumpIfZero(t) | Op::JumpIfNotZero(t) | Op::Gosub(t) => Some(t),
+            Op::TryBegin { handler } => Some(handler),
+            Op::JumpCmpI(_, t) | Op::JumpCmpF(_, t) | Op::JumpNotCmpF(_, t) => Some(t),
+            Op::JumpCmpIL { target, .. }
+            | Op::JumpCmpIK { target, .. }
+            | Op::JumpCmpILL { target, .. }
+            | Op::JumpCmpILK { target, .. }
+            | Op::IncLocalJump { target, .. } => Some(target),
+            _ => None,
+        }
+    }
+
+    /// Mutable access to [`Op::target`].
+    pub fn target_mut(&mut self) -> Option<&mut u32> {
+        match self {
+            Op::Jump(t) | Op::JumpIfZero(t) | Op::JumpIfNotZero(t) | Op::Gosub(t) => Some(t),
+            Op::TryBegin { handler } => Some(handler),
+            Op::JumpCmpI(_, t) | Op::JumpCmpF(_, t) | Op::JumpNotCmpF(_, t) => Some(t),
+            Op::JumpCmpIL { target, .. }
+            | Op::JumpCmpIK { target, .. }
+            | Op::JumpCmpILL { target, .. }
+            | Op::JumpCmpILK { target, .. }
+            | Op::IncLocalJump { target, .. } => Some(target),
+            _ => None,
+        }
+    }
+}
+
+impl Cmp {
+    /// The comparison that is true exactly when this one is false (integers
+    /// and strings; not floats, where NaN fails both).
+    pub fn negate(self) -> Cmp {
+        match self {
+            Cmp::Eq => Cmp::Ne,
+            Cmp::Ne => Cmp::Eq,
+            Cmp::Lt => Cmp::Ge,
+            Cmp::Gt => Cmp::Le,
+            Cmp::Le => Cmp::Gt,
+            Cmp::Ge => Cmp::Lt,
+        }
+    }
 }
 
 /// Initial contents of an object field.
