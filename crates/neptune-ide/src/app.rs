@@ -981,6 +981,23 @@ impl App {
         procs::find_neptune(&self.st.neptune_path)
     }
 
+    /// The game folder: the open folder, or the folder of the file being edited.
+    fn game_folder(&self) -> Option<PathBuf> {
+        self.folder.clone().or_else(|| self.active()?.path.as_ref()?.parent().map(Path::to_path_buf))
+    }
+
+    fn open_level_editor(&mut self) {
+        let Some(folder) = self.game_folder() else {
+            self.say("Open a folder or save the program first: the level editor works on a game folder", true);
+            return;
+        };
+        let exe = procs::find_editor(&self.st.neptune_path);
+        match procs::open_editor(&exe, &folder) {
+            Ok(()) => self.say(format!("Level editor opened on {}", folder.display()), false),
+            Err(e) => self.say(e, true),
+        }
+    }
+
     /// The file to run, on disk and up to date.
     fn prepare_target(&mut self) -> Option<PathBuf> {
         if self.st.save_before_run {
@@ -1554,6 +1571,7 @@ impl App {
             A::Stop => self.stop_program(),
             A::Check => self.check(),
             A::Build => self.dialog = Some(Dialog::Build { out: String::new(), console: false }),
+            A::LevelEditor => self.open_level_editor(),
             A::CommandLine => self.dialog = Some(Dialog::Prompt { title: "Program command line".into(), value: self.command_line.clone(), kind: PromptKind::CommandLine, focus: true }),
             A::ToggleDebug => self.st.debug_enabled = !self.st.debug_enabled,
             A::Continue => self.debug_continue(),

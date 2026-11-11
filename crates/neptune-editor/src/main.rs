@@ -1,20 +1,25 @@
 //! Neptune Level Editor: Fyrox's scene editor (`fyroxed_base`) in Neptune
 //! IDE's colours, whose Play button runs `neptune`.
 //!
-//!     neptune-editor [game folder] [scene.rgs ...] [--play] [--full-inspector]
+//!     neptune-editor [game folder] [scene.rgs ...] [--play] [--full-inspector] [--quad]
 //!
 //! Without a folder it opens the current one. Scenes are saved as Fyrox
 //! scene files (`.rgs`), which `LoadLevelFile` loads. Without a scene it
 //! opens a starter level (`starter.rs`). `--play` presses Play as soon as
 //! the first scene is open. `--full-inspector` shows every setting Fyrox has
-//! in the Inspector, which otherwise leaves the engine's own out.
+//! in the Inspector, which otherwise leaves the engine's own out. `--quad`
+//! starts with the view split in four (`quad.rs`).
 //!
 //! The editor's code is our copy of `fyroxed_base` in `vendor/`; what
 //! Neptune changed there is marked `// Neptune:` (see its `NEPTUNE.md`).
 
+mod blockout;
 mod keys;
 mod layout;
+mod levelprops;
+mod panel;
 mod play;
+mod quad;
 mod starter;
 mod theme;
 
@@ -25,6 +30,7 @@ use fyroxed_base::{
         core::{log::Log, TypeUuidProvider},
         engine::{ApplicationLoopController, GraphicsContext},
         event_loop::EventLoop,
+        gui::widget::WidgetMessage,
     },
     interaction::move_mode::MoveInteractionMode,
     plugin::EditorPlugin,
@@ -45,6 +51,12 @@ struct Neptune {
 }
 
 impl EditorPlugin for Neptune {
+    fn on_start(&mut self, editor: &mut Editor) {
+        // games are packed with `neptune build`, not Fyrox's exporter
+        let ui = editor.engine.user_interfaces.first();
+        ui.send(editor.menu.file_menu.export_project, WidgetMessage::Visibility(false));
+    }
+
     fn on_post_update(&mut self, editor: &mut Editor, _: ApplicationLoopController) {
         // the editor writes its own title whenever it opens a folder
         if let GraphicsContext::Initialized(ctx) = &editor.engine.graphics_context {
@@ -71,7 +83,7 @@ impl EditorPlugin for Neptune {
 
 fn main() {
     let (flags, paths): (Vec<_>, Vec<_>) = std::env::args_os().skip(1).partition(|a| a.to_string_lossy().starts_with("--"));
-    if let Some(unknown) = flags.iter().find(|f| *f != "--play" && *f != "--full-inspector") {
+    if let Some(unknown) = flags.iter().find(|f| *f != "--play" && *f != "--full-inspector" && *f != "--quad") {
         eprintln!("neptune-editor: unknown option {}", unknown.to_string_lossy());
         std::process::exit(1);
     }
@@ -93,6 +105,10 @@ fn main() {
     if first_time {
         // the engine's own progress reports bury what a level designer needs to see
         settings.data_mut().log.log_info = false;
+        // a grid fit for blocking out levels, snapped (Fyrox starts at 0.05, unsnapped)
+        let snap = &mut settings.data_mut().move_mode_settings;
+        snap.grid_snapping = true;
+        (snap.x_snap_step, snap.y_snap_step, snap.z_snap_step) = (0.5, 0.5, 0.5);
     }
     if layout::replaces(settings.windows.layout.as_ref()) {
         settings.data_mut().windows.layout = Some(layout::neptune());
@@ -116,6 +132,10 @@ fn main() {
         editor.default_layout = layout::neptune();
     }
     editor.add_editor_plugin(Neptune { play, starter, choose_tool: true });
+    editor.add_editor_plugin(panel::Panel::default());
+    editor.add_editor_plugin(quad::QuadView::new(flags.iter().any(|f| f == "--quad")));
+    // after the quad view, so the grid label is drawn over its pictures
+    editor.add_editor_plugin(blockout::Blockout::default());
     editor.run(event_loop);
 }
 

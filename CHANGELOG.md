@@ -4,6 +4,38 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Neptune Level Editor: blocking out
+
+* **The block tool** – Shift+B (or the cube on the toolbar), then drag in
+  any view: a box snapped to the grid becomes a grey, solid `col_Block`
+  when you let go. Drawn in a flat view it takes its depth from the last
+  block, so walls drawn from the top come out the same height.
+* **Grid keys** – `[` and `]` halve and double the grid, from 1/16 to 64,
+  and the size shows in the corner of the 3D view. New game folders start
+  with a 0.5 grid, snapped (Fyrox started at 0.05, unsnapped).
+* **Nudging** – the arrow keys move the selection one grid step across the
+  view under the mouse, Page Up and Page Down towards or away from it.
+* **Quad view fixes** – the views no longer swap pictures after the mouse
+  moves from one to another while the editor is otherwise idle, and
+  clicking in the 3D view no longer resets the views.
+
+## Neptune Level Editor: quad view and the Neptune panel
+
+* **Quad view** – *View > Quad View* (Ctrl+Alt+Q) splits the 3D view into
+  four, as in Hammer and UnrealEd: the 3D view, and flat views from the top,
+  the front and the side, each with its own grid. Every tool works in the
+  view under the mouse. Ctrl+Space makes that view fill the window, Numpad 7,
+  1, 3 and 5 show one view, and `neptune-editor --quad` starts split.
+* **The Neptune panel** – between the object list and the Inspector: buttons
+  for Solid, Invisible and Not Solid, and fields for type, physics, shape,
+  mass and prefab, for every selected object at once, with undo. No more
+  typing `col_` or property names by hand.
+* **Open Level Editor in Neptune IDE** – *Program > Open Level Editor*
+  starts the editor on the folder you are working in.
+* **Less clutter** – the File menu no longer offers Fyrox's Export Project
+  (use `neptune build`), the asset browser no longer lists the engine's
+  built-in fonts and shapes, and the object list's rows have more room.
+
 ## Neptune Level Editor: our own copy of the editor
 
 * **A short Inspector** – selecting an object now shows its name, position,

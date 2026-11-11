@@ -3,7 +3,8 @@
 //! Fyrox's own layout gives the 3D view half the window's width and puts
 //! three panels of little use to a level designer along the bottom. This
 //! one is arranged like Blender: the view fills the left of the window, the
-//! object list is at the top right with the Inspector under it, and the
+//! object list is at the top right with the Neptune panel and the Inspector
+//! under it, and the
 //! asset browser, the log and the undo list share one strip under the view
 //! as tabs. The audio panel starts closed (the View menu opens it).
 
@@ -22,6 +23,7 @@ use fyroxed_base::fyrox::{
 pub const OBJECTS: &str = "WorldOutliner";
 pub const VIEW: &str = "SceneViewer";
 pub const INSPECTOR: &str = "Inspector";
+pub const NEPTUNE: &str = crate::panel::NAME;
 pub const BOTTOM: [&str; 3] = ["AssetBrowser", "LogPanel", "CommandStackPanel"];
 pub const CLOSED: [&str; 1] = ["AudioPanel"];
 
@@ -30,7 +32,9 @@ const VIEW_WIDTH: f32 = 0.78;
 /// Share of the left column's height the 3D view gets.
 const VIEW_HEIGHT: f32 = 0.78;
 /// Share of the right column's height the object list gets.
-const OBJECTS_HEIGHT: f32 = 0.34;
+const OBJECTS_HEIGHT: f32 = 0.30;
+/// Share of the rest the Neptune panel gets (the Inspector has the rest).
+const NEPTUNE_HEIGHT: f32 = 0.36;
 
 fn tile(content: TileContentDescriptor) -> Box<TileDescriptor> {
     Box::new(TileDescriptor { content })
@@ -62,7 +66,15 @@ fn with_closed(root: TileDescriptor) -> DockingManagerLayoutDescriptor {
 /// Neptune's layout.
 pub fn neptune() -> DockingManagerLayoutDescriptor {
     let left = split(Orientation::Vertical, VIEW_HEIGHT, window(VIEW), tabs());
-    let right = split(Orientation::Vertical, OBJECTS_HEIGHT, window(OBJECTS), window(INSPECTOR));
+    let under = split(Orientation::Vertical, NEPTUNE_HEIGHT, window(NEPTUNE), window(INSPECTOR));
+    let right = split(Orientation::Vertical, OBJECTS_HEIGHT, window(OBJECTS), under);
+    with_closed(*split(Orientation::Horizontal, VIEW_WIDTH, left, right))
+}
+
+/// Neptune's second layout, from before the Neptune panel.
+pub fn before_panel() -> DockingManagerLayoutDescriptor {
+    let left = split(Orientation::Vertical, VIEW_HEIGHT, window(VIEW), tabs());
+    let right = split(Orientation::Vertical, 0.34, window(OBJECTS), window(INSPECTOR));
     with_closed(*split(Orientation::Horizontal, VIEW_WIDTH, left, right))
 }
 
@@ -77,7 +89,7 @@ pub fn earlier() -> DockingManagerLayoutDescriptor {
 /// Whether saved settings should get Neptune's layout: they have none, or
 /// one of Neptune's that nobody rearranged.
 pub fn replaces(saved: Option<&DockingManagerLayoutDescriptor>) -> bool {
-    saved.is_none_or(|layout| *layout == earlier())
+    saved.is_none_or(|layout| *layout == earlier() || *layout == before_panel())
 }
 
 /// Whether a layout made by the editor has every panel Neptune's places, so
@@ -94,7 +106,7 @@ mod tests {
     #[test]
     fn every_panel_has_a_place() {
         let layout = neptune();
-        for name in [OBJECTS, VIEW, INSPECTOR].iter().chain(&BOTTOM) {
+        for name in [OBJECTS, VIEW, INSPECTOR, NEPTUNE].iter().chain(&BOTTOM) {
             assert!(layout.has_window(name), "{name}");
         }
         assert!(!layout.has_window("AudioPanel"));
@@ -105,6 +117,7 @@ mod tests {
     fn a_layout_someone_arranged_is_kept() {
         assert!(replaces(None));
         assert!(replaces(Some(&earlier())));
+        assert!(replaces(Some(&before_panel())));
         assert!(!replaces(Some(&neptune())));
         let mut own = neptune();
         own.floating_windows.clear();

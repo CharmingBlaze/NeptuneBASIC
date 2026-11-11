@@ -1000,7 +1000,8 @@ impl SceneViewer {
     }
 
     pub fn frame_bounds(&self, ui: &UserInterface) -> Rect<f32> {
-        ui[self.frame].screen_bounds()
+        // Neptune: measured from the part of a split view the mouse is in
+        crate::neptune::quad_bounds(ui[self.frame].screen_bounds())
     }
 
     pub fn pre_update(&self, settings: &Settings, engine: &mut Engine) {

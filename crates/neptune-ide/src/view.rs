@@ -239,7 +239,7 @@ impl App {
             });
             ui.menu_button("Program", |ui| {
                 ui.set_min_width(290.0);
-                group(ui, self, &[Some(A::Run), Some(A::RunAgain), Some(A::RunNoDebug), Some(A::Stop), None, Some(A::Check), Some(A::Build), Some(A::CommandLine), None]);
+                group(ui, self, &[Some(A::Run), Some(A::RunAgain), Some(A::RunNoDebug), Some(A::Stop), None, Some(A::Check), Some(A::Build), Some(A::LevelEditor), Some(A::CommandLine), None]);
                 if ui_util::check_item(ui, "Debug Enabled", "", Some(self.st.debug_enabled), true) {
                     self.queue.push(A::ToggleDebug);
                 }

@@ -104,6 +104,8 @@ pub struct CameraController {
     pub editor_objects_root: Handle<Pivot>,
     pub scene_content_root: Handle<Node>,
     pub screen_size: Vector2<f32>,
+    // Neptune: which way the camera looks when orthographic (quad view)
+    pub neptune_view: crate::neptune::OrthoView,
 }
 
 #[derive(Clone, Debug)]
@@ -211,6 +213,7 @@ impl CameraController {
             editor_objects_root,
             scene_content_root,
             screen_size: Default::default(),
+            neptune_view: Default::default(), // Neptune: see the field
         }
     }
 
@@ -657,13 +660,12 @@ impl CameraController {
 
                 let pivot_local_transform = graph[self.pivot].local_transform_mut();
 
-                let mut new_position = **pivot_local_transform.position();
-                new_position.z = DEFAULT_Z_OFFSET;
-                new_position.x += move_vec.x;
-                new_position.y += move_vec.y;
+                // Neptune: the view may look from the top or the side (quad view)
+                let view = self.neptune_view;
+                let new_position = view.place(**pivot_local_transform.position(), move_vec, settings.graphics.z_far);
 
                 pivot_local_transform
-                    .set_rotation(Default::default())
+                    .set_rotation(view.rotation())
                     .set_position(new_position);
             }
         }

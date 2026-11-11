@@ -70,6 +70,9 @@ Help > Keyboard Shortcuts lists all of them.
 * A program that reads with `Input` gets a box under the Output tab. `Input`
   does not work under the debugger, so use Ctrl+F5 for those programs.
 * Program > Create Executable makes a stand-alone game (`neptune build`).
+* Program > Open Level Editor starts Neptune Level Editor on the open folder
+  (or the edited program's folder). It looks for `neptune-editor` beside
+  `neptune` or the IDE, then on the PATH.
   Program > Program Command Line sets what the program receives.
 * Closing the IDE never loses work: open files, unsaved text and breakpoints
   come back next time.

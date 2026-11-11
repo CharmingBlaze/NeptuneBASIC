@@ -845,6 +845,10 @@ impl SceneController for GameScene {
             .traverse_handle_iter(self.editor_objects_root)
             .collect::<Vec<_>>()
         {
+            // Neptune: the quad view's cameras and grids keep their own masks
+            if crate::neptune::is_quad_node(&scene.graph[handle]) {
+                continue;
+            }
             scene.graph[handle]
                 .render_mask
                 .set_value_and_mark_modified(Self::EDITOR_OBJECTS_MASK);
@@ -854,7 +858,8 @@ impl SceneController for GameScene {
         // scene camera to interfere with the editor camera.
 
         for (handle, camera) in scene.graph.pair_iter_mut().filter_map(|(h, n)| {
-            if h == self.camera_controller.camera || h == self.preview_camera {
+            // Neptune: the quad view's cameras draw too
+            if h == self.camera_controller.camera || h == self.preview_camera || crate::neptune::is_quad_node(n) {
                 None
             } else {
                 n.cast_mut::<Camera>().map(|c| (h, c))
@@ -938,37 +943,16 @@ impl SceneController for GameScene {
         projection.set_z_far(settings.graphics.z_far);
 
         let mut grid_material = self.grid_material.data_ref();
-        grid_material.set_property(
-            "orientation",
-            match projection {
-                Projection::Perspective(_) => 0i32,
-                Projection::Orthographic(_) => 1i32,
-            },
+        // Neptune: the grid lies in the plane the view looks at (quad view)
+        let snap = &settings.move_mode_settings;
+        let (orientation, scale) = crate::neptune::grid_for(
+            projection.is_perspective(),
+            self.camera_controller.neptune_view,
+            [snap.x_snap_step, snap.y_snap_step, snap.z_snap_step],
+            snap.grid_snapping,
         );
+        grid_material.set_property("orientation", orientation);
         grid_material.set_property("isPerspective", projection.is_perspective());
-
-        let scale = if settings.move_mode_settings.grid_snapping {
-            fn div_safe(a: f32, b: f32) -> f32 {
-                if b == 0.0 {
-                    a
-                } else {
-                    a / b
-                }
-            }
-
-            match projection {
-                Projection::Perspective(_) => Vector2::new(
-                    div_safe(1.0, settings.move_mode_settings.x_snap_step),
-                    div_safe(1.0, settings.move_mode_settings.z_snap_step),
-                ),
-                Projection::Orthographic(_) => Vector2::new(
-                    div_safe(1.0, settings.move_mode_settings.x_snap_step),
-                    div_safe(1.0, settings.move_mode_settings.y_snap_step),
-                ),
-            }
-        } else {
-            Vector2::repeat(1.0)
-        };
 
         grid_material.set_property("scale", scale);
 

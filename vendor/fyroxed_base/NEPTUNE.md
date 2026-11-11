@@ -40,3 +40,12 @@ See the `// Neptune:` comments. In short:
   Preview and Command Stack).
 * `AddNodeCommand::keeping_local_transform`, so that the starter level's
   objects stay where they were put.
+* Object list: rows have a little more room above and below.
+* Asset browser: the engine's built-in fonts and shapes are listed only with
+  `--full-inspector`.
+* Quad view (Neptune's `quad.rs` does the rest): the camera's orthographic
+  mode can look from the top, the front or the side (`OrthoView`); the grid
+  lies in the plane the view looks at; the 3D view's bounds are those of the
+  part the mouse is in (`quad_bounds`); and before each frame the editor
+  leaves Neptune's quad cameras switched on and their render masks alone
+  (`is_quad_node`).

@@ -590,7 +590,8 @@ impl AssetBrowser {
         // Collect built-in resource (only if the registry folder is selected).
         if let Ok(path) = self.current_path.canonicalize() {
             let working_dir = resource_manager.registry_folder();
-            if path == working_dir {
+            // Neptune: the engine's own fonts and shapes are listed only in the full editor
+            if path == working_dir && crate::neptune::full_inspector() {
                 let built_in_resources = resource_manager
                     .state()
                     .built_in_resources

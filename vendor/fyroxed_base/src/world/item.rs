@@ -300,6 +300,8 @@ impl SceneItemBuilder {
         let text_name;
         let content = GridBuilder::new(
             WidgetBuilder::new()
+                // Neptune: roomier rows (there was no margin)
+                .with_margin(Thickness::top_bottom(crate::neptune::ROW_GAP))
                 .with_child(
                     ImageBuilder::new(
                         WidgetBuilder::new()

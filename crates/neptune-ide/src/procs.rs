@@ -61,7 +61,33 @@ pub fn find_neptune(configured: &str) -> PathBuf {
     if !configured.trim().is_empty() {
         return PathBuf::from(configured.trim());
     }
-    let name = format!("neptune{}", std::env::consts::EXE_SUFFIX);
+    beside_ide("neptune")
+}
+
+/// Finds Neptune Level Editor: next to the configured `neptune`, next to
+/// the IDE, or on the PATH.
+pub fn find_editor(configured_neptune: &str) -> PathBuf {
+    let name = format!("neptune-editor{}", std::env::consts::EXE_SUFFIX);
+    let configured = configured_neptune.trim();
+    if let Some(dir) = (!configured.is_empty()).then(|| Path::new(configured).parent()).flatten() {
+        if dir.join(&name).exists() {
+            return dir.join(name);
+        }
+    }
+    beside_ide("neptune-editor")
+}
+
+/// Starts the level editor on a game folder. It is a program of its own,
+/// which goes on running when the IDE closes.
+pub fn open_editor(exe: &Path, folder: &Path) -> Result<(), String> {
+    let mut cmd = Command::new(exe);
+    cmd.arg(folder).current_dir(folder).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.spawn().map(drop).map_err(|e| format!("Cannot start {}: {e}", exe.display()))
+}
+
+/// `program` next to the IDE's own executable, or just its name (found on the PATH).
+fn beside_ide(program: &str) -> PathBuf {
+    let name = format!("{program}{}", std::env::consts::EXE_SUFFIX);
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
         let next = dir.join(&name);
         if next.exists() {
