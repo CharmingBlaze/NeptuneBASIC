@@ -63,6 +63,7 @@ The `neptune` program has a few other commands:
 | `neptune run game.nb` | compiles and runs the program |
 | `neptune check game.nb` | only checks it for mistakes |
 | `neptune build game.nb` | makes a stand-alone game you can give to people ([chapter 25](25-sharing.md)) |
+| `neptune kit` | packs the compiler and the IDE into one folder you can give to someone who wants to make games |
 | `neptune commands` | lists every command |
 | `neptune lsp` | the language server, used by editors |
 

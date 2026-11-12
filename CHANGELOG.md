@@ -4,6 +4,44 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## A folder for making games
+
+* **Give someone the IDE and the compiler** – `neptune kit` (after a
+  release build of those two) puts them in `dist/NeptuneBASIC-windows`
+  (or Linux or macOS). Zip that folder. They start the IDE and press F5.
+  The example programs come too (the IDE's Examples menu lists them), and
+  the Blender add-on. Nobody who uses the folder needs Rust or Python. The
+  level editor is left out: levels are made in Blender. The Kit workflow
+  builds the folder on all three systems as a `.zip` (Windows) or `.tar.gz`
+  (Linux, macOS, so the programs stay runnable), and pushing a version tag
+  puts them on a GitHub release.
+* **Program > Open in Blender** – replaces Open Level Editor in the IDE. It
+  finds Blender (on the PATH or where its installer puts it, or the path in
+  Settings), opens the newest `.blend` in the game's folder, and loads the
+  Neptune tab, so the add-on needs no installing. Blender runs it with its
+  own Python.
+* **Long strings no longer crash when freed** – a string built from many
+  thousands of appends was freed one level at a time and could overflow the
+  stack. A string that has been read is also joined from its full text next
+  time, so the old pieces are freed.
+
+## Faster string building
+
+* **`s = s + x` no longer copies `s` every time** – a long chain of
+  appends keeps the text already built and copies only the last block of
+  it. A copy of the string (`t$ = s$`) stays as it was. `Len` reads the
+  length it already knows, and `Left`, `Right`, `Mid` and `Instr` on
+  ordinary text jump to a character instead of walking from the start.
+  The language benchmark's string test goes from 273 ms to 34 ms.
+
+## Neptune Level Editor: the Quad button
+
+* **Quad view is a button on the 3D view** – a Quad button beside the 3D/2D
+  list turns the split view on and off, and is blue while it is on (Ctrl+Alt+Q
+  and the View menu still work). The editor opens on the single 3D view.
+* **Turning quad view off goes back to the 3D view** – it used to keep the
+  view the mouse was over, which could leave you in a flat top or side view.
+
 ## Neptune Level Editor: blocking out
 
 * **The block tool** – Shift+B (or the cube on the toolbar), then drag in

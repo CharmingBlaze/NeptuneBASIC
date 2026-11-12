@@ -64,24 +64,77 @@ pub fn find_neptune(configured: &str) -> PathBuf {
     beside_ide("neptune")
 }
 
-/// Finds Neptune Level Editor: next to the configured `neptune`, next to
-/// the IDE, or on the PATH.
-pub fn find_editor(configured_neptune: &str) -> PathBuf {
-    let name = format!("neptune-editor{}", std::env::consts::EXE_SUFFIX);
-    let configured = configured_neptune.trim();
-    if let Some(dir) = (!configured.is_empty()).then(|| Path::new(configured).parent()).flatten() {
-        if dir.join(&name).exists() {
-            return dir.join(name);
-        }
+/// The Blender add-on (`tools/blender`), built into the IDE so nobody has to
+/// install it: Blender runs it with its own Python when the IDE starts Blender.
+const BLENDER_ADDON: &str = include_str!("../../../tools/blender/neptune_levels.py");
+
+/// Finds Blender: the configured program, on the PATH, or where its installer
+/// puts it (the newest version on Windows).
+pub fn find_blender(configured: &str) -> Option<PathBuf> {
+    let configured = configured.trim();
+    if !configured.is_empty() {
+        return Some(PathBuf::from(configured));
     }
-    beside_ide("neptune-editor")
+    let name = format!("blender{}", std::env::consts::EXE_SUFFIX);
+    if let Some(found) = std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(&name)).find(|f| f.is_file())) {
+        return Some(found);
+    }
+    let mut places: Vec<PathBuf> = Vec::new();
+    if cfg!(windows) {
+        for root in ["ProgramFiles", "ProgramFiles(x86)"].iter().filter_map(std::env::var_os) {
+            let foundation = PathBuf::from(root).join("Blender Foundation");
+            let mut versions: Vec<PathBuf> = std::fs::read_dir(&foundation).into_iter().flatten().flatten().map(|e| e.path()).collect();
+            versions.sort_by_key(|p| version_key(p));
+            places.extend(versions.into_iter().rev().map(|v| v.join("blender.exe")));
+        }
+    } else if cfg!(target_os = "macos") {
+        places.push("/Applications/Blender.app/Contents/MacOS/Blender".into());
+        if let Some(home) = std::env::var_os("HOME") {
+            places.push(PathBuf::from(home).join("Applications/Blender.app/Contents/MacOS/Blender"));
+        }
+    } else {
+        places.extend(["/usr/bin/blender", "/usr/local/bin/blender", "/snap/bin/blender"].map(PathBuf::from));
+    }
+    places.into_iter().find(|p| p.is_file())
 }
 
-/// Starts the level editor on a game folder. It is a program of its own,
-/// which goes on running when the IDE closes.
-pub fn open_editor(exe: &Path, folder: &Path) -> Result<(), String> {
+/// "Blender 4.10" sorts after "Blender 4.2": the numbers in the folder name.
+fn version_key(path: &Path) -> Vec<u32> {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    name.split(|c: char| !c.is_ascii_digit()).filter_map(|p| p.parse().ok()).collect()
+}
+
+/// The `.blend` file changed most recently in the game folder or the folders
+/// just inside it (such as `levels`).
+pub fn newest_blend(folder: &Path) -> Option<PathBuf> {
+    let mut found = Vec::new();
+    let mut dirs = vec![(folder.to_path_buf(), 0)];
+    while let Some((dir, depth)) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() && depth < 2 {
+                dirs.push((path, depth + 1));
+            } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("blend")) {
+                let changed = entry.metadata().and_then(|m| m.modified()).ok();
+                found.push((changed, path));
+            }
+        }
+    }
+    found.into_iter().max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1))).map(|(_, p)| p)
+}
+
+/// Starts Blender on `blend` (or a new file) in the game folder, with the
+/// Neptune tab loaded. Blender goes on running when the IDE closes.
+pub fn open_blender(exe: &Path, folder: &Path, blend: Option<&Path>) -> Result<(), String> {
+    let addon = std::env::temp_dir().join("neptune_levels.py");
+    std::fs::write(&addon, BLENDER_ADDON).map_err(|e| format!("Cannot write {}: {e}", addon.display()))?;
     let mut cmd = Command::new(exe);
-    cmd.arg(folder).current_dir(folder).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    if let Some(blend) = blend {
+        cmd.arg(blend);
+    }
+    cmd.arg("--python").arg(&addon);
+    cmd.current_dir(folder).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    quiet(&mut cmd);
     cmd.spawn().map(drop).map_err(|e| format!("Cannot start {}: {e}", exe.display()))
 }
 
@@ -515,5 +568,31 @@ mod tests {
         let m = read_frame(&mut input).unwrap();
         assert_eq!(m.get("a").num(), Some(1.0));
         assert!(read_frame(&mut input).is_none());
+    }
+
+    #[test]
+    fn blender_versions_sort_by_number() {
+        let mut v = [PathBuf::from("Blender 4.10"), PathBuf::from("Blender 3.6"), PathBuf::from("Blender 4.2")];
+        v.sort_by_key(|p| version_key(p));
+        assert_eq!(v.last().unwrap(), &PathBuf::from("Blender 4.10"));
+    }
+
+    #[test]
+    fn finds_the_newest_blend_in_the_game_folder() {
+        let root = std::env::temp_dir().join(format!("nb-ide-blend-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("levels")).unwrap();
+        assert_eq!(newest_blend(&root), None);
+        std::fs::write(root.join("old.blend"), "").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::fs::write(root.join("levels").join("castle.BLEND"), "").unwrap();
+        std::fs::write(root.join("main.nb"), "").unwrap();
+        assert_eq!(newest_blend(&root), Some(root.join("levels").join("castle.BLEND")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_blender_addon_registers_when_run_as_a_script() {
+        assert!(BLENDER_ADDON.contains("if __name__ == \"__main__\":\n    register()"));
     }
 }

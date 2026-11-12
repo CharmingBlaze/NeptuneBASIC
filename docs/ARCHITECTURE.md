@@ -81,9 +81,11 @@ reachable from BASIC commands.
   (`RenderWorld`, `Flip`, `Graphics3D`). The engine calls `run` once per
   frame from its own event loop, so a classic `While ... RenderWorld ... Wend`
   program needs no threads and never blocks the window.
-* **Values**: `Int(i32)`, `Float(f32)`, `Str(Rc<str>)`, `Obj`, `Null`,
-  `Vector`. 32-bit numbers match Blitz3D semantics (hex literals, shifts,
-  float → int rounding to nearest-even).
+* **Values**: `Int(i32)`, `Float(f32)`, `Str`, `Obj`, `Null`, `Vector`.
+  Strings are shared. `s = s + x` keeps the left-hand side and copies only
+  its last block (the whole string, while the result is still short).
+  32-bit numbers match Blitz3D semantics (hex literals, shifts, float → int
+  rounding to nearest-even).
 * **Objects**: Blitz `Type` objects live in a slot heap with per-type
   ordered lists (`First`, `Last`, `After`, `Before`, `Insert`, `Each`).
   References carry a generation, so references to deleted objects behave

@@ -12,7 +12,7 @@ use neptune_lang::sema::{float_to_int, format_float, str_to_float, str_to_int};
 
 use crate::debug::{DebugState, StopReason};
 use crate::stdlib::{self, Core};
-use crate::value::{Heap, Value, NO_OBJECT};
+use crate::value::{Heap, NbStr, Value, NO_OBJECT};
 
 /// A vector's storage and an index checked against it.
 type VectorSlot = (Rc<RefCell<Vec<Value>>>, usize);
@@ -316,7 +316,7 @@ macro_rules! vm_macros {
                 $sp -= 1;
                 match std::mem::take(&mut $self.stack[$sp]) {
                     Value::Str(s) => s,
-                    v => v.str(),
+                    v => NbStr::from(v.str()),
                 }
             }};
         }
@@ -667,7 +667,7 @@ impl Vm {
             match *op {
                 Op::PushInt(v) => push_i!(v),
                 Op::PushFloat(v) => push_f!(v),
-                Op::PushStr(i) => push!(Value::Str(prog.strings[i as usize].clone())),
+                Op::PushStr(i) => push!(Value::Str(NbStr::from(prog.strings[i as usize].clone()))),
                 Op::PushNull => push!(Value::Null),
                 Op::Pop => {
                     sp -= 1;
@@ -1050,10 +1050,7 @@ impl Vm {
             Op::Concat => {
                 let b = pop_s!();
                 let a = pop_s!();
-                let mut s = String::with_capacity(a.len() + b.len());
-                s.push_str(&a);
-                s.push_str(&b);
-                push!(Value::Str(s.into()));
+                push!(Value::Str(NbStr::concat(a, b)));
             }
             Op::NotS => {
                 let v = pop_s!();
@@ -1074,7 +1071,7 @@ impl Vm {
             Op::CmpS(c) => {
                 let b = pop_s!();
                 let a = pop_s!();
-                push_i!(cmp(c, &*a, &*b) as i32);
+                push_i!(cmp(c, &*a.flat(), &*b.flat()) as i32);
             }
             Op::BinV(o) => {
                 let b = pop!();
@@ -1087,7 +1084,7 @@ impl Vm {
                 let r = match v {
                     Value::Int(i) => Value::Int(i.wrapping_neg()),
                     Value::Float(f) => Value::Float(-f),
-                    Value::Str(s) => Value::Float(-str_to_float(&s)),
+                    Value::Str(s) => Value::Float(-str_to_float(&s.flat())),
                     _ => fail!("cannot negate a non-numeric value"),
                 };
                 push!(r);
@@ -1108,11 +1105,11 @@ impl Vm {
             }
             Op::SToI => {
                 let v = pop_s!();
-                push_i!(str_to_int(&v));
+                push_i!(str_to_int(&v.flat()));
             }
             Op::SToF => {
                 let v = pop_s!();
-                push_f!(str_to_float(&v));
+                push_f!(str_to_float(&v.flat()));
             }
             Op::FromVariant(k) => {
                 let v = pop!();
@@ -1129,7 +1126,7 @@ impl Vm {
                     },
                     ValKind::Str => match v {
                         Value::Str(_) => v,
-                        Value::Int(_) | Value::Float(_) => Value::Str(v.str()),
+                        Value::Int(_) | Value::Float(_) => Value::Str(v.str().into()),
                         _ => fail!(format!("cannot convert {} to String", v.type_name())),
                     },
                     _ => v,
@@ -1192,7 +1189,7 @@ impl Vm {
                 let v = match k {
                     ValKind::Int => Value::Int(v.int()),
                     ValKind::Float => Value::Float(v.float()),
-                    ValKind::Str => Value::Str(v.str()),
+                    ValKind::Str => Value::Str(v.str().into()),
                     _ => v,
                 };
                 push!(v);
@@ -1259,7 +1256,7 @@ fn variant_bin(o: VarOp, a: &Value, b: &Value) -> Result<Value, String> {
             if !matches!(a, Value::Str(_) | Value::Int(_) | Value::Float(_)) || !matches!(b, Value::Str(_) | Value::Int(_) | Value::Float(_)) {
                 return Err(format!("cannot add {} and {}", a.type_name(), b.type_name()));
             }
-            Ok(Value::Str(format!("{a}{b}").into()))
+            Ok(Value::Str(NbStr::concat(a.text(), b.text())))
         }
         (Value::Int(x), Value::Int(y)) if o != VarOp::Pow => {
             let (x, y) = (*x, *y);
@@ -1290,7 +1287,7 @@ fn variant_bin(o: VarOp, a: &Value, b: &Value) -> Result<Value, String> {
 
 fn variant_cmp(c: Cmp, a: &Value, b: &Value, heap: &Heap) -> Result<bool, String> {
     Ok(match (a, b) {
-        (Value::Str(x), Value::Str(y)) => cmp(c, &**x, &**y),
+        (Value::Str(x), Value::Str(y)) => cmp(c, &*x.flat(), &*y.flat()),
         (Value::Str(_), _) | (_, Value::Str(_)) => cmp(c, &*a.str(), &*b.str()),
         (Value::Int(x), Value::Int(y)) => cmp(c, x, y),
         (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => cmp(c, &a.float(), &b.float()),

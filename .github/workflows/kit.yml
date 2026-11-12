@@ -1,0 +1,77 @@
+# A folder people can unzip and use to make games: the compiler and the IDE
+# (levels are made in Blender). Nobody who downloads it needs Rust or Python.
+# Run by hand (the downloads are on the run's page), or push a version tag
+# (git tag v0.2.0 && git push origin v0.2.0) to put them on a GitHub release.
+name: Kit
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  kit:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Linux libraries (sound, gamepads, windowing, OpenGL)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config \
+            libx11-dev libx11-xcb-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev libwayland-dev
+
+      - name: Build the programs people run
+        run: cargo build --release -p neptune-cli -p neptune-ide
+
+      - name: Pack the folder
+        shell: bash
+        run: |
+          exe=target/release/neptune
+          if [ -f "$exe.exe" ]; then exe=$exe.exe; fi
+          "$exe" kit
+
+      # An archive of our own: the artifact's own zip loses the Unix
+      # "executable" flag, and the programs would not start on Linux or macOS.
+      - name: Archive it
+        id: archive
+        shell: bash
+        run: |
+          cd dist
+          name=$(ls -d NeptuneBASIC-* | head -n 1)
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+            echo "file=dist/$name.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -czf "$name.tar.gz" "$name"
+            echo "file=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeptuneBASIC-${{ runner.os }}
+          path: ${{ steps.archive.outputs.file }}
+
+      - name: Put it on the release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release view "$tag" > /dev/null 2>&1 || gh release create "$tag" --title "NeptuneBASIC $tag" --notes "Unzip the folder for your computer and read START.txt." || true
+          gh release upload "$tag" "${{ steps.archive.outputs.file }}" --clobber

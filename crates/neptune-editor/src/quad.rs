@@ -4,7 +4,7 @@
 //!
 //! | Key | What it does |
 //! |---|---|
-//! | Ctrl+Alt+Q | Quad view on and off (Blender's key); off keeps the view under the mouse |
+//! | Ctrl+Alt+Q | Quad view on and off (Blender's key), as the Quad button on the 3D view's toolbar does; off goes back to the 3D view |
 //! | Ctrl+Space | In quad view, the view under the mouse fills the window, and back (Blender's and TrenchBroom's key) |
 //! | Numpad 7, 1, 3 | Top, front and side view (Blender's keys); Numpad 5 the 3D view |
 //!
@@ -34,6 +34,12 @@ use fyroxed_base::{
             grid::{Column, Grid, GridBuilder, Row},
             image::{Image, ImageBuilder, ImageMessage},
             menu::{MenuItem, MenuItemMessage},
+            decorator::DecoratorMessage,
+            style::{resource::StyleResourceExt, Style},
+            text::TextBuilder,
+            toggle::{ToggleButton, ToggleButtonBuilder, ToggleButtonMessage},
+            utils::make_simple_tooltip,
+            HorizontalAlignment, VerticalAlignment,
             message::{KeyCode, UiMessage},
             widget::{WidgetBuilder, WidgetMessage},
             Thickness,
@@ -193,6 +199,8 @@ pub struct QuadView {
     /// not change under the mouse.
     held: u32,
     menu: Vec<(Handle<MenuItem>, Action)>,
+    /// The Quad button on the 3D view's toolbar.
+    button: Handle<ToggleButton>,
     /// The four images over the 3D view, in the order of `View::ALL`.
     overlay: Handle<Grid>,
     images: [Handle<Image>; 4],
@@ -401,6 +409,10 @@ impl QuadView {
                 self.quad = !self.quad;
                 self.maximized = false;
                 self.ensure_slots(editor);
+                // the single view is the 3D view; the flat views are for quad view
+                if !self.quad {
+                    self.activate(editor, View::Perspective);
+                }
             }
             Action::Maximize if self.quad => self.maximized = !self.maximized,
             Action::Maximize => return,
@@ -412,6 +424,8 @@ impl QuadView {
         }
         self.arrange(editor);
         self.update_extras(editor);
+        // the button follows the keys and the menu
+        editor.engine.user_interfaces.first().send(self.button, ToggleButtonMessage::Toggled(self.quad));
     }
 
     fn on_frame_mouse(&mut self, editor: &mut Editor, pos: Vector2<f32>) {
@@ -534,6 +548,22 @@ impl EditorPlugin for QuadView {
             ui.send(view_menu, MenuItemMessage::AddItem(*item));
         }
         ui.send(self.overlay, WidgetMessage::LinkWith(frame.to_base()));
+
+        let ctx = &mut ui.build_ctx();
+        let tooltip = make_simple_tooltip(ctx, "Quad view (Ctrl+Alt+Q): the 3D view and flat views from the top, front and side");
+        let label = TextBuilder::new(WidgetBuilder::new().with_margin(Thickness::left_right(6.0)).with_vertical_alignment(VerticalAlignment::Center))
+            .with_text("Quad")
+            .with_horizontal_text_alignment(HorizontalAlignment::Center)
+            .build(ctx);
+        self.button = ToggleButtonBuilder::new(WidgetBuilder::new().with_margin(Thickness::uniform(1.0)).with_tooltip(tooltip))
+            .with_content(label)
+            .build(ctx);
+        // on, it is blue like the selected tool and the snapping magnet
+        let blue = ctx.style.property(Style::BRUSH_BRIGHT_BLUE);
+        let decorator = ui[self.button].decorator;
+        ui.send(decorator, DecoratorMessage::SelectedBrush(blue));
+        // first on the right of the toolbar, before the 3D/2D list
+        ui.send(self.button, WidgetMessage::LinkWithReverse(editor.scene_viewer.contextual_actions().to_base()));
     }
 
     fn on_message(&mut self, message: &Message, editor: &mut Editor) {
@@ -557,6 +587,12 @@ impl EditorPlugin for QuadView {
                 self.act(editor, action);
                 return;
             }
+        }
+        if let Some(&ToggleButtonMessage::Toggled(on)) = message.data_from(self.button) {
+            if on != self.quad {
+                self.act(editor, Action::Toggle);
+            }
+            return;
         }
         if message.destination() != editor.scene_viewer.frame() {
             return;

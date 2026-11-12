@@ -16,11 +16,10 @@ gamepad constants, modern command names, ...).
 ## Language and compiler: done
 
 * Lexer, parser, semantic analysis, typed IR, bytecode, resumable VM.
-* Interpreter speed: superinstructions, an in-place value stack and typed
-  `Dim` arrays (see *VM design* in [ARCHITECTURE.md](ARCHITECTURE.md) and
-  the language table in [BENCHMARKS.md](BENCHMARKS.md)). Not done: a
-  just-in-time compiler; faster string building (`s = s + x` copies the
-  whole string each time).
+* Interpreter speed: superinstructions, an in-place value stack, typed
+  `Dim` arrays, and string building that shares the left side of `s = s + x`
+  (see *VM design* in [ARCHITECTURE.md](ARCHITECTURE.md) and the language
+  table in [BENCHMARKS.md](BENCHMARKS.md)). Not done: a just-in-time compiler.
 * Blitz3D syntax: types, arrays, `Data`/`Read`, `Gosub`, `Select`, `Goto`,
   type tags (`%`, `#`, `$`), `Each`/`First`/`Last`/`Before`/`After`/`Insert`,
   `Handle`/`Object`.
@@ -191,6 +190,7 @@ for older integrated GPUs; `ultra` turns everything up.
 |---|---|
 | `neptune run/check/disasm/commands` CLI | done |
 | `neptune build`: stand-alone game folder (executable + media; no console window on Windows) | done |
+| A folder people can unzip and use to make games (`neptune kit`, also the Kit workflow): `neptune` and `neptune-ide`, plus `cube.nb`, the examples, the Blender add-on and `START.txt`; no Rust or Python needed. The workflow archives it per system and adds it to a GitHub release for a version tag. The IDE finds the compiler beside itself. The level editor is not packed: levels are made in Blender (IDE: Program > Open in Blender, which loads the add-on itself) | done |
 | `neptune bench`: runs the programs in `benchmarks/` (language, entities, models, physics, queries, rendering, graphics quality levels, a large world in chunks) and the island and beach demos uncapped (`neptune run --uncapped`), detects the machine, writes [docs/BENCHMARKS.md](BENCHMARKS.md) | done |
 | `neptune plugins`: list loaded plugins and plugin folders | done |
 | `neptune lsp`: language server (errors as you type, completion, hover, signature help, outline, go to definition, rename) | done |
@@ -201,7 +201,7 @@ for older integrated GPUs; `ultra` turns everything up.
 | `tools/blender`: Blender add-on (mark solid objects, set level properties, export) and `make_sample_level.py`, which builds the example level | done |
 | VS Code extension: highlighting, language server, debug (F5), run (Ctrl+F5), build | done (`editors/vscode`) |
 | Neptune IDE (`crates/neptune-ide`, guide in [IDE.md](IDE.md)): tabs, split view, multiple carets, folding, minimap, Blitz-style capitals and block indenting, live errors, completion, signature help and hover, outline, file tree, find in files, command palette, command reference, built-in manual, run, build, and the debugger. Uses `neptune lsp` and `neptune dap`, so it never links Fyrox. Not yet: word wrap, regular expressions in Find, replacing across files, changing variables while stopped | done |
-| Neptune Level Editor (`crates/neptune-editor`, run `neptune-editor <game folder>`, guide in [EDITOR.md](EDITOR.md)): Fyrox's scene editor (`fyroxed_base`) from our own copy of its source (`vendor/fyroxed_base`, changes marked `// Neptune:`), as its own program, in Neptune IDE's colours (Neptune Deep and Daylight) with square buttons, panels arranged like Blender (the 3D view fills the left, object list over the Inspector on the right, asset browser, log and undo list as tabs under the view), Blender's tool keys (G, R, S, X; the camera on the arrow keys) and a starter level (ground, sun, spawn) when no scene is named, a short Inspector without the engine's own settings (`--full-inspector` shows them), plain object names, and panels called Objects, Level and Undo History; saves Fyrox scenes (`.rgs`) that `LoadLevelFile` reads. Play checks and runs the game's `main.nb` with `neptune`, or "Look Around" flies through the level with no program; `--play` presses it at start. A Neptune panel sets solid (`col_`/`hit_`), type, physics, shape, mass and prefab on the selected objects, with undo. Quad view (Ctrl+Alt+Q, `--quad`): 3D, top, front and side views, every tool working in the view under the mouse, Ctrl+Space to maximise one, Numpad 7/1/3/5 for one view. Opened from the IDE (*Program > Open Level Editor*); the export window and the engine's built-in assets are hidden. Blocking out: the block tool (Shift+B) draws snapped `col_Block` boxes in any view, `[`/`]` change the grid (1/16 to 64), the arrow keys and Page Up/Down nudge the selection a grid step, all undoable | started. Not done: packing `data/resources.registry` for scenes that use model and texture files (untested); the flat views draw the sky behind the level; CSG, face and edge editing, world-aligned textures. The quad view and block tools were checked with screenshots and posted mouse and key input, not yet used by hand |
+| Neptune Level Editor (`crates/neptune-editor`, run `neptune-editor <game folder>`, guide in [EDITOR.md](EDITOR.md)): Fyrox's scene editor (`fyroxed_base`) from our own copy of its source (`vendor/fyroxed_base`, changes marked `// Neptune:`), as its own program, in Neptune IDE's colours (Neptune Deep and Daylight) with square buttons, panels arranged like Blender (the 3D view fills the left, object list over the Inspector on the right, asset browser, log and undo list as tabs under the view), Blender's tool keys (G, R, S, X; the camera on the arrow keys) and a starter level (ground, sun, spawn) when no scene is named, a short Inspector without the engine's own settings (`--full-inspector` shows them), plain object names, and panels called Objects, Level and Undo History; saves Fyrox scenes (`.rgs`) that `LoadLevelFile` reads. Play checks and runs the game's `main.nb` with `neptune`, or "Look Around" flies through the level with no program; `--play` presses it at start. A Neptune panel sets solid (`col_`/`hit_`), type, physics, shape, mass and prefab on the selected objects, with undo. Quad view (the Quad button on the 3D view's toolbar, Ctrl+Alt+Q, `--quad`; the editor opens on the single 3D view and goes back to it): 3D, top, front and side views, every tool working in the view under the mouse, Ctrl+Space to maximise one, Numpad 7/1/3/5 for one view. Not opened from the IDE or packed by `neptune kit`: levels for games are made in Blender. The export window and the engine's built-in assets are hidden. Blocking out: the block tool (Shift+B) draws snapped `col_Block` boxes in any view, `[`/`]` change the grid (1/16 to 64), the arrow keys and Page Up/Down nudge the selection a grid step, all undoable | started. Not done: packing `data/resources.registry` for scenes that use model and texture files (untested); the flat views draw the sky behind the level; CSG, face and edge editing, world-aligned textures. The quad view and block tools were checked with screenshots and posted mouse and key input, not yet used by hand |
 | Documentation: [the manual](MANUAL.md) (25 chapters teaching the language and game making from the beginning), the [shader manual](SHADERS.md), a [language summary](LANGUAGE.md), and the [command reference](COMMANDS.md) with an example for every command (`docs/examples/*.txt`, put in by `tools/gen_reference.py`) | done |
 | `tools/check_doc_examples.py`: checks every BASIC example in the docs with `neptune check`, runs the ones with an output box and compares what they print; `--gpu` compiles every documented shader | done |
 
@@ -214,7 +214,9 @@ own frame, and errors of packaged games appear in a dialog box (a message box
 on Windows, zenity/kdialog on Linux, an alert on macOS). The CI workflow
 (`.github/workflows/ci.yml`) builds and tests on all three, including a
 plugin round trip and packaging a game. `neptune build` packages a game for
-the platform it runs on; build on each platform you ship to.
+the platform it runs on; build on each platform you ship to. The programs
+for making games are packed the same way: `neptune kit` after a release
+build of the compiler and the IDE, or the Kit workflow.
 
 On Linux, building needs the usual development packages for sound, gamepads
 and windowing (see the CI workflow for the list).

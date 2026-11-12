@@ -11,7 +11,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::value::Value;
+use crate::value::{NbStr, Value};
 use crate::vm::Vm;
 
 /// Most children shown for one array or object.
@@ -637,7 +637,7 @@ impl Eval<'_> {
             if self.eat(b'+') {
                 let b = self.product()?;
                 a = match (&a, &b) {
-                    (Value::Str(_), _) | (_, Value::Str(_)) => Value::Str(format!("{}{}", a.str(), b.str()).into()),
+                    (Value::Str(_), _) | (_, Value::Str(_)) => Value::Str(NbStr::concat(a.text(), b.text())),
                     (Value::Float(_), _) | (_, Value::Float(_)) => Value::Float(a.float() + b.float()),
                     _ => Value::Int(a.int().wrapping_add(b.int())),
                 };

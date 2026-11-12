@@ -999,6 +999,12 @@ impl SceneViewer {
         );
     }
 
+    // Neptune: the buttons at the right of the 3D view's toolbar, where the
+    // quad view's button goes
+    pub fn contextual_actions(&self) -> Handle<StackPanel> {
+        self.contextual_actions
+    }
+
     pub fn frame_bounds(&self, ui: &UserInterface) -> Rect<f32> {
         // Neptune: measured from the part of a split view the mouse is in
         crate::neptune::quad_bounds(ui[self.frame].screen_bounds())

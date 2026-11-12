@@ -986,14 +986,23 @@ impl App {
         self.folder.clone().or_else(|| self.active()?.path.as_ref()?.parent().map(Path::to_path_buf))
     }
 
-    fn open_level_editor(&mut self) {
+    /// Opens the game's newest `.blend` in Blender, with the Neptune tab.
+    fn open_in_blender(&mut self) {
         let Some(folder) = self.game_folder() else {
-            self.say("Open a folder or save the program first: the level editor works on a game folder", true);
+            self.say("Open a folder or save the program first: levels are made in the game's folder", true);
             return;
         };
-        let exe = procs::find_editor(&self.st.neptune_path);
-        match procs::open_editor(&exe, &folder) {
-            Ok(()) => self.say(format!("Level editor opened on {}", folder.display()), false),
+        let Some(exe) = procs::find_blender(&self.st.blender_path) else {
+            self.push_output("Blender was not found. It is free from https://www.blender.org. If it is installed somewhere unusual, set its path in Settings.\n", true);
+            self.say("Blender was not found", true);
+            return;
+        };
+        let blend = procs::newest_blend(&folder);
+        match procs::open_blender(&exe, &folder, blend.as_deref()) {
+            Ok(()) => match blend {
+                Some(b) => self.say(format!("Opened {} in Blender", b.display()), false),
+                None => self.say(format!("Blender opened. Save your level in {}", folder.display()), false),
+            },
             Err(e) => self.say(e, true),
         }
     }
@@ -1077,7 +1086,7 @@ impl App {
     }
 
     fn report_start_failure(&mut self, e: String) {
-        self.push_output(&format!("{e}\nThe IDE needs the neptune program: build it with `cargo build`, or set its path in Settings.\n"), true);
+        self.push_output(&format!("{e}\nThe IDE needs the neptune program. Keep it in the same folder as the IDE, or set its path in Settings.\n"), true);
         self.say("Could not start neptune", true);
     }
 
@@ -1571,7 +1580,7 @@ impl App {
             A::Stop => self.stop_program(),
             A::Check => self.check(),
             A::Build => self.dialog = Some(Dialog::Build { out: String::new(), console: false }),
-            A::LevelEditor => self.open_level_editor(),
+            A::Blender => self.open_in_blender(),
             A::CommandLine => self.dialog = Some(Dialog::Prompt { title: "Program command line".into(), value: self.command_line.clone(), kind: PromptKind::CommandLine, focus: true }),
             A::ToggleDebug => self.st.debug_enabled = !self.st.debug_enabled,
             A::Continue => self.debug_continue(),

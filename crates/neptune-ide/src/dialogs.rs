@@ -729,6 +729,9 @@ impl App {
                     ui.label("neptune program");
                     ui.add(TextEdit::singleline(&mut self.st.neptune_path).hint_text("found automatically").desired_width(280.0));
                     ui.end_row();
+                    ui.label("Blender program");
+                    ui.add(TextEdit::singleline(&mut self.st.blender_path).hint_text("found automatically").desired_width(280.0));
+                    ui.end_row();
                 });
                 ui.add_space(12.0);
                 ui.columns(2, |c| {

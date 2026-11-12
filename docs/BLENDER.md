@@ -24,9 +24,13 @@ change something, export it and run the example again.
 
 ## Your first level, step by step
 
-1. **Install the add-on (once).** In Blender, open *Edit > Preferences >
+1. **Open Blender from Neptune IDE.** *Program > Open in Blender* starts
+   Blender in your game's folder with the Neptune tab already loaded, so
+   there is nothing to install. To have the tab when you start Blender
+   yourself, install the add-on once instead: in Blender, open *Edit > Preferences >
    Add-ons*, click the small arrow at the top right, choose *Install from
-   Disk* and pick `tools/blender/neptune_levels.py`. Press N in the 3D view
+   Disk* and pick `blender/neptune_levels.py` from the NeptuneBASIC folder
+   (`tools/blender/neptune_levels.py` in the source). Press N in the 3D view
    and you will see a **Neptune** tab.
 2. **Build something.** Add a large cube for the ground.
 3. **Make it solid.** Select it and press **Solid** in the Neptune tab. Its

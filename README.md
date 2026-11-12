@@ -66,6 +66,29 @@ End
   their original command names; modern names such as
   `SetEntityPosition` and `LoadModel` work alongside them.
 
+## Giving it to someone
+
+People making games do not install Rust or Python. Build the two programs,
+then pack them into one folder:
+
+```bash
+cargo build --release -p neptune-cli -p neptune-ide
+target/release/neptune kit
+```
+
+That writes `dist/NeptuneBASIC-windows` (or `-linux`, `-macos`): the
+compiler and the IDE, plus `cube.nb`, the `examples` folder, the Blender
+add-on and `START.txt`. Zip it. Nothing in it needs Rust or Python. The
+person unzips it, starts Neptune IDE, and presses F5. Levels are made in
+[Blender](docs/BLENDER.md): Program > Open in Blender opens it with the
+Neptune tab already loaded. A game they finish is another folder, made with
+Program > Create Executable, and that one does not need NeptuneBASIC at all.
+
+The same folder is built for all three systems by the Kit workflow (`.github/workflows/kit.yml`). Run it by hand and download
+the archives from the run's page, or push a version tag
+(`git tag v0.2.0` then `git push origin v0.2.0`) to put them on a GitHub
+release.
+
 ## Using it
 
 ```bash
@@ -86,6 +109,8 @@ Other commands:
 * `neptune build <file>` – make a stand-alone game in `dist/<name>/`
   (executable plus the media files the program uses). Build NeptuneBASIC
   with `--release` first so the game runs at full speed.
+* `neptune kit` – pack `neptune` and the IDE into `dist/NeptuneBASIC-<os>`
+  so someone else can make games.
 * `neptune plugins` – list loaded plugins and their commands.
 * `neptune lsp` – language server for editors (errors as you type,
   completion, hover, signature help, outline, go to definition).

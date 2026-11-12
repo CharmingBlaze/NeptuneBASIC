@@ -74,7 +74,7 @@ pub enum Action {
     Stop,
     Check,
     Build,
-    LevelEditor,
+    Blender,
     CommandLine,
     ToggleDebug,
     Continue,
@@ -186,7 +186,7 @@ table! {
     Stop, "Program", "Stop", SHIFT + F5;
     Check, "Program", "Check for Errors", NONE + F7;
     Build, "Program", "Create Executable...", CTRL + F7;
-    LevelEditor, "Program", "Open Level Editor";
+    Blender, "Program", "Open in Blender";
     CommandLine, "Program", "Program Command Line...";
     ToggleDebug, "Program", "Debug Enabled";
     Continue, "Debug", "Continue";

@@ -51,8 +51,11 @@ of three runs of `neptune run benchmarks/language.nb`):
 * **`Dim` arrays of numbers hold plain numbers**, 4 bytes an element instead
   of 24.
 
-String building did not change (274 ms): `s = s + x` copies the whole string
-every time, which is what that benchmark measures.
+* **String appends share the left side.** `s = s + x` used to copy the
+  whole string, and that benchmark took 274 ms. Appending now keeps the
+  string already built and copies only its last block. `Left`, `Right`,
+  `Mid` and `Instr` on ASCII text go straight to a character instead of
+  walking from the start. The same test takes 34 ms.
 
 ### Which graphics card
 

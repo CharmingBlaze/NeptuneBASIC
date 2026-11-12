@@ -21,8 +21,9 @@ neptune run examples/editorlevel.nb
 
 ## Starting it
 
-From Neptune IDE, choose *Program > Open Level Editor*: it opens on the
-folder you have open (or the folder of the program you are editing). From a
+The level editor is not part of the NeptuneBASIC download, and Neptune IDE
+opens Blender instead (*Program > Open in Blender*, see
+[BLENDER.md](BLENDER.md)). Build it from the source and start it from a
 command line:
 
 ```bash
@@ -70,7 +71,8 @@ and press Enter, or click somewhere else.
 
 ## Quad view
 
-*View > Quad View* (Ctrl+Alt+Q) splits the 3D view in four, as Hammer and
+The editor opens on the single 3D view. The **Quad** button on the 3D
+view's toolbar (or *View > Quad View*, or Ctrl+Alt+Q) splits it in four, as Hammer and
 UnrealEd do: the 3D view at the top left, the level seen from the top at the
 top right, from the front at the bottom left and from the side at the
 bottom right. The three flat views have no perspective, so lining things up
@@ -82,7 +84,7 @@ view (or look around in the 3D view).
 
 | Key | What it does |
 |---|---|
-| Ctrl+Alt+Q | Quad view on or off; turning it off keeps the view the mouse is over |
+| Ctrl+Alt+Q | Quad view on or off, as the Quad button does (it is blue while on); off goes back to the 3D view |
 | Ctrl+Space | In quad view, the view under the mouse fills the window, and back |
 | Numpad 7, 1, 3 | The top, front or side view on its own |
 | Numpad 5 | The 3D view on its own |

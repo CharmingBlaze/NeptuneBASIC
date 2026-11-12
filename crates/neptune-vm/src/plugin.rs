@@ -253,7 +253,7 @@ pub fn call(index: usize, args: &[Value]) -> Result<Value, String> {
     let texts: Vec<Option<CString>> = args
         .iter()
         .map(|a| match a {
-            Value::Str(s) => Some(CString::new(s.replace('\0', "")).unwrap_or_default()),
+            Value::Str(s) => Some(CString::new(s.flat().replace('\0', "")).unwrap_or_default()),
             _ => None,
         })
         .collect();

@@ -13,7 +13,7 @@ use neptune_lang::commands::{parse_sig, ConstVal};
 use neptune_lang::sema::Env;
 
 use crate::netgame::Plan;
-use crate::value::Value;
+use crate::value::{NbStr, Value};
 use crate::vm::NativeCtx;
 
 /// Where `Print`/`Write` output goes.
@@ -165,7 +165,7 @@ fn ok_int(v: i32) -> Result<Value, String> {
 fn ok_f(v: f32) -> Result<Value, String> {
     Ok(Value::Float(v))
 }
-fn ok_s(s: impl Into<Rc<str>>) -> Result<Value, String> {
+fn ok_s(s: impl Into<NbStr>) -> Result<Value, String> {
     Ok(Value::Str(s.into()))
 }
 const VOID: Result<Value, String> = Ok(Value::Null);
@@ -174,8 +174,17 @@ fn deg(v: &Value) -> f32 {
     v.float().to_radians()
 }
 
-fn chars_left(s: &str, n: i32) -> String {
-    s.chars().take(n.max(0) as usize).collect()
+/// `count` characters from `start`, or through the end when `count` is `None`.
+/// ASCII text is sliced by byte, which is the same as slicing by character.
+fn slice_chars(v: &Value, start: usize, count: Option<usize>) -> String {
+    let (s, from) = v.char_at(start);
+    let ascii = matches!(v, Value::Str(t) if t.byte_len() == t.char_count());
+    let to = match count {
+        None => s.len(),
+        Some(n) if ascii => (from + n).min(s.len()),
+        Some(n) => s[from..].char_indices().nth(n).map(|(i, _)| from + i).unwrap_or(s.len()),
+    };
+    s[from..to].to_string()
 }
 
 fn stream_read(s: &mut Stream, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -391,21 +400,18 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
         ok_f(x + (y - x) * t)
     }),
     // ---- strings (bbstring.cpp)
-    ("$Left$string%count", |a, _, _| ok_s(chars_left(&a[0].str(), a[1].int()))),
+    ("$Left$string%count", |a, _, _| ok_s(slice_chars(&a[0], 0, Some(a[1].int().max(0) as usize)))),
     ("$Right$string%count", |a, _, _| {
-        let s = a[0].str();
-        let n = s.chars().count();
+        let n = a[0].char_len();
         let k = (a[1].int().max(0) as usize).min(n);
-        ok_s(s.chars().skip(n - k).collect::<String>())
+        ok_s(slice_chars(&a[0], n - k, Some(k)))
     }),
     ("$Mid$string%offset%count=-1", |a, _, _| {
-        let s = a[0].str();
         let off = (a[1].int().max(1) - 1) as usize;
-        let it = s.chars().skip(off);
-        let r: String = if a[2].int() < 0 { it.collect() } else { it.take(a[2].int() as usize).collect() };
-        ok_s(r)
+        let n = if a[2].int() < 0 { None } else { Some(a[2].int() as usize) };
+        ok_s(slice_chars(&a[0], off, n))
     }),
-    ("%Len$string", |a, _, _| ok_int(a[0].str().chars().count() as i32)),
+    ("%Len$string", |a, _, _| ok_int(a[0].char_len() as i32)),
     ("$Upper$string", |a, _, _| ok_s(a[0].str().to_uppercase())),
     ("$Lower$string", |a, _, _| ok_s(a[0].str().to_lowercase())),
     ("$Trim$string", |a, _, _| ok_s(a[0].str().trim())),
@@ -426,12 +432,15 @@ pub static COMMANDS: &[(&str, NativeFn)] = &[
         ok_s(r)
     }),
     ("%Instr$string$find%from=1", |a, _, _| {
-        let s = a[0].str();
         let f = a[1].str();
         let from = (a[2].int().max(1) - 1) as usize;
-        let byte_from = s.char_indices().nth(from).map(|(i, _)| i).unwrap_or(s.len());
+        let (s, byte_from) = a[0].char_at(from);
+        let ascii = matches!(&a[0], Value::Str(t) if t.byte_len() == t.char_count());
         ok_int(match s[byte_from..].find(&*f) {
-            Some(p) => (s[..byte_from + p].chars().count() + 1) as i32,
+            Some(p) => {
+                let at = byte_from + p;
+                if ascii { (at + 1) as i32 } else { (s[..at].chars().count() + 1) as i32 }
+            }
             None => 0,
         })
     }),

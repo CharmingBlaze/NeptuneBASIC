@@ -26,6 +26,7 @@ pub struct Settings {
     pub debug_enabled: bool,
     pub quality: String,
     pub neptune_path: String,
+    pub blender_path: String,
 }
 
 impl Default for Settings {
@@ -50,6 +51,7 @@ impl Default for Settings {
             debug_enabled: true,
             quality: String::new(),
             neptune_path: String::new(),
+            blender_path: String::new(),
         }
     }
 }
@@ -126,6 +128,7 @@ impl Settings {
             ("debugEnabled", b(self.debug_enabled)),
             ("quality", s(self.quality.clone())),
             ("neptunePath", s(self.neptune_path.clone())),
+            ("blenderPath", s(self.blender_path.clone())),
         ])
     }
 
@@ -157,6 +160,7 @@ impl Settings {
             debug_enabled: flag("debugEnabled", d.debug_enabled),
             quality: text("quality", ""),
             neptune_path: text("neptunePath", ""),
+            blender_path: text("blenderPath", ""),
         }
     }
 }

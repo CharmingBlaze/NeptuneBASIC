@@ -24,7 +24,7 @@ The bytecode VM on its own, no window: wall-clock time of each program (lower is
 | fib(30), recursive calls | 49.0 ms |
 | 20M integer loop iterations | 260 ms |
 | 3M float sin/cos/sqrt | 236 ms |
-| 100k string appends + 20k searches | 273 ms |
+| 100k string appends + 20k searches | 34 ms |
 | quicksort 200k integers | 113 ms |
 | 200k objects x 10 updates | 278 ms |
 | prime sieve to 5M | 351 ms |

@@ -48,4 +48,5 @@ See the `// Neptune:` comments. In short:
   lies in the plane the view looks at; the 3D view's bounds are those of the
   part the mouse is in (`quad_bounds`); and before each frame the editor
   leaves Neptune's quad cameras switched on and their render masks alone
-  (`is_quad_node`).
+  (`is_quad_node`). `SceneViewer::contextual_actions` lets the quad view put
+  its button on the 3D view's toolbar.

@@ -247,6 +247,33 @@ fn inferred_object_variables() {
 }
 
 #[test]
+fn string_append_keeps_aliases_and_length() {
+    let src = r#"
+a$ = "hi"
+b$ = a
+a = a + "!"
+Print a
+Print b
+s$ = ""
+For i = 1 To 500
+    s = s + Chr(65 + (i Mod 26))
+Next
+t$ = s
+s = s + "Z"
+Print Len(s) + " " + Len(t)
+Print Left(t, 3) + Right(t, 3) + Right(s, 1)
+u$ = ""
+For i = 1 To 40
+    u = u + "é"
+Next
+Print Len(u)
+w$ = "ééxé"
+Print Mid(w, 2, 2) + " " + Instr(w, "x") + " " + Left(w, 1) + Right(w, 2)
+"#;
+    assert_eq!(ok(src), "hi!\nhi\n501 500\nBCDEFGZ\n40\néx 3 éxé\n");
+}
+
+#[test]
 fn string_functions_and_interpolation() {
     let src = r#"
 s$ = "Hello, World"

@@ -70,9 +70,12 @@ Help > Keyboard Shortcuts lists all of them.
 * A program that reads with `Input` gets a box under the Output tab. `Input`
   does not work under the debugger, so use Ctrl+F5 for those programs.
 * Program > Create Executable makes a stand-alone game (`neptune build`).
-* Program > Open Level Editor starts Neptune Level Editor on the open folder
-  (or the edited program's folder). It looks for `neptune-editor` beside
-  `neptune` or the IDE, then on the PATH.
+* Program > Open in Blender opens the newest `.blend` in the open folder (or
+  the edited program's folder, and the folders just inside it) in Blender,
+  or a new file when there is none, with the Neptune tab loaded (the add-on
+  is built into the IDE; see [BLENDER.md](BLENDER.md)). Blender is found on
+  the PATH or where its installer puts it; Settings > Blender program
+  overrides that.
   Program > Program Command Line sets what the program receives.
 * Closing the IDE never loses work: open files, unsaved text and breakpoints
   come back next time.
