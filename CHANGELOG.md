@@ -4,6 +4,17 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Checking the download on every system
+
+* **CI starts a packaged game** – on Windows, Linux and macOS it now builds
+  a small game with `neptune build` and runs it, so a game that will not
+  start (on macOS the copied program is changed) fails the build.
+* **The Kit workflow tries its own folder** – it checks an example and
+  builds and starts a game with the packed `neptune`, as someone with the
+  download would.
+* **The Linux download is built on Ubuntu 22.04**, so it also runs on
+  older Linux systems, not only the newest.
+
 ## A folder for making games
 
 * **Give someone the IDE and the compiler** – `neptune kit` (after a

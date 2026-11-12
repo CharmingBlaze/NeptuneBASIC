@@ -55,7 +55,12 @@ jobs:
 
       - name: Package a game
         shell: bash
-        run: ./target/debug/neptune build examples/games/orbrun.nb -o dist/orbrun
+        run: |
+          ./target/debug/neptune build examples/games/orbrun.nb -o dist/orbrun
+          # a packaged game must start too (on macOS the copied program is changed)
+          ./target/debug/neptune build tests/package/hello.nb --console -o dist/hello
+          ./dist/hello/hello > out.txt
+          diff --strip-trailing-cr out.txt tests/package/hello.expected
 
       - name: Clippy
         if: runner.os == 'Linux'

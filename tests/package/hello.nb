@@ -1,0 +1,6 @@
+; Built with neptune build and run by CI: a packaged game must start on every system.
+s$ = ""
+For i = 1 To 3
+    s = s + i
+Next
+Print "packaged game runs " + s

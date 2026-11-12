@@ -18,7 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # the oldest supported Ubuntu: a program built there also runs on
+        # newer Linux systems, but not the other way round
+        os: [windows-latest, ubuntu-22.04, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +46,17 @@ jobs:
           exe=target/release/neptune
           if [ -f "$exe.exe" ]; then exe=$exe.exe; fi
           "$exe" kit
+
+      # What someone with the folder does: check an example, make a game with
+      # the packed neptune and start it.
+      - name: Try the folder
+        shell: bash
+        run: |
+          kit=$(ls -d dist/NeptuneBASIC-* | head -n 1)
+          "$kit/neptune" check "$kit/examples/cube.nb"
+          "$kit/neptune" build tests/package/hello.nb --console -o game
+          ./game/hello > out.txt
+          diff --strip-trailing-cr out.txt tests/package/hello.expected
 
       # An archive of our own: the artifact's own zip loses the Unix
       # "executable" flag, and the programs would not start on Linux or macOS.
