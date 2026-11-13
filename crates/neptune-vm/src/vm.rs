@@ -188,6 +188,8 @@ pub struct Vm {
     handlers: Vec<Handler>,
     data_ptr: usize,
     native_returns: Vec<bool>,
+    /// Per command, a bit for each argument that names a file (see [`path_args`]).
+    native_paths: Vec<u32>,
     n_core: u32,
     pub core: Core,
     finished: bool,
@@ -424,6 +426,32 @@ macro_rules! vm_macros {
     };
 }
 
+/// The arguments of a command that name files, one bit each: parameters
+/// called `file`, `path` or `dirname`, and both of `CopyFile`'s. Their
+/// Windows spellings are fixed before the call on Linux and macOS.
+fn path_args(sig: &neptune_lang::commands::CommandSig) -> u32 {
+    let copy = sig.name == "copyfile";
+    sig.params
+        .iter()
+        .enumerate()
+        .take(32)
+        .filter(|(_, p)| matches!(p.name.as_str(), "file" | "path" | "dirname") || copy)
+        .fold(0, |m, (i, _)| m | 1 << i)
+}
+
+#[cold]
+fn fix_paths(args: &mut [Value], mask: u32) {
+    for (i, v) in args.iter_mut().enumerate().take(32) {
+        if mask & 1 << i != 0 {
+            if let Value::Str(s) = v {
+                if let Some(fixed) = neptune_lang::paths::host_path(&s.flat()) {
+                    *v = Value::Str(NbStr::from(fixed));
+                }
+            }
+        }
+    }
+}
+
 /// How a rarely used instruction ended.
 enum Cold {
     /// Carry on at this `pc` with this `sp`.
@@ -454,6 +482,7 @@ impl Vm {
             handlers: Vec::new(),
             data_ptr: 0,
             native_returns: prog.natives.iter().map(|n| n.ret.is_some()).collect(),
+            native_paths: prog.natives.iter().map(|n| if cfg!(windows) { 0 } else { path_args(n) }).collect(),
             n_core,
             core: Core::new(),
             finished: false,
@@ -951,6 +980,10 @@ impl Vm {
                 }
                 Op::CallNative { id, argc } => {
                     let start = sp - argc as usize;
+                    let paths = self.native_paths[id as usize];
+                    if paths != 0 {
+                        fix_paths(&mut self.stack[start..sp], paths);
+                    }
                     let mut ctx = NativeCtx::default();
                     let r = if id < self.n_core {
                         stdlib::call(id, &self.stack[start..sp], &mut self.core, &mut ctx)

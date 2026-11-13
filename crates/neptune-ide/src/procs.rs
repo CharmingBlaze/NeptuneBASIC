@@ -94,6 +94,11 @@ pub fn find_blender(configured: &str) -> Option<PathBuf> {
         }
     } else {
         places.extend(["/usr/bin/blender", "/usr/local/bin/blender", "/snap/bin/blender"].map(PathBuf::from));
+        // Flathub's Blender, installed for everyone or for this user
+        places.push("/var/lib/flatpak/exports/bin/org.blender.Blender".into());
+        if let Some(home) = std::env::var_os("HOME") {
+            places.push(PathBuf::from(home).join(".local/share/flatpak/exports/bin/org.blender.Blender"));
+        }
     }
     places.into_iter().find(|p| p.is_file())
 }

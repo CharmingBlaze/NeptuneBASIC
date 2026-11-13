@@ -1,12 +1,10 @@
 # NeptuneBASIC
 
-A BASIC for making 2D and 3D games: write a few lines, run them, and a
-window opens with your game in it. A simple language that is easy to
-learn, over a thousand commands for graphics, sound, input, physics and
-more, and the [Fyrox](https://fyrox.rs) engine underneath. Written in Rust.
-
-New to it? Start with [the manual](docs/MANUAL.md), which teaches the
-language from the beginning.
+A BASIC for making 2D and 3D games. Write a few lines, press F5, and a
+window opens with your game in it. The language is simple enough for a
+first program, and its thousand-plus commands cover graphics, sound,
+input, physics, animation, networking and user interfaces. The
+[Fyrox](https://fyrox.rs) engine is underneath.
 
 ```basic
 Graphics3D 1280, 720
@@ -29,131 +27,107 @@ Wend
 End
 ```
 
-## Why NeptuneBASIC
+## Get started
 
-* **Easy to start** – a short program opens a window, a game loop is a
-  `While` loop, and every command has a plain-language description and an
+1. Download the folder for your computer (Windows, Linux or macOS) from the
+   [releases page](https://github.com/CharmingBlaze/NeptuneBASIC/releases)
+   and unzip it. Nothing else needs installing.
+2. Start **Neptune IDE** (`neptune-ide`).
+3. Open `cube.nb`, or pick a program from the **Examples** menu, and press
+   **F5**.
+
+`START.txt` in the folder has the first-time steps for macOS and Linux.
+To learn the language from the beginning, read [the manual](docs/MANUAL.md).
+It is in the folder's `docs` folder too, and the IDE shows any command's
+help when you press **F1** on it.
+
+When your game is finished, **Program > Create Executable** makes a folder
+you can zip and give to players. They don't need NeptuneBASIC to play it.
+
+## What you get
+
+* **Easy to start.** A short program opens a window, and a game loop is a
+  `While` loop. Every command has a plain-language description and an
   example.
-* **Modern language** – type inference ("smart variables"), `Variant`
-  dynamic values, enums, methods on types, `Try/Catch/Throw`, string
-  interpolation, `IIf`, `For Each ... In`, `+=`, `AndAlso`/`OrElse`,
-  `Strict` mode, clear diagnostics with source locations.
-* **Fast** – statically typed bytecode (no type dispatch on hot paths),
-  compiled with a real multi-stage compiler designed for a future native backend.
-* **Fyrox underneath** – entities are Fyrox scene nodes, so PBR rendering,
-  shadows and the rest of Fyrox are available to BASIC commands.
-* **Everything a game needs** – 2D and 3D graphics, custom
-  meshes, animation, terrain, sprites, mirrors, cube maps, collisions,
-  picking, sound, movies, keyboard/mouse/joysticks, files, banks, timers,
-  TCP/UDP networking and multiplayer games over the local network or the
-  internet, with entities that sync themselves (`NetPlay`, `NetSpawn`).
-* **And more** – animated glTF/FBX models, rigid-body physics (Rapier),
-  gamepads, fullscreen, graphics quality presets, sky boxes, PBR materials,
-  decals, soft particles, level of detail, render-to-texture, shaders in
-  GLSL or WGSL with hot reloading, ready-made PBR, toon, water and
-  procedural materials, post-processing chains, joint motors and ragdolls, a 2D camera, 2D physics with joints, 2D animation, UI widgets,
-  background loading,
-  saved scenes (Fyrox `.rgs`), 2D tile maps with autotiling, a language
-  server.
-* **Windows, Linux and macOS** – the same programs and the same commands on
-  all three, tested in CI on each.
-* **Plugins** – add your own typed commands in Rust, C or C++ as shared
-  libraries; see [docs/PLUGINS.md](docs/PLUGINS.md).
-* **Runs on old and new PCs** – any OpenGL 3.3 GPU (roughly 2010 onwards).
-  `--quality low` turns off the expensive effects for older laptops;
-  `ultra` turns them all on.
-* **Runs classic BASIC games** – programs written for Blitz3D run with
-  their original command names; modern names such as
-  `SetEntityPosition` and `LoadModel` work alongside them.
-
-## Giving it to someone
-
-People making games do not install Rust or Python. Build the two programs,
-then pack them into one folder:
-
-```bash
-cargo build --release -p neptune-cli -p neptune-ide
-target/release/neptune kit
-```
-
-That writes `dist/NeptuneBASIC-windows` (or `-linux`, `-macos`): the
-compiler and the IDE, plus `cube.nb`, the `examples` folder, the Blender
-add-on and `START.txt`. Zip it. Nothing in it needs Rust or Python. The
-person unzips it, starts Neptune IDE, and presses F5. Levels are made in
-[Blender](docs/BLENDER.md): Program > Open in Blender opens it with the
-Neptune tab already loaded. A game they finish is another folder, made with
-Program > Create Executable, and that one does not need NeptuneBASIC at all.
-
-The same folder is built for all three systems by the Kit workflow (`.github/workflows/kit.yml`). Run it by hand and download
-the archives from the run's page, or push a version tag
-(`git tag v0.2.0` then `git push origin v0.2.0`) to put them on a GitHub
-release.
-
-## Using it
-
-```bash
-cargo build --release
-```
-
-```bash
-target/release/neptune run examples/cube.nb
-```
-
-Other commands:
-
-* `neptune run --quality low <file>` – run with the low graphics preset
-  (also `medium`, `high`, `ultra`).
-* `neptune run --uncapped <file>` – no vsync and no 60 updates-a-second
-  limit: the program runs as fast as the machine allows (used by the
-  benchmarks, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
-* `neptune build <file>` – make a stand-alone game in `dist/<name>/`
-  (executable plus the media files the program uses). Build NeptuneBASIC
-  with `--release` first so the game runs at full speed.
-* `neptune kit` – pack `neptune` and the IDE into `dist/NeptuneBASIC-<os>`
-  so someone else can make games.
-* `neptune plugins` – list loaded plugins and their commands.
-* `neptune lsp` – language server for editors (errors as you type,
-  completion, hover, signature help, outline, go to definition).
-* `neptune check <file>`, `neptune disasm <file>`, `neptune commands`.
-
-NeptuneBASIC has its own IDE, in the spirit of the Blitz3D one: build it with
-`cargo build --release`, start `target/release/neptune-ide`, and see
-[docs/IDE.md](docs/IDE.md).
-
-Editor support for VS Code (highlighting, the language server, F5 to run) is in
-[`editors/vscode`](editors/vscode/README.md).
+* **A modern BASIC.** Type inference, `Variant` values, enums, methods on
+  types, `Try`/`Catch`, string interpolation, `For Each`, `+=`, `Strict`
+  mode, and error messages that point at the line.
+* **Everything a game needs.** 2D and 3D graphics, animated glTF and FBX
+  models, terrain, sprites, PBR materials, shadows, shaders in GLSL or WGSL,
+  post-processing, rigid-body physics in 2D and 3D, character controllers,
+  pathfinding, sound and 3D sound, gamepads, tile maps, a GUI toolkit, files,
+  TCP/UDP and multiplayer games that sync their entities for you.
+* **Your tools.** Levels from [Blender](docs/BLENDER.md), maps and sprite
+  sheets from [Tiled, LDtk and Aseprite](docs/TOOLS2D.md).
+* **Neptune IDE.** Run with F5, a debugger, completion, errors as you type
+  and built-in help ([guide](docs/IDE.md)). A
+  [VS Code extension](editors/vscode/README.md) is available too.
+* **Windows, Linux and macOS.** The same programs run on all three.
+* **Old and new PCs.** Any OpenGL 3.3 graphics card (about 2010 onwards).
+  `--quality low` keeps older laptops smooth, and `ultra` turns everything on.
+* **Blitz3D programs run.** Classic command names work, and modern names
+  such as `SetEntityPosition` work alongside them.
+* **Plugins.** Add your own commands in Rust, C or C++ ([guide](docs/PLUGINS.md)).
 
 ## Sample games
 
-Two complete games show what a finished NeptuneBASIC program looks like:
+The `examples/games` folder holds finished games to play, read and change:
 
-* `examples/games/starcourier.nb` – a 2D space shooter.
-* `examples/games/orbrun.nb` – a 3D collect-the-orbs game with an animated fox.
-* `examples/games/dirtbike.nb`, `jetski.nb`, `quadrace.nb` and `skyrace.nb` – commented racing
-  demos in the style of a 1990s console, built on the character controllers.
-
-```bash
-neptune run examples/games/orbrun.nb
-```
+| Game | What it is |
+|---|---|
+| `starcourier.nb` | a 2D space shooter |
+| `orbrun.nb` | collect the orbs in 3D, with an animated fox |
+| `foxquest.nb` | a third-person adventure in a level made in Blender |
+| `arena.nb` | a first-person shooter in about 300 lines |
+| `skyhop.nb` | a 3D platformer with double jumps |
+| `kartrace.nb` | three laps against three rivals |
+| `dirtbike.nb`, `jetski.nb`, `quadrace.nb`, `skyrace.nb` | racing demos in the style of a 1990s console |
+| `coinrush.nb` | a multiplayer game in about 150 lines |
 
 ## Documentation
 
-* [The manual](docs/MANUAL.md): learn the language and how to make games, from the beginning
-* [Command reference](docs/COMMANDS.md): every command, with an example
-* [Language summary](docs/LANGUAGE.md): the whole language on one page
-* [Shaders, materials and post-processing](docs/SHADERS.md)
-* [Sound: playing, 3D sound, mixing and effects](docs/SOUND.md)
-* [Character controllers for 3D and 2D](docs/CHARACTERS.md)
-* [Making levels in Blender](docs/BLENDER.md)
-* [Neptune Level Editor](docs/EDITOR.md) (early version)
-* [2D levels and sprites from Tiled and Aseprite](docs/TOOLS2D.md)
-* [Changelog](CHANGELOG.md): what changed, commit by commit
-* [Architecture](docs/ARCHITECTURE.md)
-* [Implementation status](docs/STATUS.md)
-* [Plugins](docs/PLUGINS.md)
+| | |
+|---|---|
+| [The manual](docs/MANUAL.md) | learn the language and how to make games, from the beginning |
+| [Command reference](docs/COMMANDS.md) | every command, with an example |
+| [Language summary](docs/LANGUAGE.md) | the whole language on one page |
+| [Neptune IDE](docs/IDE.md) | the editor: keys, debugging, building games |
+| [Shaders and materials](docs/SHADERS.md) | materials, shaders, screen effects and shadows |
+| [Sound](docs/SOUND.md) | playing, 3D sound, mixing and effects |
+| [Character controllers](docs/CHARACTERS.md) | characters that walk, jump and climb, in 3D and 2D |
+| [Levels in Blender](docs/BLENDER.md) | build levels in Blender and load them |
+| [2D tools](docs/TOOLS2D.md) | maps from Tiled and LDtk, sprites from Aseprite |
+| [Neptune Level Editor](docs/EDITOR.md) | NeptuneBASIC's own level editor (early version) |
+| [Plugins](docs/PLUGINS.md) | add your own commands |
+| [What's new](CHANGELOG.md) | every change, newest first |
+
+## The `neptune` command
+
+The IDE does all of this for you, but `neptune` also works from a terminal:
+
+| Command | Does |
+|---|---|
+| `neptune run game.nb` | runs a program (`--quality low` to `ultra` sets the graphics preset) |
+| `neptune check game.nb` | checks a program for mistakes without running it |
+| `neptune build game.nb` | makes a stand-alone game in `dist/<name>/` |
+| `neptune commands` | lists every command |
+| `neptune lsp` | the language server, for editors |
+
+## Building from source
+
+You only need this to work on NeptuneBASIC itself. Install Rust from
+[rustup.rs](https://rustup.rs), then:
+
+```bash
+cargo build --release
+target/release/neptune run examples/cube.nb
+```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how the source is laid out,
+how to run the tests and how the download folder is made.
 
 ## License
 
-NeptuneBASIC is released under the zlib license (see `LICENSE`).
-Language and command design reference Blitz3D by Blitz Research Ltd,
-also released under the zlib license; see `NOTICE`.
+NeptuneBASIC is made by CharmingBlaze and released under the zlib license
+(see [LICENSE](LICENSE)). Its language and command design follow Blitz3D by
+Blitz Research Ltd, also under the zlib license; see [NOTICE](NOTICE).

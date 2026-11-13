@@ -53,6 +53,7 @@ jobs:
         shell: bash
         run: |
           kit=$(ls -d dist/NeptuneBASIC-* | head -n 1)
+          test -f "$kit/docs/MANUAL.md"
           "$kit/neptune" check "$kit/examples/cube.nb"
           "$kit/neptune" build tests/package/hello.nb --console -o game
           ./game/hello > out.txt

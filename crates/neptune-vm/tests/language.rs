@@ -517,6 +517,23 @@ fn file_io_roundtrip() {
 }
 
 #[test]
+fn windows_file_names_work_everywhere() {
+    // Blitz programs come from Windows: backslashes and the wrong letter case
+    // must find the file on Linux and macOS too
+    let dir = std::env::temp_dir().join(format!("neptune_names_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(dir.join("Media"));
+    std::fs::write(dir.join("Media").join("Score.txt"), "42\n").unwrap();
+    let root = dir.to_string_lossy().replace('\\', "/");
+    let src = format!(
+        "f = ReadFile(\"{root}\\MEDIA\\score.TXT\")\nPrint ReadLine(f)\nCloseFile f\nPrint FileType(\"{root}\\media\")\n\
+         CopyFile \"{root}\\media\\score.txt\", \"{root}\\media\\Copy.txt\"\nPrint FileSize(\"{root}/Media/Copy.txt\")\n"
+    );
+    assert_eq!(ok(&src), "42\n2\n3\n");
+    assert!(dir.join("Media").join("Copy.txt").is_file());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn performance_smoke() {
     // tight integer loop: guards against accidental slow paths
     let t = std::time::Instant::now();

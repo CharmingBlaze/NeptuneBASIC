@@ -10,7 +10,7 @@
 //! lines to the file named by `NEPTUNE_BENCH_OUT` (see `benchmarks/bench.nb`).
 //! The demos `examples/island.nb` and `examples/beach.nb` are measured too:
 //! with `NEPTUNE_BENCH_FRAMES` set they run that many frames and report
-//! their frame rate. The report (default `docs/BENCHMARKS.md`) lists the
+//! their frame rate. The report (default `docs/dev/BENCHMARKS.md`) lists the
 //! machine and every result, followed by `notes.md` from the folder.
 
 use std::collections::BTreeMap;
@@ -42,7 +42,7 @@ const DEMOS: &[&str] = &["examples/island.nb", "examples/beach.nb"];
 
 pub fn run(args: &[String]) -> ExitCode {
     let mut folder = PathBuf::from("benchmarks");
-    let mut out = PathBuf::from("docs/BENCHMARKS.md");
+    let mut out = PathBuf::from("docs/dev/BENCHMARKS.md");
     let mut only: Option<String> = None;
     let mut runs: usize = 1;
     let mut i = 0;

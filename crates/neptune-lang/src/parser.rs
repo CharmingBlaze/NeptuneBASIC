@@ -26,7 +26,10 @@ pub struct FsLoader;
 impl SourceLoader for FsLoader {
     fn load(&mut self, path: &str, from: &str) -> Result<(String, String), String> {
         let base = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new("."));
-        let full = base.join(path);
+        let mut full = base.join(path);
+        if let Some(fixed) = crate::paths::host_path(&full.to_string_lossy()) {
+            full = fixed.into();
+        }
         let canon = full.canonicalize().unwrap_or(full.clone());
         let text = std::fs::read_to_string(&full).map_err(|e| format!("unable to open include file '{}': {e}", full.display()))?;
         Ok((canon.to_string_lossy().into_owned(), text))

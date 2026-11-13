@@ -2,7 +2,7 @@
 //!
 //! Copies this `neptune` and `neptune-ide` from the same folder, and adds
 //! `START.txt`, `cube.nb`, the `examples` folder (which the IDE's Examples
-//! menu lists) and the Blender add-on. The IDE looks for the compiler beside
+//! menu lists), the user guides from `docs` and the Blender add-on. The IDE looks for the compiler beside
 //! itself, so the folder can be zipped and sent as it is. Levels are made in
 //! Blender, which the IDE opens with the add-on loaded.
 
@@ -20,7 +20,10 @@ Make a game by writing a program and pressing F5.
 3. Press F5. A window opens and the program runs.
 4. Program > Create Executable makes a folder you can zip and give to
    players. They do not need NeptuneBASIC.
-5. Levels are made in Blender (free, https://www.blender.org). Program >
+5. Help is in the docs folder: docs/MANUAL.md teaches the language from
+   the beginning, docs/COMMANDS.md describes every command with an
+   example. They are plain text and open in any text editor.
+6. Levels are made in Blender (free, https://www.blender.org). Program >
    Open in Blender opens the newest .blend in your game's folder with a
    Neptune tab (press N in Blender's 3D view) for marking solid objects
    and exporting the level. LoadLevelFile loads it.
@@ -46,11 +49,25 @@ macOS
   Then start neptune-ide.
 
 Linux
-  Running a game uses the system's sound, gamepad and window libraries.
-  On Ubuntu or Debian:
+  Unpack the folder and start the IDE from a terminal in it:
 
-    sudo apt-get install libasound2 libudev1 libx11-6 libxcursor1 \
-      libxrandr2 libxi6 libxkbcommon0 libgl1
+    tar -xzf NeptuneBASIC-linux.tar.gz
+    cd NeptuneBASIC-linux
+    ./neptune-ide
+
+  It runs on Linux from 2022 on (Ubuntu 22.04, Debian 12, Fedora 36 and
+  newer), with X11 or Wayland. Games use the system's sound, gamepad and
+  window libraries, which desktop systems usually have. If one is missing:
+
+    Ubuntu, Debian, Mint:
+      sudo apt-get install libasound2 libudev1 libx11-6 libxcursor1 \
+        libxrandr2 libxi6 libxkbcommon0 libxkbcommon-x11-0 libgl1 libegl1
+    Fedora:
+      sudo dnf install alsa-lib systemd-libs libX11 libXcursor libXrandr \
+        libXi libxkbcommon libxkbcommon-x11 mesa-libGL mesa-libEGL
+    Arch:
+      sudo pacman -S alsa-lib systemd-libs libx11 libxcursor libxrandr \
+        libxi libxkbcommon libxkbcommon-x11 mesa
 
 A game built with Create Executable runs on the same kind of computer
 it was built on. Build once on Windows, once on Linux and once on macOS
@@ -64,9 +81,15 @@ fn file_name(stem: &str) -> String {
 /// Files the engine and the level editor write into `examples` while they run.
 const NOT_EXAMPLES: [&str; 4] = ["data", "saved_level.rgs", "tilemap_saved.txt", "neptune-editor.log"];
 
-/// Copies the compiler and the IDE from `from` into `out`, and the example
-/// programs and their media from `examples` when it is given.
-pub fn pack(from: &Path, out: &Path, examples: Option<&Path>) -> Result<(), String> {
+/// What in `docs` is for people working on NeptuneBASIC itself, not for
+/// people making games: notes for developers, the reference's sources, and
+/// the index of the docs folder on GitHub, which links to both.
+const NOT_DOCS: [&str; 4] = ["README.md", "dev", "examples", "commands.txt"];
+
+/// Copies the compiler and the IDE from `from` into `out`, the example
+/// programs and their media from `examples`, and the user guides from `docs`,
+/// when they are given.
+pub fn pack(from: &Path, out: &Path, examples: Option<&Path>, docs: Option<&Path>) -> Result<(), String> {
     if same_folder(from, out) {
         return Err("the output folder is the folder the programs are already in".into());
     }
@@ -96,22 +119,27 @@ pub fn pack(from: &Path, out: &Path, examples: Option<&Path>) -> Result<(), Stri
     write("cube.nb", include_str!("../../../examples/cube.nb"))?;
     write("blender/neptune_levels.py", include_str!("../../../tools/blender/neptune_levels.py"))?;
     if let Some(examples) = examples {
-        copy_folder(examples, &out.join("examples"), true)?;
+        copy_folder(examples, &out.join("examples"), &NOT_EXAMPLES)?;
+    }
+    if let Some(docs) = docs {
+        copy_folder(docs, &out.join("docs"), &NOT_DOCS)?;
     }
     Ok(())
 }
 
-fn copy_folder(from: &Path, to: &Path, top: bool) -> Result<(), String> {
+/// Copies `from` into `to`, leaving out the names in `skip` at the top level
+/// and editor logs everywhere.
+fn copy_folder(from: &Path, to: &Path, skip: &[&str]) -> Result<(), String> {
     std::fs::create_dir_all(to).map_err(|e| format!("cannot create {}: {e}", to.display()))?;
     let entries = std::fs::read_dir(from).map_err(|e| format!("cannot read {}: {e}", from.display()))?;
     for entry in entries.flatten() {
         let name = entry.file_name();
-        if (top && NOT_EXAMPLES.iter().any(|n| name == *n)) || name == "neptune-editor.log" {
+        if skip.iter().any(|n| name == *n) || name == "neptune-editor.log" {
             continue;
         }
         let path = entry.path();
         if path.is_dir() {
-            copy_folder(&path, &to.join(&name), false)?;
+            copy_folder(&path, &to.join(&name), &[])?;
         } else {
             std::fs::copy(&path, to.join(&name)).map_err(|e| format!("cannot copy {}: {e}", path.display()))?;
         }
@@ -119,15 +147,16 @@ fn copy_folder(from: &Path, to: &Path, top: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// The `examples` folder of the NeptuneBASIC source: in the current folder or
-/// above the program (`target/release` is two levels down).
-fn find_examples(from: &Path) -> Option<PathBuf> {
+/// A folder of the NeptuneBASIC source, such as `examples`, that holds
+/// `marker`: in the current folder or above the program (`target/release` is
+/// two levels down).
+fn find_source(from: &Path, folder: &str, marker: &str) -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok();
     cwd.iter()
         .map(PathBuf::as_path)
         .chain(from.ancestors())
-        .map(|dir| dir.join("examples"))
-        .find(|dir| dir.join("cube.nb").is_file())
+        .map(|dir| dir.join(folder))
+        .find(|dir| dir.join(marker).is_file())
 }
 
 fn same_folder(a: &Path, b: &Path) -> bool {
@@ -145,11 +174,15 @@ pub fn pack_beside_self(out: Option<&str>) -> Result<PathBuf, String> {
         Some(path) => PathBuf::from(path),
         None => PathBuf::from("dist").join(format!("NeptuneBASIC-{}", std::env::consts::OS)),
     };
-    let examples = find_examples(&from);
+    let examples = find_source(&from, "examples", "cube.nb");
     if examples.is_none() {
         eprintln!("warning: no examples folder found; packing cube.nb only");
     }
-    pack(&from, &out, examples.as_deref())?;
+    let docs = find_source(&from, "docs", "MANUAL.md");
+    if docs.is_none() {
+        eprintln!("warning: no docs folder found; packing without the guides");
+    }
+    pack(&from, &out, examples.as_deref(), docs.as_deref())?;
     Ok(out)
 }
 
@@ -178,8 +211,19 @@ mod tests {
         std::fs::write(examples.join("media").join("a.png"), "png").unwrap();
         std::fs::write(examples.join("data").join("cache"), "x").unwrap();
         std::fs::write(examples.join("saved_level.rgs"), "x").unwrap();
+        let docs = root.join("docs");
+        std::fs::create_dir_all(docs.join("manual")).unwrap();
+        std::fs::create_dir_all(docs.join("dev")).unwrap();
+        std::fs::write(docs.join("MANUAL.md"), "manual").unwrap();
+        std::fs::write(docs.join("manual").join("01.md"), "one").unwrap();
+        std::fs::write(docs.join("dev").join("STATUS.md"), "status").unwrap();
+        std::fs::write(docs.join("commands.txt"), "source").unwrap();
         let out = root.join("out");
-        pack(&bin, &out, Some(&examples)).unwrap();
+        pack(&bin, &out, Some(&examples), Some(&docs)).unwrap();
+        assert!(out.join("docs").join("MANUAL.md").is_file());
+        assert!(out.join("docs").join("manual").join("01.md").is_file());
+        assert!(!out.join("docs").join("dev").exists());
+        assert!(!out.join("docs").join("commands.txt").exists());
         assert_eq!(std::fs::read_to_string(out.join("examples").join("media").join("a.png")).unwrap(), "png");
         assert!(out.join("examples").join("cube.nb").is_file());
         assert!(!out.join("examples").join("data").exists());
@@ -187,12 +231,13 @@ mod tests {
         let start = std::fs::read_to_string(out.join("START.txt")).unwrap();
         assert!(start.contains("F5"));
         assert!(start.contains("Open in Blender"));
+        assert!(start.contains("docs/MANUAL.md"));
         assert!(std::fs::read_to_string(out.join("cube.nb")).unwrap().contains("Graphics3D"));
         assert!(std::fs::read_to_string(out.join("blender").join("neptune_levels.py")).unwrap().contains("def register"));
         for stem in REQUIRED {
             assert_eq!(std::fs::read(out.join(file_name(stem))).unwrap(), stem.as_bytes());
         }
-        assert!(pack(&bin, &bin, None).unwrap_err().contains("already in"));
+        assert!(pack(&bin, &bin, None, None).unwrap_err().contains("already in"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -205,8 +250,9 @@ mod tests {
         }
         std::fs::write(bin.join(file_name("neptune-editor")), "editor").unwrap();
         let out = root.join("out");
-        pack(&bin, &out, None).unwrap();
+        pack(&bin, &out, None, None).unwrap();
         assert!(!out.join("examples").exists());
+        assert!(!out.join("docs").exists());
         assert!(!out.join(file_name("neptune-editor")).exists());
         assert!(!std::fs::read_to_string(out.join("START.txt")).unwrap().contains("Level Editor"));
         let _ = std::fs::remove_dir_all(&root);

@@ -3,12 +3,9 @@
 The editor made for NeptuneBASIC. It works the way the Blitz3D IDE did: type,
 press F5, and your program runs. Around that it has what a modern editor adds.
 
-Build and start it with:
-
-```
-cargo build --release
-target/release/neptune-ide
-```
+Start `neptune-ide` from the NeptuneBASIC folder you unzipped. (If you
+build NeptuneBASIC from its source code, it is `target/release/neptune-ide`
+after `cargo build --release`.)
 
 You can also name files or a folder to open: `neptune-ide game.nb` or
 `neptune-ide mygame/`. The IDE uses the `neptune` program for compiling,

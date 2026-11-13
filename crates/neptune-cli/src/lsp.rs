@@ -493,7 +493,8 @@ struct OpenFiles<'a>(&'a Server);
 impl SourceLoader for OpenFiles<'_> {
     fn load(&mut self, path: &str, from: &str) -> Result<(String, String), String> {
         let base = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new("."));
-        let full = canonical(&base.join(path).to_string_lossy());
+        let joined = base.join(path).to_string_lossy().into_owned();
+        let full = canonical(&neptune_lang::paths::host_path(&joined).unwrap_or(joined));
         let text = self.0.text_of(&full).ok_or_else(|| format!("unable to open include file '{path}'"))?;
         Ok((full, text))
     }

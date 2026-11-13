@@ -10,16 +10,6 @@ tilemap_saved.txt
 neptune-editor.log
 # written by the engine when an example runs
 /examples/data/
-
-# Ruflo local secrets and runtime data
+# local environment settings
 .env
-.env.local
-.env.*.local
-.claude-flow/
-.swarm/
-.claude/.proven-config-version
-.claude/proven-config.json
-.claude/agents/
-.claude/commands/
-.claude/helpers/
-.claude/skills/
+.env.*

@@ -32,8 +32,9 @@ the executable.
 
 Some things to know:
 
-- Build NeptuneBASIC itself with `cargo build --release` first, so the
-  game runs at full speed.
+- If you built NeptuneBASIC yourself from its source code, build it with
+  `cargo build --release`, so the game runs at full speed. The downloaded
+  folder is already built that way.
 - Media files are found from the file names written in quotes in your
   program (`LoadImage("gfx/ship.png")`). A file name put together while
   the program runs (`LoadImage("level" + n + ".png")`) can't be found
@@ -83,6 +84,11 @@ sure yours does too:
 - Linux and macOS care about capital letters in file names: `Ship.png`
   and `ship.png` are different files there. Write names exactly as they
   are.
+- Programs written for Blitz3D on Windows still find their files:
+  commands that take a file name turn `\` into `/` and, when the name
+  does not exist as written, look for it ignoring capital letters. Files
+  named inside models and levels (a model's textures, for example) are
+  read by the engine, which does not do this, so keep those exact.
 - Build the game on each system you want to share it for:
   `neptune build` makes a game for the system it runs on.
 

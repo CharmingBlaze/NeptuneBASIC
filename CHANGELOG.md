@@ -4,6 +4,33 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Ready to share
+
+* **Windows file names work on Linux and macOS** – Blitz programs written
+  on Windows say `LoadImage("Media\Player.PNG")`. Every command that takes
+  a file name (and `Include`) now turns `\` into `/` and, when the name
+  does not exist as written, finds the file ignoring capital letters.
+  `neptune build` finds such files too, so they are packed with the game.
+* **Linux first steps** – `START.txt` says how to unpack and start the IDE,
+  which Linux versions it runs on (2022 and newer, X11 or Wayland), and
+  the libraries to install on Ubuntu, Fedora and Arch if one is missing.
+  Open in Blender also finds Blender installed from Flathub.
+* **The download has the documentation** – `neptune kit` now copies the
+  manual, the command reference and the guides into a `docs` folder, and
+  `START.txt` says where to start reading. The notes for people working on
+  NeptuneBASIC stay out of it.
+* **A README for people making games** – it starts with downloading and
+  pressing F5, lists the sample games and the guides, and leaves building
+  from source to the end.
+* **CONTRIBUTING.md** – how the source is laid out, the rules, adding a
+  command, the checks to run and how the download is made.
+* **Developer notes moved** – the architecture, status and benchmark pages
+  are now in `docs/dev`, and `docs/README.md` is an index of the guides.
+  `neptune bench` writes `docs/dev/BENCHMARKS.md`.
+* **The manual starts with the download** – getting started, the IDE guide
+  and the sharing chapter no longer assume NeptuneBASIC was built with
+  `cargo`.
+
 ## Checking the download on every system
 
 * **CI starts a packaged game** – on Windows, Linux and macOS it now builds
@@ -787,7 +814,7 @@ effects without writing any. The guide is
 * **`neptune bench`** – Runs the benchmark programs in `benchmarks/`
   (language, entities, models, physics, queries, rendering) and the island
   and beach demos, and writes the results with a description of the machine
-  to [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Anyone can re-run it to
+  to [docs/BENCHMARKS.md](docs/dev/BENCHMARKS.md). Anyone can re-run it to
   compare.
 * **`neptune run --uncapped`** – Runs a program without vsync and without
   the engine's 60 updates a second, so frame rates show what the machine

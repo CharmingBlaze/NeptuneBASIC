@@ -1,6 +1,6 @@
 # Benchmarks
 
-Measured with `neptune bench` (programs in [`benchmarks/`](../benchmarks)), run with `neptune run --uncapped`: no vsync and no 60 updates-a-second limit, so frame rates show what the machine can do. Re-run it on your own machine to compare: build with `cargo build --release`, then run `target/release/neptune bench` from the repository root.
+Measured with `neptune bench` (programs in [`benchmarks/`](../../benchmarks)), run with `neptune run --uncapped`: no vsync and no 60 updates-a-second limit, so frame rates show what the machine can do. Re-run it on your own machine to compare: build with `cargo build --release`, then run `target/release/neptune bench` from the repository root.
 
 ## Machine
 

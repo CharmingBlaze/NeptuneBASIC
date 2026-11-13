@@ -219,11 +219,14 @@ pub fn media_files(entries: &[Entry], root: &Path) -> BTreeSet<PathBuf> {
             if lit.is_empty() || lit.contains('\n') {
                 continue;
             }
-            let rel = PathBuf::from(&lit);
-            if rel.is_absolute() || lit.contains("..") {
+            if Path::new(&lit).is_absolute() || lit.contains("..") {
                 continue;
             }
-            if root.join(&rel).is_file() {
+            // the name on disk, for Windows spellings on Linux and macOS
+            let joined = root.join(&lit).to_string_lossy().into_owned();
+            let full = PathBuf::from(neptune_lang::paths::host_path(&joined).unwrap_or(joined));
+            let Ok(rel) = full.strip_prefix(root).map(Path::to_path_buf) else { continue };
+            if full.is_file() {
                 found.insert(rel.clone());
                 add_model_files(&rel, root, &mut found);
                 add_2d_files(&rel, root, &mut found);

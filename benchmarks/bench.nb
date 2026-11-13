@@ -1,7 +1,7 @@
 ; Shared helpers for the benchmark programs. Run them all with
 ;   neptune bench            (use a release build: cargo build --release)
 ; which runs every benchmark in this folder uncapped (neptune run
-; --uncapped) and writes docs/BENCHMARKS.md.
+; --uncapped) and writes docs/dev/BENCHMARKS.md.
 
 ; Results go to the file named by NEPTUNE_BENCH_OUT, one per line:
 ;   group|name|value|unit
