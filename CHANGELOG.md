@@ -6,6 +6,10 @@ the top. Every command mentioned here is explained in
 
 ## Ready to share
 
+* **A plugin is loaded once** – a game started from its project folder
+  found the same plugin beside itself and in the project's `plugins`
+  folder, loaded both and warned that its commands already existed. Each
+  plugin file name is now loaded once, from the folder beside the program.
 * **Windows file names work on Linux and macOS** – Blitz programs written
   on Windows say `LoadImage("Media\Player.PNG")`. Every command that takes
   a file name (and `Include`) now turns `\` into `/` and, when the name
