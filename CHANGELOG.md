@@ -6,6 +6,15 @@ the top. Every command mentioned here is explained in
 
 ## Ready to share
 
+* **Nothing to install on Windows** – the programs, and every game built
+  with them, now carry Microsoft's C runtime inside them, so they start on
+  PCs without the Visual C++ Redistributable (`.cargo/config.toml`).
+* **One Mac download for every Mac** – the Kit workflow builds the Mac
+  programs for Apple Silicon and Intel and joins them into one, so games
+  built with the download run on both.
+* **What players see the first time** – the sharing chapter says how to
+  get past the Windows and macOS warnings for unsigned games, and to share
+  Linux games as `.tar.gz` so they stay runnable.
 * **A plugin is loaded once** – a game started from its project folder
   found the same plugin beside itself and in the project's `plugins`
   folder, loaded both and warned that its commands already existed. Each

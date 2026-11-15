@@ -38,7 +38,23 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev libwayland-dev
 
       - name: Build the programs people run
+        if: runner.os != 'macOS'
         run: cargo build --release -p neptune-cli -p neptune-ide
+
+      # One program for both kinds of Mac: Apple Silicon and Intel.
+      - name: Build the programs people run (macOS, universal)
+        if: runner.os == 'macOS'
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --target $t -p neptune-cli -p neptune-ide
+          done
+          mkdir -p target/release
+          for p in neptune neptune-ide; do
+            lipo -create -output target/release/$p \
+              target/aarch64-apple-darwin/release/$p target/x86_64-apple-darwin/release/$p
+          done
+          lipo -info target/release/neptune
 
       - name: Pack the folder
         shell: bash

@@ -216,7 +216,10 @@ for Windows (`media\Player.PNG`) work on Linux and macOS: the VM fixes the
 arguments named `file`, `path` and `dirname` (and `CopyFile`'s) before the
 call, `Include` and `neptune build` do the same (`neptune-lang/src/paths.rs`).
 The Linux download is built on Ubuntu 22.04, so it runs on glibc 2.35 and
-newer, with X11 or Wayland. The CI workflow
+newer, with X11 or Wayland. Windows programs link the C runtime statically
+(`.cargo/config.toml`), so they need no Visual C++ Redistributable. The Mac
+download is one universal program (Apple Silicon and Intel, joined with
+`lipo` in the Kit workflow). The CI workflow
 (`.github/workflows/ci.yml`) builds and tests on all three, including a
 plugin round trip and packaging a game. `neptune build` packages a game for
 the platform it runs on; build on each platform you ship to. The programs

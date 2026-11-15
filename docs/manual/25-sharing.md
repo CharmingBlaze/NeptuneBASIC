@@ -90,7 +90,17 @@ sure yours does too:
   named inside models and levels (a model's textures, for example) are
   read by the engine, which does not do this, so keep those exact.
 - Build the game on each system you want to share it for:
-  `neptune build` makes a game for the system it runs on.
+  `neptune build` makes a game for the system it runs on. Players need
+  nothing installed. A game built on a Mac with the downloaded
+  NeptuneBASIC runs on both Apple Silicon and Intel Macs.
+- Tell players what they see the first time, because the game is not
+  signed by a store:
+  - Windows may say it protected the PC: they choose *More info*, then
+    *Run anyway*.
+  - macOS blocks it: they right-click the game and choose *Open*, or run
+    `xattr -dr com.apple.quarantine .` in Terminal in the game's folder.
+  - Linux: share the folder as a `.tar.gz` (`tar -czf mygame.tar.gz mygame`)
+    so the game stays runnable; a `.zip` made on Windows loses that.
 
 ## Plugins
 
