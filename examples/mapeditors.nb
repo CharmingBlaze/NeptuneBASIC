@@ -1,0 +1,54 @@
+; Levels from different map editors, all loaded by the same command.
+;   1  Tiled: picture layer with parallax, animated tiles, tile collision shapes
+;   2  Tiled: an isometric map, with the mouse picking the cell it is over
+;   3  LDtk: a level with stacked tiles, solid cells and entities
+; See docs/TOOLS2D.md.
+;
+; 1, 2, 3 change map. Left/Right scroll. Esc quits.
+
+Graphics 960, 480, 0, 2
+AppTitle "Maps from level editors"
+SetBuffer BackBuffer()
+
+Dim maps(3)
+maps(1) = LoadTiledMap("examples/media/tiled/extras.tmx")
+maps(2) = LoadTiledMap("examples/media/tiled/iso.tmx")
+maps(3) = LoadTiledMap("examples/media/tiled/forest.ldtk", "Forest")
+For i = 1 To 3
+    If maps(i) = 0 Then RuntimeError "could not load map " + i
+Next
+
+current = 1
+camx# = 480
+
+While Not KeyHit(1)
+    For i = 1 To 3
+        If KeyHit(1 + i) Then current = i : camx = 480
+    Next
+    If KeyDown(203) Then camx = camx - 6
+    If KeyDown(205) Then camx = camx + 6
+
+    map = maps(current)
+    back = TiledMapBackground(map)
+    If back >= 0 Then ClsColor back Shr 16, (back Shr 8) And 255, back And 255 Else ClsColor 30, 34, 44
+    Cls
+
+    Camera2D camx, 240
+    DrawTiledMap map
+    For i = 1 To CountTiledObjects(map)
+        DrawTiledObject TiledObject(map, i)
+    Next
+
+    ; the mouse in map pixels, whatever shape the grid is
+    mx# = ScreenToWorld2DX(MouseX(), MouseY())
+    my# = ScreenToWorld2DY(MouseX(), MouseY())
+    ground = TiledLayer(map, TiledLayerName(map, 1))
+
+    Camera2DEnable False
+    Color 240, 240, 240
+    Text 16, 12, TiledMapOrientation(map) + " map, level '" + TiledMapLevel(map) + "', " + CountTiledLayers(map) + " layers, " + CountTiledObjects(map) + " objects"
+    Text 16, 30, "Cell under the mouse: " + TileMapPickX(ground, mx, my) + ", " + TileMapPickY(ground, mx, my)
+    Text 16, 48, "1, 2, 3 change map. Left/Right scroll."
+    Flip
+Wend
+End

@@ -51,9 +51,10 @@ name = Input("What is your name? ")
 Print "Welcome, " + name
 
 === DebugLog
-; send a message to the debug log instead of the console
+; Debug messages go to the error stream (the console you launched from), not to the game window
 health = 75
 DebugLog "Player health is " + health
+Print "This goes to the normal output"
 
 === Sqr
 ; distance between two points with Pythagoras
@@ -74,8 +75,10 @@ Print Cos(0)     ; 1
 Print Cos(180)   ; -1
 
 === Tan
-; tangent of 45 degrees is about 1
-Print Tan(45)
+; How steep is a ramp? Tan gives the rise for every 1 metre run (angles are in degrees)
+angle = 30
+Print "rise per metre: " + Tan(angle)   ; 0.57735
+Print Tan(45)                           ; 1.0
 
 === ASin
 ; the angle whose sine is 0.5
@@ -98,26 +101,33 @@ angle = ATan2(1, 1)
 Print angle   ; 45
 
 === Exp
-; e raised to the power 1
-Print Exp(1)   ; 2.71828
+; Fog gets thicker with distance: this is the fraction of light left after 10 metres
+distance# = 10
+density# = 0.1
+visible# = Exp(-density * distance)
+Print visible   ; 0.367879
 
 === Log
-; natural logarithm, the opposite of Exp
-Print Log(Exp(2))   ; 2
+; How many times must you double 1 to pass 1000? Log works out the power
+doublings# = Log(1000) / Log(2)
+Print doublings   ; 9.965784
 
 === Log10
-; how many digits: 1000 has a base-10 logarithm of 3
-Print Log10(1000)   ; 3
+; Count the digits of a score: 98765 has a base-10 logarithm of about 4.99.
+; Floor drops the .99 (Int would round it up to 5).
+score = 98765
+digits = Floor(Log10(score)) + 1
+Print digits   ; 5
 
 === Floor
 ; round down to a whole number (still a float)
-Print Floor(3.7)    ; 3
-Print Floor(-3.2)   ; -4
+Print Floor(3.7)    ; 3.0
+Print Floor(-3.2)   ; -4.0
 
 === Ceil
 ; round up to a whole number (still a float)
-Print Ceil(3.2)    ; 4
-Print Ceil(-3.7)   ; -3
+Print Ceil(3.2)    ; 4.0
+Print Ceil(-3.7)   ; -3.0
 
 === Min
 ; the smaller of two values
@@ -189,7 +199,9 @@ name = "Neptune"
 Print Len(name)   ; 7
 
 === Upper
-; shout the text
+; capitalise the first letter of a name typed in lower case
+name$ = "neptune"
+Print Upper(Left(name$, 1)) + Mid(name$, 2)   ; Neptune
 Print Upper("game over")   ; GAME OVER
 
 === Lower
@@ -245,8 +257,11 @@ Print Hex(255)        ; 000000FF
 Print Hex(16711680)   ; 00FF0000
 
 === Bin
-; show the bits of a number as 32 binary digits
-Print Bin(5)   ; 00000000000000000000000000000101
+; test which of 8 flag bits are set in a number
+flags = 5
+Print Right(Bin(flags), 8)   ; 00000101
+Print "Bit 0 set: " + ((flags And 1) <> 0)   ; 1
+Print "Bit 1 set: " + ((flags And 2) <> 0)   ; 0
 
 === TypeOf
 ; find out what kind of value a variable holds
@@ -307,8 +322,14 @@ DeleteDir "temp_stuff"
 Print FileType("temp_stuff")   ; 0
 
 === CurrentDir
-; show the folder the program is working in
-Print "Working in " + CurrentDir()
+; build the full path of a save file in the working folder
+path$ = CurrentDir() + "save.dat"
+Print "Saving to " + path$
+file = WriteFile(path$)
+WriteInt file, 100
+CloseFile file
+Print FileType(path$)   ; 1
+DeleteFile path$
 
 === ChangeDir
 ; move into a folder, then back again
@@ -342,9 +363,18 @@ Wend
 CloseDir dir
 
 === CloseDir
-; always close a folder listing when finished
-dir = ReadDir(".")
-If dir <> 0 Then CloseDir dir
+; list the files in a folder, then close the listing
+CreateDir "demo_files"
+file = WriteFile("demo_files/a.txt") : CloseFile file
+dir = ReadDir("demo_files")
+name$ = NextFile(dir)
+While name$ <> ""
+    Print name$    ; ".", "..", then "a.txt"
+    name$ = NextFile(dir)
+Wend
+CloseDir dir
+DeleteFile "demo_files/a.txt"
+DeleteDir "demo_files"
 
 === ReadFile
 ; read a text file line by line
@@ -549,8 +579,10 @@ Print BankSize(bank)   ; 16
 FreeBank bank
 
 === FreeBank
-; free a bank when you no longer need it
+; Make a scratch bank, use it, then free it. Its handle is invalid afterwards.
 bank = CreateBank(1024)
+PokeInt bank, 0, 42
+Print PeekInt(bank, 0)   ; 42
 FreeBank bank
 
 === BankSize
@@ -670,16 +702,24 @@ Delay 500
 Print "Done"
 
 === CurrentDate
-; show today's date, for example 07 Nov 2026
-Print "Today is " + CurrentDate()
+; put today's date in a save file name, for example 07 Nov 2026
+today$ = CurrentDate()
+Print "Saved on " + today
+Print Len(today)        ; 11
 
 === CurrentTime
-; show the time, for example 14:30:05
-Print "The time is " + CurrentTime()
+; stamp a log line with the time, for example 14:30:05
+stamp$ = CurrentTime()
+Print "[" + stamp + "] Game started"
+Print Len(stamp)        ; 8
 
 === CreateTimer
-; a timer that ticks 60 times per second
+; keep a loop at 60 steps per second with CreateTimer and WaitTimer
 timer = CreateTimer(60)
+For i = 1 To 3
+    ticks = WaitTimer(timer)
+    Print "Frame " + i
+Next
 FreeTimer timer
 
 === WaitTimer
@@ -708,9 +748,15 @@ Else
 EndIf
 
 === CloseTCPStream
-; close a connection when finished
-stream = OpenTCPStream("127.0.0.1", 5000)
-If stream <> 0 Then CloseTCPStream stream
+; talk over a local connection, then close both ends
+server = CreateTCPServer(47123)
+client = OpenTCPStream("127.0.0.1", 47123)
+conn = AcceptTCPStream(server)
+WriteLine client, "hello"
+Print ReadLine(conn)        ; hello
+CloseTCPStream client
+CloseTCPStream conn
+CloseTCPServer server
 
 === CreateTCPServer
 ; start listening on port 5000
@@ -719,9 +765,15 @@ If server = 0 Then Print "Could not start the server" Else Print "Listening"
 If server <> 0 Then CloseTCPServer server
 
 === CloseTCPServer
-; stop the server
-server = CreateTCPServer(5001)
-If server <> 0 Then CloseTCPServer server
+; stop listening; a stream already accepted stays open until it is closed itself
+server = CreateTCPServer(47124)
+client = OpenTCPStream("127.0.0.1", 47124)
+conn = AcceptTCPStream(server)
+CloseTCPServer server
+WriteLine client, "still open"
+Print ReadLine(conn)        ; still open
+CloseTCPStream client
+CloseTCPStream conn
 
 === AcceptTCPStream
 ; check for a new client (0 means nobody is waiting)
@@ -771,9 +823,13 @@ If udp <> 0
 EndIf
 
 === CloseUDPStream
-; close the UDP stream when finished
-udp = CreateUDPStream(6000)
-If udp <> 0 Then CloseUDPStream udp
+; free the port when done so another stream can use it
+udp = CreateUDPStream(47126)
+Print UDPStreamPort(udp)        ; 47126
+CloseUDPStream udp
+again = CreateUDPStream(47126)
+Print again <> 0        ; 1
+CloseUDPStream again
 
 === SendUDPMsg
 ; write data into the stream, then send it as one message
@@ -863,8 +919,13 @@ Else
 EndIf
 
 === StopNetGame
-; leave the game when finished
-If HostNetGame("Space Race") = 2 Then StopNetGame
+; host a game, play, and leave when the round ends
+If HostNetGame("Space Race") = 2
+    me = CreateNetPlayer("Alice")
+    Print "Playing as " + NetPlayerName(me)        ; Playing as Alice
+    StopNetGame
+    Print "Left the game"        ; Left the game
+EndIf
 
 === CreateNetPlayer
 ; add the local player to the game
@@ -943,8 +1004,8 @@ While RecvNetMsg()
 Wend
 
 === DottedIP
-; turn an integer address into text
-Print DottedIP(3232235521)   ; 192.168.0.1
+; show the address of a player as text: 192.168.0.1 is the number 3232235521
+Print DottedIP(3232235521)        ; 192.168.0.1
 
 === CountHostIPs
 ; look up this computer's addresses

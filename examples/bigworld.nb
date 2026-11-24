@@ -1,0 +1,127 @@
+; A world too large to keep in the scene: 40,000 towers in 100 districts.
+; Only the districts around you are in the world; the others are stored with
+; StoreEntity, which costs nothing each frame, and come back with
+; RestoreEntity as you get near.
+;
+; Arrow keys or WASD to fly, Tab to switch between storing and plain hiding
+; (watch the frame rate), Esc to quit.
+
+Graphics3D 1280, 720, 0, 2
+SetWindowTitle "Big world"
+
+Const DISTRICTS = 10      ; along each side
+Const PER_SIDE = 20       ; towers along each side of a district
+Const SPACING# = 3.0
+Const DISTRICT_SIZE# = PER_SIDE * SPACING
+Const NEAR = 1            ; districts kept around the camera, each way
+
+cam = CreateCamera()
+CameraRange cam, 0.5, 600
+CameraClsColor cam, 150, 190, 230
+CameraFogMode cam, 1
+CameraFogColor cam, 150, 190, 230
+CameraFogRange cam, 60, 200
+PositionEntity cam, 300, 25, 300
+RotateEntity cam, 25, 0, 0
+sun = CreateLight(1)
+RotateEntity sun, 50, 30, 0
+AmbientLight 110, 110, 120
+
+ground = CreatePlane()
+EntityColor ground, 90, 120, 80
+
+; six towers to copy from, one of each colour: copies of the same tower share
+; their look, which lets EntityBatch draw a whole district in six batches
+Dim tower(5)
+For i = 0 To 5
+    tower(i) = CreateCube()
+    EntityColor tower(i), 130 + (i Mod 3) * 45, 120 + (i Mod 2) * 60, 110 + (i / 2) * 35
+    HideEntity tower(i)
+Next
+
+Dim district(DISTRICTS * DISTRICTS)
+Dim here(DISTRICTS * DISTRICTS)      ; 1 while the district is in the world
+
+; A district is one entity with its towers as children, so that one command
+; stores, restores, hides or frees all of them.
+Function BuildDistrict(dx, dz)
+    root = CreateMesh()
+    PositionEntity root, dx * DISTRICT_SIZE, 0, dz * DISTRICT_SIZE
+    SeedRnd dx * 100 + dz
+    For i = 0 To PER_SIDE * PER_SIDE - 1
+        t = CopyEntity(tower(Rand(0, 5)), root)
+        ShowEntity t
+        height# = Rnd(1, 6)
+        ScaleEntity t, 1, height, 1
+        PositionEntity t, (i Mod PER_SIDE) * SPACING, height, (i / PER_SIDE) * SPACING
+    Next
+    EntityBatch root, 1
+    Return root
+End Function
+
+For dz = 0 To DISTRICTS - 1
+    For dx = 0 To DISTRICTS - 1
+        k = dz * DISTRICTS + dx
+        district(k) = BuildDistrict(dx, dz)
+        here(k) = 1
+    Next
+Next
+
+storing = True
+frames = 0 : fps = 0 : mark = MilliSecs()
+
+While Not KeyHit(KEY_ESCAPE)
+    ; fly
+    turn# = KeyDown(KEY_LEFT) + KeyDown(KEY_A) - KeyDown(KEY_RIGHT) - KeyDown(KEY_D)
+    go# = KeyDown(KEY_UP) + KeyDown(KEY_W) - KeyDown(KEY_DOWN) - KeyDown(KEY_S)
+    TurnEntity cam, 0, turn * 2, 0, True
+    MoveEntity cam, 0, 0, go * 0.8
+    PositionEntity cam, EntityX(cam), 25, EntityZ(cam)
+
+    If KeyHit(KEY_TAB)
+        ; bring everything back, then let the loop below take it out the other way
+        For k = 0 To DISTRICTS * DISTRICTS - 1
+            RestoreEntity district(k)
+            ShowEntity district(k)
+            here(k) = 1
+        Next
+        storing = Not storing
+    EndIf
+
+    ; which districts should be in the world now?
+    mx = Int(Floor(EntityX(cam) / DISTRICT_SIZE))
+    mz = Int(Floor(EntityZ(cam) / DISTRICT_SIZE))
+    For dz = 0 To DISTRICTS - 1
+        For dx = 0 To DISTRICTS - 1
+            k = dz * DISTRICTS + dx
+            want = Abs(dx - mx) <= NEAR And Abs(dz - mz) <= NEAR
+            If want <> here(k)
+                here(k) = want
+                If storing
+                    If want Then RestoreEntity district(k) Else StoreEntity district(k)
+                Else
+                    If want Then ShowEntity district(k) Else HideEntity district(k)
+                EndIf
+            EndIf
+        Next
+    Next
+
+    UpdateWorld
+    RenderWorld
+
+    frames = frames + 1
+    If MilliSecs() - mark >= 500
+        fps = frames * 1000 / (MilliSecs() - mark)
+        frames = 0 : mark = MilliSecs()
+    EndIf
+    Color 255, 255, 255
+    Text 10, 10, "40,000 towers, " + ((NEAR * 2 + 1) * (NEAR * 2 + 1) * PER_SIDE * PER_SIDE) + " in view"
+    If storing
+        Text 10, 30, "Far districts are STORED (StoreEntity)   -  Tab: hide them instead"
+    Else
+        Text 10, 30, "Far districts are HIDDEN (HideEntity)    -  Tab: store them instead"
+    EndIf
+    Text 10, 50, fps + " frames a second"
+    Flip
+Wend
+End

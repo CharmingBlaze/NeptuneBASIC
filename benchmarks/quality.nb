@@ -1,0 +1,44 @@
+; Graphics quality: one scene that leans on the graphics card (shadows from
+; the sun and six lamps, ambient occlusion, bloom, anti-aliasing) at each
+; quality level, to show what a lower level buys on this machine. On an old
+; or integrated graphics card the gap between low and ultra is large; when
+; the numbers are all alike, the processor is the limit, not the card.
+Include "bench.nb"
+Graphics3D 1920, 1080
+cam = BenchScene(0, 14, -26, 0, 2, 0)
+
+ground = CreateCube()
+ScaleEntity ground, 40, 0.5, 40
+PositionEntity ground, 0, -0.5, 0
+EntityColor ground, 120, 130, 120
+
+proto = CreateSphere(16)
+HideEntity proto
+For i = 0 To 399
+    s = CopyEntity(proto)
+    ShowEntity s
+    PositionEntity s, (i Mod 20) * 3 - 28.5, 1 + (i Mod 3), (i / 20) * 3 - 28.5
+Next
+pillar = CreateCylinder(12)
+HideEntity pillar
+For i = 0 To 35
+    p = CopyEntity(pillar)
+    ShowEntity p
+    ScaleEntity p, 0.6, 5, 0.6
+    PositionEntity p, (i Mod 6) * 10 - 25, 5, (i / 6) * 10 - 25
+Next
+For i = 0 To 5
+    lamp = CreateLight(2)
+    PositionEntity lamp, (i Mod 3) * 18 - 18, 6, (i / 3) * 18 - 9
+    LightColor lamp, 255, 200 - i * 20, 120 + i * 20
+    LightRange lamp, 22
+    LightShadows lamp, True
+Next
+
+card$ = GraphicsCardName()
+For level = QUALITY_LOW To QUALITY_ULTRA
+    GraphicsQuality level
+    name$ = Mid("low   mediumhigh  ultra ", level * 6 + 1, 6)
+    Report "quality", "quality " + Trim(name) + " on " + card, MeasureFps(200, 30), "fps"
+Next
+End

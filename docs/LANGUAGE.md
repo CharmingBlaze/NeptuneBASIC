@@ -186,13 +186,15 @@ End Try
 Runtime errors (dividing by zero, `Null` objects, array places that don't
 exist, ...) report the file, line and column, and can be caught with
 `Try`. `RuntimeError message$` stops the program with a message.
+`Goto` and `Gosub` can leave a `Try` block but can't jump into one from
+outside.
 
 ## Program structure ([chapter 11](manual/11-organising.md))
 
 <!-- nocheck -->
 ```basic
 Goto label / Gosub label / Return    ; labels are written .label
-End                                  ; stop the program (Stop does the same)
+End                                  ; stop the program (Stop does the same, but pauses under the debugger)
 ```
 
 `CommandLine()` gives the words after the program's name.

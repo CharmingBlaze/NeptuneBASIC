@@ -342,8 +342,10 @@ fn shadow_pass(name: &str, cull: &str, point: bool) -> String {
 pub fn source(blend: i32, two_sided: bool, transparent: bool) -> String {
     let cull = if two_sided { "None" } else { "Some(Back)" };
     let blend_ron = blend_params(blend, transparent);
-    // additive and multiplied surfaces should not hide what is behind them
-    let depth_write = !transparent || blend == BLEND_ALPHA;
+    // see-through surfaces should not hide what is behind them, and they are
+    // drawn after everything solid (see blended.rs)
+    let depth_write = !transparent;
+    let pass_name = if transparent { crate::blended::PASS } else { "Forward" };
     let mut layer_res = String::new();
     let mut layer_props = String::new();
     for i in 0..MAX_LAYERS {
@@ -365,7 +367,7 @@ pub fn source(blend: i32, two_sided: bool, transparent: bool) -> String {
     .join(",\n");
     let disabled = if transparent {
         // transparent surfaces do not cast shadows
-        r#"disabled_passes: ["GBuffer", "DirectionalShadow", "SpotShadow", "PointShadow"],"#
+        r#"disabled_passes: ["GBuffer", "Forward", "DirectionalShadow", "SpotShadow", "PointShadow"],"#
     } else {
         r#"disabled_passes: ["GBuffer"],"#
     };
@@ -402,7 +404,7 @@ pub fn source(blend: i32, two_sided: bool, transparent: bool) -> String {
     {disabled}
     passes: [
         (
-            name: "Forward",
+            name: "{pass_name}",
             draw_parameters: DrawParameters(
                 cull_face: {cull},
                 color_write: ColorMask(red: true, green: true, blue: true, alpha: true),
@@ -618,6 +620,19 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn see_through_surfaces_are_drawn_last_and_leave_depth_alone() {
+        for blend in [BLEND_ALPHA, BLEND_MULTIPLY, BLEND_ADD] {
+            let d = Shader::from_string(&source(blend, false, true)).unwrap().definition;
+            assert_eq!(d.passes[0].name, crate::blended::PASS);
+            assert!(!d.passes[0].draw_parameters.depth_write);
+            assert!(d.disabled_passes.iter().any(|p| p == "Forward"));
+        }
+        let solid = Shader::from_string(&source(BLEND_ALPHA, false, false)).unwrap().definition;
+        assert_eq!(solid.passes[0].name, "Forward");
+        assert!(solid.passes[0].draw_parameters.depth_write);
     }
 
     #[test]

@@ -1,0 +1,80 @@
+; A level saved by Neptune Level Editor. Everything comes from one scene
+; file, examples/media/editor_level.rgs: the ground and walls (their names
+; start with col_, so they are solid), an invisible fence (hit_), the sun, a
+; lamp, a camera, a crate that falls, where you start and three coins.
+; LoadLevelFile reads it just as it reads a level from Blender.
+;
+; Arrow keys to walk, C for the level's own camera, Esc to quit.
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "A level from Neptune Level Editor"
+AmbientLight 60, 62, 72
+
+level = LoadLevelFile("examples/media/editor_level.rgs")
+If level = 0 Then RuntimeError "could not load editor_level.rgs"
+
+; an object with the property type = spawn marks where the player starts
+start = LevelObject(level, 1, "spawn")
+
+player = CreateSphere(12)
+ScaleEntity player, 0.4, 0.4, 0.4
+EntityColor player, 90, 170, 255
+PositionEntity player, EntityX(start, True), EntityY(start, True), EntityZ(start, True)
+EntityPhysics player, 1, 2, 20
+
+eye = CreateCamera()
+CameraClsColor eye, 120, 160, 210
+
+; the camera placed in the editor is off until the program asks for it
+overview = FindChild(level, "Overview")
+CameraClsColor overview, 120, 160, 210
+useOverview = False
+
+; the lamp is a real light, and its flicker property is ours to use
+lamp = FindChild(level, "Lamp")
+
+; objects are found by their type, and carry their own values
+coinCount = CountLevelObjects(level, "coin")
+Dim coins(coinCount)
+For i = 1 To coinCount
+    coins(i) = LevelObject(level, i, "coin")
+Next
+score = 0
+
+While Not KeyHit(1)
+    push# = 12
+    If KeyDown(200) Then ApplyForce player, 0, 0, push
+    If KeyDown(208) Then ApplyForce player, 0, 0, -push
+    If KeyDown(203) Then ApplyForce player, -push, 0, 0
+    If KeyDown(205) Then ApplyForce player, push, 0, 0
+
+    If KeyHit(46)
+        useOverview = Not useOverview
+        CameraProjMode overview, useOverview
+        CameraProjMode eye, Not useOverview
+    End If
+
+    For i = 1 To coinCount
+        If coins(i) <> 0
+            TurnEntity coins(i), 0, 3, 0
+            If EntityDistance(player, coins(i)) < 0.8
+                score += EntityPropertyInt(coins(i), "value")
+                FreeEntity coins(i)
+                coins(i) = 0
+            End If
+        End If
+    Next
+
+    If EntityPropertyInt(lamp, "flicker") = 1
+        LightColor lamp, 255, 150 + Rnd(40), 70
+    End If
+
+    PositionEntity eye, EntityX(player, True), EntityY(player, True) + 5, EntityZ(player, True) - 8
+    PointEntity eye, player
+
+    UpdateWorld
+    RenderWorld
+    Text 10, 10, "Score " + score + "    arrows: roll    C: level camera    Esc: quit"
+    Flip
+Wend
+End

@@ -18,6 +18,7 @@ three tools for this:
 - [Physics](#physics)
 - [Joints](#joints)
 - [Ragdolls](#ragdolls)
+- [Try it yourself](#try-it-yourself)
 
 ## Collisions
 
@@ -272,5 +273,209 @@ Animate fox, 1
 
 `examples/joints.nb` and `examples/physics.nb` show joints, motors and
 ragdolls in action.
+
+## Try it yourself
+
+All of these use shapes made by the program, so they need no files.
+
+1. **Coin arena.** Put a ball in an arena with four walls and one wall sticking
+   out of the middle. Steer the ball with the arrow keys: it must slide along
+   the walls instead of going through them. Five coins lie about the floor; the
+   ball collects a coin by touching it. Show how many have been collected.
+   *Hint: give the ball and walls their own collision types, give the coins a third type, and read `EntityCollided` after `UpdateWorld`.*
+2. **Shooting gallery.** Six targets slide left and right in a row. Click one
+   with the mouse to knock it out of the game (hide it) and score a point.
+   When all six are gone, say `You win!`
+   *Hint: `EntityPickMode` marks a target as pickable, and `CameraPick` tells which one is under the mouse.*
+3. **Bowling.** Make a floor, a triangle of ten pins (one at the front, then two,
+   three and four behind it) and a ball at the other end. Space rolls the ball
+   at the pins, and the screen counts how many pins have fallen over.
+   *Hint: a pin standing up has its centre high, and a pin lying down has it low, so compare `EntityY` with a height in between.*
+
+### Answers
+
+1.
+
+```basic
+Const TYPE_BALL = 1, TYPE_WALL = 2, TYPE_COIN = 3
+
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 22, -14
+CameraLookAt camera, 0, 0, 0
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 60, 20, 0
+
+floor = CreatePlane()
+EntityColor floor, 60, 100, 70
+
+ball = CreateSphere(24)
+EntityColor ball, 255, 90, 60
+PositionEntity ball, -6, 1, -6
+EntityType ball, TYPE_BALL
+EntityRadius ball, 1
+
+; the four outer walls, then one in the middle
+MakeWall(0, 10, 11, 1)
+MakeWall(0, -10, 11, 1)
+MakeWall(10, 0, 1, 10)
+MakeWall(-10, 0, 1, 10)
+MakeWall(0, 0, 1, 5)
+
+For i = 1 To 5
+    coin = CreateCylinder(16)
+    ScaleEntity coin, 0.6, 0.1, 0.6
+    PositionEntity coin, -8 + i * 3.2, 0.5, Sin(i * 70) * 6
+    EntityColor coin, 255, 210, 40
+    EntityType coin, TYPE_COIN
+    EntityRadius coin, 0.6
+Next
+
+Collisions TYPE_BALL, TYPE_WALL, 2, 2        ; slide along walls
+Collisions TYPE_BALL, TYPE_COIN, 1, 1
+
+collected = 0
+While Not KeyHit(KEY_ESCAPE)
+    If KeyDown(KEY_RIGHT) Then TranslateEntity ball, 0.15, 0, 0
+    If KeyDown(KEY_LEFT) Then TranslateEntity ball, -0.15, 0, 0
+    If KeyDown(KEY_UP) Then TranslateEntity ball, 0, 0, 0.15
+    If KeyDown(KEY_DOWN) Then TranslateEntity ball, 0, 0, -0.15
+    UpdateWorld
+
+    hit = EntityCollided(ball, TYPE_COIN)
+    If hit
+        FreeEntity hit
+        collected = collected + 1
+    EndIf
+
+    RenderWorld
+    Text 10, 10, "Coins: " + collected + " of 5"
+    If collected = 5 Then Text 640, 80, "You got them all!", True, True
+    Flip
+Wend
+
+Function MakeWall(x#, z#, halfWidth#, halfDepth#)
+    wall = CreateCube()
+    ScaleEntity wall, halfWidth, 1.5, halfDepth
+    PositionEntity wall, x, 1.5, z
+    EntityColor wall, 150, 150, 170
+    EntityType wall, TYPE_WALL
+End Function
+```
+
+The ball moves in a straight line each frame, and `UpdateWorld` checks that
+move against the walls (method 2, the real shape of the wall) and slides it
+along them (response 2). The coins are a third type and the ball stops at
+one for a moment, but `EntityCollided` then names it and the program removes
+it with `FreeEntity` and counts it. The `MakeWall` function builds every wall
+the same way, so the five walls take only five lines.
+
+2.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 2, -12
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 40, 20, 0
+CameraClsColor camera, 25, 30, 60
+
+Dim target(5)
+Dim alive(5)
+For i = 0 To 5
+    target(i) = CreateSphere(16)
+    PositionEntity target(i), i * 3 - 7.5, 2, 6
+    EntityColor target(i), 255, 80 + i * 30, 60
+    EntityPickMode target(i), 2
+    alive(i) = True
+Next
+
+score = 0
+While Not KeyHit(KEY_ESCAPE)
+    For i = 0 To 5
+        PositionEntity target(i), i * 3 - 7.5 + Sin(MilliSecs() / 15 + i * 60) * 1.2, 2, 6
+    Next
+
+    If MouseHit(1)
+        hit = CameraPick(camera, MouseX(), MouseY())
+        For i = 0 To 5
+            If hit = target(i) And alive(i)
+                alive(i) = False
+                HideEntity target(i)
+                score = score + 1
+            EndIf
+        Next
+    EndIf
+
+    RenderWorld
+    Text 10, 10, "Hits: " + score + " of 6"
+    If score = 6 Then Text 640, 80, "You win!", True, True
+    Flip
+Wend
+```
+
+`CameraPick` looks along a line from the camera through the mouse position
+and returns the first pickable entity, or 0. The program then looks for that
+handle in the `target` array. `HideEntity` makes the target vanish and stops
+it being picked again, and `alive` makes sure a hit counts only once. The
+targets are moved every frame with `Sin`, using the clock so they slide
+steadily, each a little out of step with its neighbour.
+
+3.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 7, -24
+CameraLookAt camera, 0, 1, 4
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 50, 30, 0
+
+ground = CreateCube()
+ScaleEntity ground, 8, 0.5, 30
+EntityColor ground, 190, 150, 90
+EntityPhysics ground, PHYS_STATIC
+
+Dim pin(9)
+count = 0
+For row = 0 To 3
+    For i = 0 To row
+        p = CreateCylinder(16)
+        ScaleEntity p, 0.3, 0.8, 0.3
+        PositionEntity p, (i - row / 2.0) * 1.2, 1.3, 6 + row * 1.2
+        EntityColor p, 250, 250, 250
+        EntityPhysics p, PHYS_DYNAMIC, SHAPE_CYLINDER, 2
+        pin(count) = p
+        count = count + 1
+    Next
+Next
+
+ball = CreateSphere(16)
+EntityColor ball, 40, 40, 160
+PositionEntity ball, 0, 1.5, -18
+EntityPhysics ball, PHYS_DYNAMIC, SHAPE_SPHERE, 20
+
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_SPACE) Then ApplyImpulse ball, 0, 0, 400
+    UpdateWorld
+
+    fallen = 0
+    For i = 0 To 9
+        If EntityY(pin(i)) < 1.0 Then fallen = fallen + 1
+    Next
+
+    RenderWorld
+    Text 10, 10, "Pins down: " + fallen + " of 10   (Space rolls the ball)"
+    Flip
+Wend
+```
+
+The ground is a static body and everything else is dynamic, so gravity and
+collisions do the work. The pins are placed in rows that get one pin longer,
+each row centred by taking away half of `row` (written `row / 2.0` so the
+half is not lost). `ApplyImpulse` gives the ball a sudden push along z, down
+the lane. A standing pin has its centre about 1.3 above the ground, and a
+fallen one has it lower than 1.0, so counting the pins below that height
+counts the pins that went down.
 
 [Contents](../MANUAL.md) · Previous: [18. 3D models and looks](18-3d-models.md) · Next: [20. AI and pathfinding](20-ai.md)

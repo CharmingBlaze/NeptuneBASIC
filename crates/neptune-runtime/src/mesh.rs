@@ -240,6 +240,20 @@ pub fn vertex_bounds<'a>(it: impl Iterator<Item = &'a Vert>) -> Option<Bounds> {
     Some(it.fold((first, first), |(lo, hi), p| (lo.inf(&p), hi.sup(&p))))
 }
 
+/// Shared sprite quads kept at most (see `World::sprite_quads`).
+const MAX_SPRITE_QUADS: usize = 256;
+
+/// Everything that makes two quads the same geometry, as a map key.
+fn quad_key(verts: &[Vert], tris: &[[u32; 3]]) -> Vec<u32> {
+    let mut key = Vec::with_capacity(verts.len() * 16 + tris.len() * 3);
+    for v in verts {
+        let numbers = v.pos.iter().chain(v.normal.iter()).chain(&v.color).chain(v.uv.iter().flatten());
+        key.extend(numbers.map(|f| f.to_bits()));
+    }
+    key.extend(tris.iter().flatten());
+    key
+}
+
 pub fn empty_mesh_node() -> Node {
     MeshBuilder::new(BaseBuilder::new().with_name("Mesh")).with_surfaces(Vec::new()).build_node()
 }
@@ -389,17 +403,29 @@ impl Host3D<'_> {
                 info.custom.resize(info.verts.len(), Default::default());
                 surface_data_custom(&info.verts, &info.tris, &info.custom)
             };
-            let Ok(node) = self.ent(entity).map(|e| e.node) else {
+            // a sprite's quad is shared with every sprite of the same size
+            let key = (info.custom.is_empty() && info.verts.len() == 4).then(|| quad_key(&info.verts, &info.tris));
+            let Ok((node, is_sprite)) = self.ent(entity).map(|e| (e.node, e.sprite.is_some())) else {
                 self.world.surfaces[i] = None;
                 continue;
+            };
+            let fresh = |data| SurfaceResource::new_ok(fyrox::core::uuid::Uuid::new_v4(), ResourceKind::Embedded, data);
+            let resource = match key.filter(|_| is_sprite) {
+                Some(key) => {
+                    let quads = &mut self.world.sprite_quads;
+                    // sprites whose size changes every frame would fill it up
+                    if quads.len() >= MAX_SPRITE_QUADS && !quads.contains_key(&key) {
+                        quads.clear();
+                    }
+                    quads.entry(key).or_insert_with(|| fresh(data)).clone()
+                }
+                None => fresh(data),
             };
             let graph = self.graph()?;
             if let Some(m) = graph[node].cast_mut::<Mesh>() {
                 if let Some(s) = m.surfaces_mut().get_mut(index) {
                     let material = s.material().clone();
-                    *s = SurfaceBuilder::new(SurfaceResource::new_ok(fyrox::core::uuid::Uuid::new_v4(), ResourceKind::Embedded, data))
-                        .with_material(material)
-                        .build();
+                    *s = SurfaceBuilder::new(resource).with_material(material).build();
                 }
             }
             // new geometry: a baked lightmap no longer fits it
@@ -486,6 +512,24 @@ mod tests {
     fn quad() -> (Vec<Vert>, Vec<[u32; 3]>) {
         let v = |x: f32, y: f32| Vert { pos: Vector3::new(x, y, 0.0), ..Default::default() };
         (vec![v(-1.0, 1.0), v(1.0, 1.0), v(1.0, -1.0), v(-1.0, -1.0)], vec![[0, 1, 2], [0, 2, 3]])
+    }
+
+    #[test]
+    fn sprites_of_one_size_share_a_quad() {
+        use crate::sprite::{quad as sprite_quad, SpriteState};
+        let tris = [[0, 1, 2], [0, 2, 3]];
+        let a = SpriteState { mode: 1, angle: 0.0, scale: (1.0, 1.0), handle: (0.0, 0.0), surface: 1 };
+        // the view mode, the roll and which surface it is do not change the quad
+        let b = SpriteState { mode: 3, angle: 45.0, surface: 2, ..a };
+        assert_eq!(quad_key(&sprite_quad(&a), &tris), quad_key(&sprite_quad(&b), &tris));
+        let scaled = SpriteState { scale: (2.0, 1.0), ..a };
+        assert_ne!(quad_key(&sprite_quad(&a), &tris), quad_key(&sprite_quad(&scaled), &tris));
+        let moved = SpriteState { handle: (0.5, 0.0), ..a };
+        assert_ne!(quad_key(&sprite_quad(&a), &tris), quad_key(&sprite_quad(&moved), &tris));
+        // a vertex colour set on one sprite keeps it apart
+        let mut tinted = sprite_quad(&a);
+        tinted[0].color = [1.0, 0.0, 0.0, 1.0];
+        assert_ne!(quad_key(&sprite_quad(&a), &tris), quad_key(&tinted, &tris));
     }
 
     #[test]

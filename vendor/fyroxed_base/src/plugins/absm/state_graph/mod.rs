@@ -1,0 +1,537 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::fyrox::graph::{PrefabData, SceneGraphNode};
+use crate::fyrox::{
+    core::pool::{ErasedHandle, Handle},
+    generic_animation::machine::{Machine, MachineLayer, State, Transition},
+    graph::SceneGraph,
+    gui::{
+        border::BorderBuilder,
+        message::{MessageDirection, UiMessage},
+        widget::{WidgetBuilder, WidgetMessage},
+        window::{WindowBuilder, WindowTitle},
+        BuildContext, Thickness, UiNode, UserInterface,
+    },
+};
+use crate::plugins::absm::{
+    canvas::{AbsmCanvas, AbsmCanvasBuilder, AbsmCanvasMessage},
+    command::{AddTransitionCommand, MoveStateNodeCommand},
+    fetch_selection,
+    node::{AbsmNode, AbsmNodeBuilder, AbsmNodeMessage},
+    selection::{AbsmSelection, SelectedEntity},
+    state_graph::context::{CanvasContextMenu, NodeContextMenu, TransitionContextMenu},
+    transition::{TransitionBuilder, TransitionMessage, TransitionView},
+    AbsmEditor,
+};
+use crate::{
+    command::{Command, CommandGroup},
+    message::MessageSender,
+    scene::{commands::ChangeSelectionCommand, Selection},
+};
+
+use fyrox::core::reflect::Reflect;
+use fyrox::gui::style::resource::StyleResourceExt;
+use fyrox::gui::style::Style;
+use fyrox::gui::window::Window;
+use std::cmp::Ordering;
+
+mod context;
+
+pub struct StateGraphViewer {
+    pub window: Handle<Window>,
+    pub canvas: Handle<AbsmCanvas>,
+    canvas_context_menu: CanvasContextMenu,
+    node_context_menu: NodeContextMenu,
+    transition_context_menu: TransitionContextMenu,
+    prev_absm: ErasedHandle,
+    prev_layer: Option<usize>,
+}
+
+fn fetch_state_node_model_handle<N>(
+    handle: Handle<UiNode>,
+    ui: &UserInterface,
+) -> Handle<State<Handle<N>>>
+where
+    N: Reflect,
+{
+    ui.node(handle)
+        .query_component::<AbsmNode<State<Handle<N>>>>()
+        .unwrap()
+        .model_handle
+}
+
+impl StateGraphViewer {
+    pub fn new(ctx: &mut BuildContext) -> Self {
+        let mut node_context_menu = NodeContextMenu::new(ctx);
+        let mut canvas_context_menu = CanvasContextMenu::new(ctx);
+        let transition_context_menu = TransitionContextMenu::new(ctx);
+
+        let canvas = AbsmCanvasBuilder::new(
+            WidgetBuilder::new().with_context_menu(canvas_context_menu.menu.clone()),
+        )
+        .build(ctx);
+
+        let window = WindowBuilder::new(WidgetBuilder::new())
+            .with_title(WindowTitle::text("State Graph"))
+            .with_tab_label("State Graph")
+            .can_close(false)
+            .can_minimize(false)
+            .with_content(
+                BorderBuilder::new(
+                    WidgetBuilder::new()
+                        .with_margin(Thickness::uniform(1.0))
+                        .with_child(canvas),
+                )
+                .build(ctx),
+            )
+            .build(ctx);
+
+        canvas_context_menu.canvas = canvas;
+        canvas_context_menu.node_context_menu = Some(node_context_menu.menu.clone());
+        node_context_menu.canvas = canvas;
+
+        Self {
+            window,
+            canvas,
+            node_context_menu,
+            canvas_context_menu,
+            transition_context_menu,
+            prev_absm: Default::default(),
+            prev_layer: None,
+        }
+    }
+
+    pub fn clear(&self, ui: &UserInterface) {
+        for &child in ui[self.canvas].children() {
+            ui.send(child, WidgetMessage::Remove);
+        }
+    }
+
+    pub fn activate_transition<N>(
+        &self,
+        ui: &UserInterface,
+        transition: Handle<Transition<Handle<N>>>,
+    ) where
+        N: Reflect,
+    {
+        if let Some(view_handle) = ui[self.canvas].children().iter().cloned().find(|c| {
+            ui.node(*c)
+                .query_component::<TransitionView>()
+                .is_some_and(|transition_view_ref| {
+                    transition
+                        == Handle::<Transition<Handle<N>>>::from(transition_view_ref.model_handle)
+                })
+        }) {
+            ui.send(view_handle, TransitionMessage::Activate);
+        }
+    }
+
+    pub fn activate_state<N>(&self, ui: &UserInterface, state: Handle<State<Handle<N>>>)
+    where
+        N: Reflect,
+    {
+        for (state_view_handle, state_view_ref) in
+            ui[self.canvas].children().iter().cloned().filter_map(|c| {
+                ui.node(c)
+                    .query_component::<AbsmNode<State<Handle<N>>>>()
+                    .map(|state_view_ref| (c, state_view_ref))
+            })
+        {
+            ui.send(
+                state_view_handle,
+                AbsmNodeMessage::SetActive(state_view_ref.model_handle == state),
+            );
+        }
+    }
+
+    pub fn handle_ui_message<P, G, N>(
+        &mut self,
+        message: &UiMessage,
+        ui: &mut UserInterface,
+        sender: &MessageSender,
+        absm_node_handle: Handle<N>,
+        machine: &Machine<Handle<N>>,
+        layer_index: usize,
+        editor_selection: &Selection,
+    ) where
+        P: PrefabData<Graph = G>,
+        G: SceneGraph<Node = N, Prefab = P>,
+        N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+    {
+        if message.destination() == self.canvas {
+            if let Some(msg) = message.data::<AbsmCanvasMessage>() {
+                match msg {
+                    AbsmCanvasMessage::CommitTransition {
+                        source_node,
+                        dest_node,
+                    } => {
+                        if message.direction() == MessageDirection::FromWidget {
+                            let source = fetch_state_node_model_handle(*source_node, ui);
+                            let dest = fetch_state_node_model_handle(*dest_node, ui);
+                            sender.do_command(AddTransitionCommand::new(
+                                absm_node_handle,
+                                layer_index,
+                                Transition::new("Transition", source, dest, 1.0, ""),
+                            ));
+                        }
+                    }
+                    AbsmCanvasMessage::CommitDrag { entries } => {
+                        let commands = entries
+                            .iter()
+                            .map(|e| {
+                                let state_handle = fetch_state_node_model_handle(e.node, ui);
+                                let new_position = ui.node(e.node).actual_local_position();
+
+                                Command::new(MoveStateNodeCommand::new(
+                                    absm_node_handle,
+                                    state_handle,
+                                    layer_index,
+                                    e.initial_position,
+                                    new_position,
+                                ))
+                            })
+                            .collect::<Vec<_>>();
+
+                        sender.do_command(CommandGroup::from(commands));
+                    }
+                    AbsmCanvasMessage::SelectionChanged(selection) => {
+                        if message.direction() == MessageDirection::FromWidget {
+                            let selection = Selection::new(AbsmSelection {
+                                absm_node_handle,
+                                layer: Some(layer_index),
+                                entities: selection
+                                    .iter()
+                                    .filter_map(|n| {
+                                        let node_ref = ui.node(*n);
+
+                                        if let Some(state_node) =
+                                            node_ref.query_component::<AbsmNode<State<Handle<N>>>>()
+                                        {
+                                            Some(SelectedEntity::State(state_node.model_handle))
+                                        } else {
+                                            node_ref.query_component::<TransitionView>().map(
+                                                |state_node| {
+                                                    SelectedEntity::Transition(
+                                                        state_node.model_handle.into(),
+                                                    )
+                                                },
+                                            )
+                                        }
+                                    })
+                                    .collect::<Vec<_>>(),
+                            });
+
+                            if !selection.is_empty() && &selection != editor_selection {
+                                sender.do_command(ChangeSelectionCommand::new(selection));
+                            }
+                        }
+                    }
+                    AbsmCanvasMessage::CommitTransitionToAllNodes {
+                        source_node,
+                        dest_nodes,
+                    } => {
+                        if message.direction() == MessageDirection::FromWidget {
+                            let source = fetch_state_node_model_handle(*source_node, ui);
+                            let commands = dest_nodes
+                                .iter()
+                                .map(|node| {
+                                    let dest_state = fetch_state_node_model_handle(*node, ui);
+                                    Command::new(AddTransitionCommand::new(
+                                        absm_node_handle,
+                                        layer_index,
+                                        Transition::new("Transition", source, dest_state, 1.0, ""),
+                                    ))
+                                })
+                                .collect::<Vec<_>>();
+
+                            sender.do_command(CommandGroup::from(commands));
+                        }
+                    }
+                    _ => (),
+                }
+            }
+        }
+
+        self.node_context_menu.handle_ui_message(
+            message,
+            ui,
+            sender,
+            absm_node_handle,
+            machine,
+            layer_index,
+            editor_selection,
+        );
+        self.canvas_context_menu.handle_ui_message(
+            sender,
+            message,
+            ui,
+            absm_node_handle,
+            layer_index,
+        );
+        self.transition_context_menu.handle_ui_message(
+            message,
+            ui,
+            sender,
+            absm_node_handle,
+            layer_index,
+            editor_selection,
+        );
+    }
+
+    pub fn sync_to_model<P, G, N>(
+        &mut self,
+        machine_layer: &MachineLayer<Handle<N>>,
+        ui: &mut UserInterface,
+        editor_selection: &Selection,
+    ) where
+        P: PrefabData<Graph = G>,
+        G: SceneGraph<Node = N, Prefab = P>,
+        N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+    {
+        let canvas = &ui[self.canvas];
+        let current_selection = fetch_selection(editor_selection);
+
+        let mut states = Vec::new();
+        let mut transitions = Vec::new();
+        if self.prev_layer != current_selection.layer
+            || current_selection.absm_node_handle != Handle::<N>::from(self.prev_absm)
+        {
+            self.prev_layer = current_selection.layer;
+            self.prev_absm = current_selection.absm_node_handle.into();
+            // Remove content of the previous layer/absm.
+            self.clear(ui);
+        } else {
+            states = canvas
+                .children()
+                .iter()
+                .cloned()
+                .filter(|c| ui.node(*c).has_component::<AbsmNode<State<Handle<N>>>>())
+                .map(|c| c.to_variant::<AbsmNode<State<Handle<N>>>>())
+                .collect::<Vec<_>>();
+
+            transitions = canvas
+                .children()
+                .iter()
+                .cloned()
+                .filter(|c| ui.node(*c).has_component::<TransitionView>())
+                .map(|c| c.to_variant::<TransitionView>())
+                .collect::<Vec<_>>();
+        }
+
+        match states
+            .len()
+            .cmp(&(machine_layer.states().alive_count() as usize))
+        {
+            Ordering::Less => {
+                // A state was added.
+                for (state_handle, state) in machine_layer.states().pair_iter() {
+                    if states
+                        .iter()
+                        .all(|state_view| ui[*state_view].model_handle != state_handle)
+                    {
+                        let state_view_handle = AbsmNodeBuilder::new(
+                            WidgetBuilder::new()
+                                .with_context_menu(self.node_context_menu.menu.clone())
+                                .with_desired_position(state.position),
+                        )
+                        .with_normal_brush(if state_handle == machine_layer.entry_state() {
+                            ui.style.property(AbsmEditor::NORMAL_ROOT_COLOR)
+                        } else {
+                            ui.style.property(Style::BRUSH_LIGHTER_PRIMARY)
+                        })
+                        .with_selected_brush(if state_handle == machine_layer.entry_state() {
+                            ui.style.property(AbsmEditor::SELECTED_ROOT_COLOR)
+                        } else {
+                            ui.style.property(Style::BRUSH_LIGHTER)
+                        })
+                        .with_model_handle(state_handle)
+                        .with_name(state.name.clone())
+                        .build(&mut ui.build_ctx());
+
+                        states.push(state_view_handle.to_base());
+
+                        ui.send_sync(state_view_handle, WidgetMessage::link_with(self.canvas));
+                    }
+                }
+            }
+            Ordering::Greater => {
+                // A state was removed.
+                for (state_view_handle, state_model_handle) in states
+                    .clone()
+                    .iter()
+                    .cloned()
+                    .map(|state_view| (state_view, ui[state_view].model_handle))
+                {
+                    if machine_layer
+                        .states()
+                        .pair_iter()
+                        .all(|(h, _)| h != state_model_handle)
+                    {
+                        ui.send_sync(state_view_handle, WidgetMessage::Remove);
+                        if let Some(position) = states.iter().position(|s| *s == state_view_handle)
+                        {
+                            states.remove(position);
+                        }
+                    }
+                }
+            }
+            _ => (),
+        }
+
+        // Sync state nodes.
+        for state in states.iter() {
+            let state_node = &ui[*state];
+            let state_model_handle = state_node.model_handle;
+            let state_model_ref = &machine_layer.states()[state_node.model_handle];
+
+            if state_model_ref.name != state_node.name_value {
+                ui.send_sync(*state, AbsmNodeMessage::Name(state_model_ref.name.clone()));
+            }
+
+            ui.send_sync(
+                *state,
+                WidgetMessage::DesiredPosition(state_model_ref.position),
+            );
+
+            ui.send_sync(
+                *state,
+                AbsmNodeMessage::NormalBrush(
+                    if state_model_handle == machine_layer.entry_state() {
+                        ui.style.property(AbsmEditor::NORMAL_ROOT_COLOR)
+                    } else {
+                        ui.style.property(Style::BRUSH_LIGHTER_PRIMARY)
+                    },
+                ),
+            );
+
+            ui.send_sync(
+                *state,
+                AbsmNodeMessage::SelectedBrush(
+                    if state_model_handle == machine_layer.entry_state() {
+                        ui.style.property(AbsmEditor::SELECTED_ROOT_COLOR)
+                    } else {
+                        ui.style.property(Style::BRUSH_LIGHTER)
+                    },
+                ),
+            );
+        }
+
+        // Force update layout to be able to fetch positions of nodes for transitions.
+        ui.update_layout(ui.screen_size());
+
+        // Sync transitions.
+        match transitions
+            .len()
+            .cmp(&(machine_layer.transitions().alive_count() as usize))
+        {
+            Ordering::Less => {
+                // A transition was added.
+                for (transition_handle, transition) in machine_layer.transitions().pair_iter() {
+                    if transitions.iter().all(|transition_view| {
+                        transition_handle
+                            != Handle::<Transition<Handle<N>>>::from(
+                                ui[*transition_view].model_handle,
+                            )
+                    }) {
+                        fn find_state_view<N: Reflect>(
+                            state_handle: Handle<State<Handle<N>>>,
+                            states: &[Handle<AbsmNode<State<Handle<N>>>>],
+                            ui: &UserInterface,
+                        ) -> Handle<AbsmNode<State<Handle<N>>>> {
+                            states
+                                .iter()
+                                .find(|s| ui[**s].model_handle == state_handle)
+                                .cloned()
+                                .unwrap_or_default()
+                        }
+
+                        let transition_view = TransitionBuilder::new(
+                            WidgetBuilder::new()
+                                .with_context_menu(self.transition_context_menu.menu.clone()),
+                        )
+                        .with_source(find_state_view(transition.source(), &states, ui).to_base())
+                        .with_dest(find_state_view(transition.dest(), &states, ui).to_base())
+                        .build(transition_handle.into(), &mut ui.build_ctx());
+
+                        ui.send_sync(transition_view, WidgetMessage::link_with(self.canvas));
+                        ui.send_sync(transition_view, WidgetMessage::Lowermost);
+
+                        transitions.push(transition_view);
+                    }
+                }
+            }
+
+            Ordering::Greater => {
+                // A transition was removed.
+                for (transition_view_handle, transition_model_handle) in transitions
+                    .clone()
+                    .iter()
+                    .cloned()
+                    .map(|transition_view| (transition_view, ui[transition_view].model_handle))
+                {
+                    if machine_layer.transitions().pair_iter().all(|(h, _)| {
+                        h != Handle::<Transition<Handle<N>>>::from(transition_model_handle)
+                    }) {
+                        ui.send_sync(transition_view_handle, WidgetMessage::Remove);
+
+                        if let Some(position) = transitions
+                            .iter()
+                            .position(|s| *s == transition_view_handle)
+                        {
+                            transitions.remove(position);
+                        }
+                    }
+                }
+            }
+            Ordering::Equal => {}
+        }
+
+        // Sync selection.
+        let new_selection = current_selection
+            .entities
+            .iter()
+            .filter_map(|entry| match entry {
+                SelectedEntity::Transition(transition) => transitions
+                    .iter()
+                    .cloned()
+                    .find(|t| {
+                        *transition == Handle::<Transition<Handle<N>>>::from(ui[*t].model_handle)
+                    })
+                    .map(|c| c.to_base()),
+                SelectedEntity::State(state) => states
+                    .iter()
+                    .cloned()
+                    .find(|s| ui[*s].model_handle == *state)
+                    .map(|c| c.to_base()),
+                SelectedEntity::PoseNode(_) => {
+                    // No such nodes possible to have on this canvas.
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        ui.send_sync(
+            self.canvas,
+            AbsmCanvasMessage::SelectionChanged(new_selection),
+        );
+        ui.send_sync(self.canvas, AbsmCanvasMessage::ForceSyncDependentObjects);
+    }
+}

@@ -9,10 +9,13 @@
 //! assert_eq!(out, "3.0\n");
 //! ```
 
+pub mod debug;
 pub mod dynlib;
 pub mod ease;
 pub mod net;
 pub mod netgame;
+#[cfg(feature = "online")]
+pub mod netlink;
 pub mod plugin;
 pub mod settings;
 pub mod stdlib;
@@ -21,7 +24,7 @@ pub mod vm;
 
 pub use stdlib::{base_env, Core, Output};
 pub use value::Value;
-pub use vm::{Host, NativeCtx, NoHost, RuntimeError, Status, Vm};
+pub use vm::{CallSite, Host, NativeCtx, NoHost, RuntimeError, Status, Vm};
 
 /// Compiles and runs a console program, capturing its output.
 /// Returns compiler diagnostics or the runtime error as `Err`.
@@ -36,7 +39,7 @@ pub fn run_source_captured(src: &str) -> Result<String, String> {
     loop {
         match vm.run(&mut NoHost) {
             Ok(Status::Finished) => return Ok(vm.core.take_output()),
-            Ok(Status::Yielded) => continue,
+            Ok(Status::Yielded | Status::Paused) => continue,
             Err(e) => return Err(format!("{}{e}", vm.core.take_output())),
         }
     }

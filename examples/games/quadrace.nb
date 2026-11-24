@@ -1,0 +1,333 @@
+; FOUR WHEELERS - a race up and over snowy mountains, in the style of a 1990s console.
+; Run from the repository root:  neptune run examples/games/quadrace.nb
+;
+;   W / S ........ throttle and brake        A / D ........ steer
+;   Space ........ a little hop              R ............ back on the track
+;   P ............ let the computer ride     Esc .......... quit
+;
+; The shared look, track building and vehicle rules are in retro64.nb. This
+; file adds the mountains: a track that really climbs from a valley meadow to
+; a snowy pass and back, pine forests that stop at the tree line, and snow that
+; only falls once you are high enough.
+
+Include "retro64.nb"
+
+SeedRnd 33
+
+Const TRACK_HALF# = 9           ; half the width of the track, in metres
+Const TRACK_EDGE# = 16          ; how far it fades into the mountain
+Const QUAD_TOP# = 33            ; metres a second: about 120 km/h
+Const RACE_LAPS = 2
+Const SNOW_LINE# = 86           ; height where the ground turns white
+Const TREE_LINE# = 92           ; no trees above this height
+
+; ---- a clear, cold morning ----------------------------------------------------
+RetroWindow "Four Wheelers", 206, 220, 240, 170, 720
+SetSun 0.55, 0.62, -0.56, 255, 240, 214, 136, 150, 184
+MakeSky 44, 104, 202, 206, 220, 240, 255, 250, 245, 0.42, 255, 244, 214
+InitBeeps
+
+; ---- the track ------------------------------------------------------------------
+LandSetup 256, 3
+TrackPoint -240, -280 : TrackPoint -60, -300 : TrackPoint 130, -270
+TrackPoint 280, -220  : TrackPoint 320, -80  : TrackPoint 230, 10
+TrackPoint 290, 130   : TrackPoint 260, 270  : TrackPoint 110, 310
+TrackPoint -20, 230   : TrackPoint 70, 110   : TrackPoint -30, 20
+TrackPoint -140, 100  : TrackPoint -120, 240 : TrackPoint -250, 300
+TrackPoint -330, 190  : TrackPoint -310, 30  : TrackPoint -200, -40
+TrackPoint -310, -160
+TrackBuild 2.5
+
+; Height is decided here, not left to chance: the track rises through half of
+; the lap to a pass at about 110 metres, then runs back down to the valley.
+For s = 0 To trackCount - 1
+    t# = Float(s) / trackCount
+    trackY(s) = 16 + 47 * (1 - Cos(t * 360)) + Sin(t * 360 * 5) * 5
+Next
+TrackSmooth 30
+
+; ---- the mountains ----------------------------------------------------------------
+; "Ridged" noise: fold ordinary noise at its midpoint and turn it upside down.
+; Soft hills become sharp ridgelines.
+TrackStamp 126, 5
+For j = 0 To mapN
+    For i = 0 To mapN
+        x# = GridX(i) : z# = GridZ(j)
+        n# = Fractal(x * 0.0065 + 21, z * 0.0065 + 4, 5)
+        ridge# = 1 - Abs(n * 2 - 1)
+        mountain# = 34 + ridge * ridge * 175 + Fractal(x * 0.03, z * 0.03, 3) * 12
+        ; A wall of high peaks closes off the edge of the map.
+        mountain = mountain + SmoothStep(300, 378, Max(Abs(x), Abs(z))) * 150
+        s = tNear(i, j)
+        If s >= 0
+            ; near the track, the land settles to the height of the track
+            mountain = trackY(s) + (mountain - trackY(s)) * SmoothStep(16, 118, TrackDistance(i, j))
+        End If
+        hMap(i, j) = mountain
+    Next
+Next
+
+; Jumps go on after the valley is shaped, so they stay crisp.
+TrackJump ctrlSample(1) + 18, 8, 4
+TrackWhoops ctrlSample(3) + 8, 6, 0.8
+TrackJump ctrlSample(5) + 10, 7, 3.5
+TrackJump ctrlSample(8) + 14, 9, 5
+TrackJump ctrlSample(13) + 6, 8, 4.5
+TrackWhoops ctrlSample(15) + 8, 5, 0.9
+TrackJump ctrlSample(17) + 8, 8, 4
+
+TrackStamp TRACK_HALF + TRACK_EDGE + 3
+TrackCarve TRACK_HALF, TRACK_EDGE
+
+; ---- painting -----------------------------------------------------------------------
+meadow = RGB(104, 160, 68)
+pasture = RGB(138, 170, 76)
+scree = RGB(136, 126, 120)
+snow = RGB(244, 246, 252)
+mud = RGB(142, 108, 78)
+packed = RGB(196, 192, 202)
+For j = 0 To mapN
+    For i = 0 To mapN
+        x# = GridX(i) : z# = GridZ(j)
+        y# = hMap(i, j)
+        ; the wobble makes snow patches and grassy tongues, not a ruled line
+        wobble# = (Fractal(x * 0.05 + 2, z * 0.05 + 8, 3) - 0.5) * 22
+        c = MixRGB(meadow, pasture, Noise2(x * 0.03, z * 0.03))
+        slope# = Abs(hMap(Min(i + 1, mapN), j) - y) + Abs(hMap(i, Min(j + 1, mapN)) - y)
+        c = MixRGB(c, scree, SmoothStep(1.8, 3.2, slope))     ; steep ground is bare
+        c = MixRGB(c, snow, SmoothStep(SNOW_LINE - 6, SNOW_LINE + 6, y + wobble))
+        d# = TrackDistance(i, j)
+        road = MixRGB(mud, packed, SmoothStep(SNOW_LINE - 8, SNOW_LINE + 2, y))
+        c = MixRGB(road, c, SmoothStep(TRACK_HALF - 1, TRACK_HALF + 2.5, d))
+        cMap(i, j) = JitterRGB(c, 6)
+    Next
+Next
+BuildLand MakeDetailTexture(205, 255, 16), 3
+UpdateWorld : RenderWorld
+
+; ---- scenery --------------------------------------------------------------------------
+PropsBegin
+; A dense forest: throw darts, and keep the ones in the tree zone.
+placed = 0
+tries = 0
+While placed < 620 And tries < 20000
+    tries = tries + 1
+    x# = Rnd(-375, 375)
+    z# = Rnd(-375, 375)
+    y# = GroundY(x, z)
+    If y < TREE_LINE And TrackDistanceAt(x, z) > TRACK_HALF + 4 And SlopeAt(x, z) < 0.9
+        If Rand(1, 12) = 1
+            PropRock x, y, z, Rnd(0.8, 2.6), RGB(134, 128, 126)
+        Else
+            ; darker pines, with paler ones the higher they grow
+            leaves = MixRGB(RGB(34, 90, 56), RGB(90, 130, 96), y / TREE_LINE)
+            PropPine x, y - 0.2, z, Rnd(1.3, 2.5), JitterRGB(leaves, 10)
+        End If
+        placed = placed + 1
+    End If
+Wend
+
+; Standing stones above the trees, and little cairns where the snow is.
+placed = 0
+tries = 0
+While placed < 90 And tries < 6000
+    tries = tries + 1
+    x# = Rnd(-360, 360)
+    z# = Rnd(-360, 360)
+    y# = GroundY(x, z)
+    If y >= TREE_LINE And TrackDistanceAt(x, z) > TRACK_HALF + 4 And SlopeAt(x, z) < 1.2
+        PropRock x, y, z, Rnd(1, 3.4), RGB(122, 118, 122)
+        placed = placed + 1
+    End If
+Wend
+
+; A log cabin with a steep roof and a chimney.
+Function PropCabin(x#, y#, z#, yaw#)
+    PropBox x, y - 0.4, z, 5, 4.6, 3.6, yaw, RGB(126, 84, 50)
+    co# = Cos(yaw) : si# = Sin(yaw)
+    propCX = x : propCY = y + 3 : propCZ = z
+    ridgeY# = y + 7.4
+    For side = -1 To 1 Step 2
+        PropQuad x - co * 5.5 - si * side * 4.3, y + 4, z - si * 5.5 + co * side * 4.3, x + co * 5.5 - si * side * 4.3, y + 4, z + si * 5.5 + co * side * 4.3, x + co * 5.5, ridgeY, z + si * 5.5, x - co * 5.5, ridgeY, z - si * 5.5, RGB(226, 232, 244)
+        PropTri x + side * co * 5, y + 4.2, z + side * si * 5, x + side * co * 5 - si * 3.6, y + 4.2, z + side * si * 5 + co * 3.6, x + side * co * 5, ridgeY - 0.2, z + side * si * 5, RGB(126, 84, 50)
+        PropTri x + side * co * 5, y + 4.2, z + side * si * 5, x + side * co * 5 + si * 3.6, y + 4.2, z + side * si * 5 - co * 3.6, x + side * co * 5, ridgeY - 0.2, z + side * si * 5, RGB(126, 84, 50)
+    Next
+    PropBox x + co * 2.5, y + 5, z + si * 2.5, 0.6, 3.8, 0.6, yaw, RGB(120, 116, 120)
+    AddSolid x, z, 5.6
+End Function
+
+For k = 0 To 7
+    s = (k * 87 + 22) Mod trackCount
+    side = 1
+    If k Mod 2 = 1 Then side = -1
+    x# = trackX(s) + trackDZ(s) * side * (TRACK_HALF + 15)
+    z# = trackZ(s) - trackDX(s) * side * (TRACK_HALF + 15)
+    If GroundY(x, z) < TREE_LINE Then PropCabin x, GroundY(x, z), z, Rnd(180)
+Next
+
+; Fence posts and hay bales along the valley, and marker poles in the snow,
+; because the track is hard to see up there.
+For s = 0 To trackCount - 1 Step 9
+    For side = -1 To 1 Step 2
+        x# = trackX(s) + trackDZ(s) * side * (TRACK_HALF + 2)
+        z# = trackZ(s) - trackDX(s) * side * (TRACK_HALF + 2)
+        y# = GroundY(x, z)
+        If y > SNOW_LINE - 4
+            PropTube x, y - 0.2, z, 0.1, 0.1, 2.8, 4, RGB(230, 70, 50)
+        ElseIf (s / 9) Mod 3 = 0
+            PropBox x, y, z, 0.8, 1, 0.8, Rnd(90), RGB(214, 184, 100)
+            AddSolid x, z, 1
+        Else
+            PropTube x, y - 0.2, z, 0.12, 0.12, 1.5, 4, RGB(120, 90, 60)
+        End If
+    Next
+Next
+
+PropArch 0, TRACK_HALF + 1.5, 7, RGB(240, 80, 50), RGB(250, 250, 240)
+PropsEnd
+FarMountains 1700, 0, 420, 56, RGB(150, 170, 208), RGB(240, 244, 252)
+
+; ---- snow: one emitter that follows the camera ------------------------------------
+snowfall = CreateEmitter(MakePuffTexture())
+EmitterShape snowfall, 1, 90, 2, 90
+EmitterMax snowfall, 900
+EmitterLife snowfall, 3, 4.5
+EmitterVelocity snowfall, -3, -9, 2, 1.5
+EmitterSize snowfall, 0.32, 0
+EmitterColor snowfall, 255, 255, 255, 230
+EmitterFadeColor snowfall, 255, 255, 255, 120
+
+; ---- the four-wheelers --------------------------------------------------------------
+Function BuildQuad(v.Rider)
+    b = v\body
+    v\radius = 0.5
+    ; the back wheels are fixed; the front ones hang from pivots that steer
+    v\wheel1 = PartWheel(b, -0.78, 0.5, -0.8, 0.5, 0.2)
+    v\wheel2 = PartWheel(b, 0.78, 0.5, -0.8, 0.5, 0.2)
+    v\steer1 = CreatePivot(b)
+    PositionEntity v\steer1, -0.78, 0.5, 0.95
+    v\wheel3 = PartWheel(v\steer1, 0, 0, 0, 0.5, 0.2)
+    v\steer2 = CreatePivot(b)
+    PositionEntity v\steer2, 0.78, 0.5, 0.95
+    v\wheel4 = PartWheel(v\steer2, 0, 0, 0, 0.5, 0.2)
+
+    PartBox b, 0, 0.72, 0, 0.42, 0.2, 1.1, 54, 54, 62                  ; frame
+    PartBox b, 0, 1.05, 0.72, 0.62, 0.1, 0.46, v\r, v\g, v\b           ; front mudguards
+    PartBox b, 0, 1.05, -0.86, 0.62, 0.1, 0.46, v\r, v\g, v\b          ; rear mudguards
+    PartBox b, 0, 1.12, 0.22, 0.3, 0.17, 0.32, v\r, v\g, v\b           ; tank
+    PartBox b, 0, 1.15, -0.32, 0.27, 0.11, 0.42, 30, 30, 36            ; seat
+    PartBox b, 0, 1.34, 1.02, 0.5, 0.03, 0.26, 180, 180, 190           ; front rack
+
+    handlebars = CreatePivot(b)
+    PositionEntity handlebars, 0, 1.5, 0.55
+    PartBox handlebars, 0, -0.14, 0, 0.04, 0.24, 0.04, 70, 70, 78
+    PartBox handlebars, 0, 0.08, 0, 0.5, 0.035, 0.035, 30, 30, 36
+
+    PartBox b, 0, 1.7, -0.22, 0.25, 0.36, 0.16, v\r, v\g, v\b          ; coat
+    For side = -1 To 1 Step 2
+        PartBox b, side * 0.3, 1.25, -0.08, 0.1, 0.3, 0.13, 40, 44, 84   ; leg
+        PartBox b, side * 0.34, 1.72, 0.14, 0.07, 0.08, 0.36, v\r, v\g, v\b ; arm
+    Next
+    PartBall b, 0, 2.22, -0.15, 0.23, 0.23, 0.27, 240, 240, 245        ; helmet
+    PartBox b, 0, 2.24, 0.12, 0.18, 0.07, 0.03, 20, 20, 40             ; visor
+
+    ; Mud in the valley, snow on the pass. The colours are set each frame.
+    v\dust = CreateEmitter(MakePuffTexture())
+    EmitterMax v\dust, 120
+    EmitterRate v\dust, 0
+    EmitterLife v\dust, 0.35, 0.8
+    EmitterVelocity v\dust, 0, 2, 0, 1.6
+    EmitterSize v\dust, 0.5, 2
+    EmitterGravity v\dust, 0, -3, 0
+End Function
+
+Function AddQuad.Rider(name$, isPlayer, row, side, r, g, b, skill#)
+    v.Rider = NewRider(name, isPlayer, -4 - row * 6, side * 3.6, QUAD_TOP, 15.5, 108, r, g, b)
+    v\skill = skill
+    BuildQuad v
+    Return v
+End Function
+
+player = AddQuad("YOU", True, 2, 1, 225, 56, 48, 1)
+AddQuad "GRIZZLY", False, 0, -1, 240, 190, 50, 0.97
+AddQuad "RIDGE", False, 0, 1, 70, 190, 90, 0.93
+AddQuad "SUMMIT", False, 1, -1, 70, 130, 240, 0.9
+AddQuad "TIMBER", False, 1, 1, 240, 130, 50, 0.87
+AddQuad "PINE", False, 2, -1, 190, 100, 200, 0.83
+
+engineSound = MakeEngine("quad", 48, 0.1)
+If engineSound
+    SoundVolume engineSound, 0.5
+    engineChannel = PlaySound(engineSound)
+End If
+
+StartRace RACE_LAPS
+ChaseCamera player, 8, 3.6, True, 0.02
+seconds# = 0
+
+; ---- the main loop --------------------------------------------------------------------
+While Not KeyHit(KEY_ESCAPE)
+    dt# = LastFrameTime()
+    seconds = seconds + dt
+    UpdateRace dt
+
+    If ActionHit("reset")
+        If raceState = STATE_DONE Then RestartRace Else RespawnRider player
+    End If
+
+    For v.Rider = Each Rider
+        c = v\ctrl
+        x# = CharX(c) : z# = CharZ(c)
+        ; the forest floor and deep snow are slower than the track
+        limit# = v\top * RubberBand(v)
+        If TrackDistanceAt(x, z) > TRACK_HALF + 3 Then limit = limit * 0.6
+
+        If raceState = STATE_COUNTDOWN
+            DriveRider v, 0, 0, 0, limit, dt
+        ElseIf v\isPlayer And autopilot = False And raceState = STATE_RACE
+            If ActionHit("jump") Then CharJump c
+            DriveRider v, ActionValue("gas"), ActionValue("brake"), ActionValue("left") - ActionValue("right"), limit, dt
+        Else
+            ThinkAI v, TRACK_HALF, seconds
+            If v\finished Then aiThrottle = aiThrottle * 0.5
+            DriveRider v, aiThrottle, aiBrake, aiSteer, limit, dt
+        End If
+
+        ; A quad is wide, so it leans less than a bike, and noses up over jumps.
+        pitch# = 0
+        If CharGrounded(c) = 0 Then pitch = -ATan2(CharVY(c), Max(4, v\speed)) * 0.5
+        PoseRider v, CharGroundNX(c), CharGroundNY(c), CharGroundNZ(c), 0, pitch, v\steer * 11 * Min(1, Abs(v\speed) / 14), dt
+
+        y# = CharY(c)
+        If y > SNOW_LINE - 6
+            EmitterColor v\dust, 244, 246, 252, 190
+            EmitterFadeColor v\dust, 244, 246, 252, 0
+        Else
+            EmitterColor v\dust, 150, 118, 88, 180
+            EmitterFadeColor v\dust, 180, 150, 120, 0
+        End If
+        PositionEntity v\dust, CharX(c) + Sin(v\yaw) * 1.1, y + 0.2, CharZ(c) - Cos(v\yaw) * 1.1
+        If CharGrounded(c)
+            EmitterRate v\dust, Abs(v\speed) * 2.2
+        Else
+            EmitterRate v\dust, 0
+        End If
+
+        CheckStuck v, dt
+    Next
+
+    If CharLanded(player\ctrl) And CharImpact(player\ctrl) > 14 Then CameraShake camera, 0.45, 0.25
+    If engineChannel Then ChannelPitch engineChannel, 11025 * (0.8 + 1.4 * Abs(player\speed) / QUAD_TOP)
+
+    ; Snow is only falling high up, so it thickens as you climb.
+    PositionEntity snowfall, EntityX(camera) - Sin(player\yaw) * 30, EntityY(camera) + 24, EntityZ(camera) + Cos(player\yaw) * 30
+    EmitterRate snowfall, Clamp((EntityY(camera) - 58) * 6, 0, 240)
+
+    ChaseCamera player, 8, 3.6, False, dt
+    UpdateWorld
+    RenderWorld
+
+    DrawRaceHud "FOUR WHEELERS"
+    RetroFlip
+Wend
+End

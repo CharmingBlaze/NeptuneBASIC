@@ -1,0 +1,178 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::{
+    command::make_command,
+    fyrox::{
+        core::{log::Log, pool::Handle},
+        generic_animation::machine::parameter::{
+            Parameter, ParameterContainer, ParameterDefinition,
+        },
+        graph::{PrefabData, SceneGraph, SceneGraphNode},
+        gui::{
+            inspector::{
+                editors::{
+                    collection::VecCollectionPropertyEditorDefinition,
+                    enumeration::EnumPropertyEditorDefinition,
+                    inspectable::InspectablePropertyEditorDefinition,
+                    PropertyEditorDefinitionContainer,
+                },
+                InspectorBuilder, InspectorContext, InspectorContextArgs, InspectorMessage,
+                PropertyAction,
+            },
+            message::UiMessage,
+            scroll_viewer::ScrollViewerBuilder,
+            widget::WidgetBuilder,
+            window::{WindowBuilder, WindowTitle},
+            BuildContext, UserInterface,
+        },
+    },
+    message::MessageSender,
+    plugins::absm::command::fetch_machine,
+    Message,
+};
+use fyrox::gui::inspector::Inspector;
+use fyrox::gui::window::Window;
+use fyrox::gui::Thickness;
+use std::sync::Arc;
+
+pub struct ParameterPanel {
+    pub window: Handle<Window>,
+    inspector: Handle<Inspector>,
+    property_editors: Arc<PropertyEditorDefinitionContainer>,
+}
+
+impl ParameterPanel {
+    pub fn new(
+        ctx: &mut BuildContext,
+        property_editors: Arc<PropertyEditorDefinitionContainer>,
+    ) -> Self {
+        property_editors
+            .insert(VecCollectionPropertyEditorDefinition::<ParameterDefinition>::new());
+        property_editors.insert(EnumPropertyEditorDefinition::<Parameter>::new());
+        property_editors.insert(InspectablePropertyEditorDefinition::<ParameterDefinition>::new());
+
+        let inspector;
+        let window = WindowBuilder::new(WidgetBuilder::new())
+            .with_title(WindowTitle::text("Parameters"))
+            .with_content(
+                ScrollViewerBuilder::new(WidgetBuilder::new())
+                    .with_content({
+                        inspector = InspectorBuilder::new(
+                            WidgetBuilder::new().with_margin(Thickness::uniform(3.0)),
+                        )
+                        .build(ctx);
+                        inspector
+                    })
+                    .build(ctx),
+            )
+            .can_close(false)
+            .can_minimize(false)
+            .build(ctx);
+
+        Self {
+            window,
+            inspector,
+            property_editors,
+        }
+    }
+
+    pub fn on_selection_changed(
+        &self,
+        ui: &mut UserInterface,
+        parameters: Option<&ParameterContainer>,
+    ) {
+        let inspector_context = parameters
+            .map(|parameters| {
+                InspectorContext::from_object(InspectorContextArgs {
+                    object: parameters,
+                    ctx: &mut ui.build_ctx(),
+                    definition_container: self.property_editors.clone(),
+                    environment: None,
+                    layer_index: 0,
+                    generate_property_string_values: true,
+                    filter: Default::default(),
+                    name_column_width: 150.0,
+                    base_path: Default::default(),
+                    has_parent_object: false,
+                })
+            })
+            .unwrap_or_default();
+
+        ui.send(self.inspector, InspectorMessage::Context(inspector_context));
+    }
+
+    pub fn reset(&self, ui: &UserInterface) {
+        ui.send(
+            self.inspector,
+            InspectorMessage::Context(Default::default()),
+        );
+    }
+
+    pub fn sync_to_model(&mut self, ui: &mut UserInterface, parameters: &ParameterContainer) {
+        let ctx = ui[self.inspector].context().clone();
+        if let Err(sync_errors) = ctx.sync(
+            parameters,
+            ui,
+            0,
+            true,
+            Default::default(),
+            Default::default(),
+        ) {
+            for error in sync_errors {
+                Log::err(format!("Failed to sync property. Reason: {error:?}"))
+            }
+        }
+    }
+
+    pub fn handle_ui_message<P, G, N>(
+        &mut self,
+        message: &UiMessage,
+        sender: &MessageSender,
+        absm_node_handle: Handle<N>,
+        parameters: &mut ParameterContainer,
+        is_in_preview_mode: bool,
+    ) where
+        P: PrefabData<Graph = G>,
+        G: SceneGraph<Node = N, Prefab = P>,
+        N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+    {
+        if let Some(InspectorMessage::PropertyChanged(args)) =
+            message.data_from::<InspectorMessage>(self.inspector)
+        {
+            if is_in_preview_mode {
+                PropertyAction::from_field_action(&args.action).apply(
+                    &args.path(),
+                    parameters,
+                    &mut |result| {
+                        Log::verify(result);
+                    },
+                );
+            } else {
+                sender.send(Message::DoCommand(
+                    make_command(args, move |ctx| {
+                        Some(fetch_machine(ctx, absm_node_handle).parameters_mut())
+                    })
+                    .unwrap(),
+                ));
+            }
+        }
+    }
+}

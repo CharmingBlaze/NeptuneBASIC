@@ -12,6 +12,7 @@ scores, the tiles of a map, the cards in a hand. Instead of `score1`,
 - [Going through an array](#going-through-an-array)
 - [Mistakes with arrays](#mistakes-with-arrays)
 - [Data lines](#data-lines)
+- [Try it yourself](#try-it-yourself)
 
 ## Dim arrays
 
@@ -252,5 +253,122 @@ Output:
 ```output
 1
 ```
+
+## Try it yourself
+
+1. **High scores.** Keep five scores (120, 95, 300, 210, 150) in an array.
+   Print the best score and its place number (the first place is number 1).
+   *Hint: remember the best so far, and the place where you found it, while a `For` loop goes through the array.*
+2. **Dungeon map.** Make a grid 10 across and 5 down, where `#` marks the
+   edge walls and `.` is floor. Put an `@` for the player at column 2, row 1,
+   and print the map.
+   *Hint: a cell is on the edge when its x is 0 or 9, or its y is 0 or 4.*
+3. **Shop list.** Store three items and their prices in `Data` lines:
+   sword 50, shield 35 and potion 12. Read them, print them in lined-up
+   columns, and print the total price.
+   *Hint: `LSet` and `RSet` line up the columns, and `Read` can fill several variables at once.*
+
+### Answers
+
+1.
+
+```basic
+Dim scores(4)
+scores(0) = 120
+scores(1) = 95
+scores(2) = 300
+scores(3) = 210
+scores(4) = 150
+
+best = scores(0)
+place = 1
+For i = 1 To 4
+    If scores(i) > best
+        best = scores(i)
+        place = i + 1
+    EndIf
+Next
+Print "Best score: " + best + " (place " + place + ")"
+```
+
+```output
+Best score: 300 (place 3)
+```
+
+The loop starts with the first score as the best so far and then looks at the
+others. When one is bigger, it becomes the new best. Arrays count from 0, so
+the place number is the index plus one.
+
+2.
+
+```basic
+Const W = 10, H = 5
+Dim map$(W - 1, H - 1)
+
+For y = 0 To H - 1
+    For x = 0 To W - 1
+        If x = 0 Or x = W - 1 Or y = 0 Or y = H - 1
+            map(x, y) = "#"
+        Else
+            map(x, y) = "."
+        EndIf
+    Next
+Next
+map(2, 1) = "@"
+
+For y = 0 To H - 1
+    row$ = ""
+    For x = 0 To W - 1
+        row = row + map(x, y)
+    Next
+    Print row
+Next
+```
+
+```output
+##########
+#.@......#
+#........#
+#........#
+##########
+```
+
+`Dim` with a `$` makes a grid of text, one character per cell. The first pair
+of loops fills it, using `Or` to catch the four edges, and `map(2, 1)` is then
+changed to the player. The second pair of loops joins each row into one line
+and prints it.
+
+3.
+
+```basic
+Restore items
+total = 0
+For i = 1 To 3
+    Read name$, price
+    Print LSet(name, 10) + RSet(price, 4)
+    total = total + price
+Next
+Print String("-", 14)
+Print LSet("Total", 10) + RSet(total, 4)
+End
+
+.items
+Data "sword", 50
+Data "shield", 35
+Data "potion", 12
+```
+
+```output
+sword       50
+shield      35
+potion      12
+--------------
+Total       97
+```
+
+`Read` takes the next two values from the `Data` lines each time round the
+loop, a name into `name$` and a number into `price`. `End` stops the program
+before it runs into the data lines. `LSet` and `RSet` pad the text so the
+names and prices line up.
 
 [Contents](../MANUAL.md) · Previous: [7. Text](07-text.md) · Next: [9. Types and objects](09-types.md)

@@ -200,6 +200,24 @@ pub fn search_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
+/// The plugin files in `dirs`, each file name once: a game started from its
+/// project folder finds the same plugin beside itself and in the project's
+/// `plugins` folder, and loads the copy beside itself.
+fn plugin_files(dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for dir in dirs {
+        let Ok(rd) = std::fs::read_dir(dir) else { continue };
+        let mut files: Vec<_> = rd
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case(crate::dynlib::extension())))
+            .collect();
+        files.sort();
+        out.extend(files.into_iter().filter(|f| seen.insert(f.file_name().map(|n| n.to_string_lossy().to_lowercase()))));
+    }
+    out
+}
+
 /// Loads every plugin in the search folders (once). Returns problems found.
 pub fn load_default(taken: &dyn Fn(&str) -> bool) -> Vec<String> {
     static DONE: OnceLock<()> = OnceLock::new();
@@ -207,17 +225,9 @@ pub fn load_default(taken: &dyn Fn(&str) -> bool) -> Vec<String> {
         return Vec::new();
     }
     let mut problems = Vec::new();
-    for dir in search_dirs() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
-        let mut files: Vec<_> = rd
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case(crate::dynlib::extension())))
-            .collect();
-        files.sort();
-        for f in files {
-            if let Err(e) = load(&f.to_string_lossy(), taken) {
-                problems.push(e);
-            }
+    for f in plugin_files(&search_dirs()) {
+        if let Err(e) = load(&f.to_string_lossy(), taken) {
+            problems.push(e);
         }
     }
     problems.extend(std::mem::take(&mut registry().lock().unwrap().errors));
@@ -253,7 +263,7 @@ pub fn call(index: usize, args: &[Value]) -> Result<Value, String> {
     let texts: Vec<Option<CString>> = args
         .iter()
         .map(|a| match a {
-            Value::Str(s) => Some(CString::new(s.replace('\0', "")).unwrap_or_default()),
+            Value::Str(s) => Some(CString::new(s.flat().replace('\0', "")).unwrap_or_default()),
             _ => None,
         })
         .collect();
@@ -296,6 +306,22 @@ pub fn call(index: usize, args: &[Value]) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_plugin_in_two_folders_loads_once() {
+        let root = std::env::temp_dir().join(format!("nb_plugin_dirs_{}", std::process::id()));
+        let (game, project) = (root.join("game"), root.join("project"));
+        let ext = crate::dynlib::extension();
+        for d in [&game, &project] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join(format!("hello.{ext}")), "x").unwrap();
+        }
+        std::fs::write(project.join(format!("other.{ext}")), "x").unwrap();
+        std::fs::write(project.join("notes.txt"), "x").unwrap();
+        let files = plugin_files(&[game.clone(), project.clone()]);
+        assert_eq!(files, vec![game.join(format!("hello.{ext}")), project.join(format!("other.{ext}"))]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     unsafe extern "C" fn add(_: *mut c_void, args: *const NbValue, argc: i32, out: *mut NbValue) -> i32 {
         let a = std::slice::from_raw_parts(args, argc as usize);

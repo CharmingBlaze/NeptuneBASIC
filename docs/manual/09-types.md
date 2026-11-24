@@ -17,6 +17,7 @@ A **type** describes a kind of thing; an **object** is one of them.
 - [Handles](#handles)
 - [Enums](#enums)
 - [A complete example](#a-complete-example)
+- [Try it yourself](#try-it-yourself)
 
 ## Defining a type
 
@@ -383,5 +384,130 @@ Wend
 
 Click to make sparks. Every spark is an object; each frame, every spark
 moves, and the ones whose life has run out are deleted.
+
+## Try it yourself
+
+1. **Pocket dragon.** Define a type `Pet` with a `name$` and a `hunger` that
+   starts at 5. Make a pet called `Ember`, feed it twice (each meal takes 2
+   off its hunger) and print `Ember has hunger 1`.
+   *Hint: give `hunger` its starting value on the `Field` line.*
+2. **Loot bag.** Make four `Item` objects: a gem worth 90, a coin worth 5, a
+   crown worth 250 and a button worth 1. Delete every item worth less than 10,
+   then print the names of the items that are left, and their total value.
+   *Hint: `For Each` and `Delete` work well together.*
+3. **Arena.** Define a type `Fighter` with a name, `hp` and `power`, and a
+   method `Attack(target.Fighter)` that takes `power` away from the target's
+   `hp`. Let the Hero (30 hp, power 8) and the Goblin (20 hp, power 5) take
+   turns attacking, the Hero first, until one has 0 hp or less. Print who won
+   and how many rounds it took.
+   *Hint: use a `Repeat` loop, and inside the method `Self` is the fighter that attacks.*
+
+### Answers
+
+1.
+
+```basic
+Type Pet
+    Field name$
+    Field hunger = 5
+End Type
+
+pet.Pet = New Pet
+pet\name = "Ember"
+For meal = 1 To 2
+    pet\hunger = pet\hunger - 2
+Next
+Print pet\name + " has hunger " + pet\hunger
+```
+
+```output
+Ember has hunger 1
+```
+
+A field can have a starting value, so every new `Pet` begins with hunger 5.
+Two meals take off 4, leaving 1.
+
+2.
+
+```basic
+Type Item
+    Field name$
+    Field value
+End Type
+
+Function AddItem(name$, value)
+    i.Item = New Item
+    i\name = name
+    i\value = value
+End Function
+
+AddItem("gem", 90)
+AddItem("coin", 5)
+AddItem("crown", 250)
+AddItem("button", 1)
+
+For Each i In Item
+    If i\value < 10 Then Delete i
+Next
+
+total = 0
+For Each i In Item
+    Print i\name
+    total = total + i\value
+Next
+Print "Total value: " + total
+```
+
+```output
+gem
+crown
+Total value: 340
+```
+
+Deleting the object that `For Each` is on is safe, so the coin and the button
+are removed while the loop goes on. The second loop only sees the objects
+that are left, in the order they were made.
+
+3.
+
+```basic
+Type Fighter
+    Field name$
+    Field hp
+    Field power
+
+    Method Attack(target.Fighter)
+        target\hp = target\hp - Self\power
+    End Method
+End Type
+
+hero.Fighter = New Fighter
+hero\name = "Hero" : hero\hp = 30 : hero\power = 8
+goblin.Fighter = New Fighter
+goblin\name = "Goblin" : goblin\hp = 20 : goblin\power = 5
+
+rounds = 0
+Repeat
+    rounds = rounds + 1
+    hero\Attack(goblin)
+    If goblin\hp <= 0 Then Exit
+    goblin\Attack(hero)
+Until hero\hp <= 0
+
+If hero\hp > 0
+    Print "Hero wins after " + rounds + " rounds"
+Else
+    Print "Goblin wins after " + rounds + " rounds"
+EndIf
+```
+
+```output
+Hero wins after 3 rounds
+```
+
+Objects are passed by reference, so `Attack` changes the real `hp` of the
+fighter it is given. The Hero takes the first swing each round and the loop
+leaves with `Exit` as soon as the Goblin is down, so the Goblin does not get
+a last blow. The Hero needs three hits (8, 16, 24) to bring the Goblin down.
 
 [Contents](../MANUAL.md) · Previous: [8. Arrays and data](08-arrays-and-data.md) · Next: [10. Errors and debugging](10-errors.md)

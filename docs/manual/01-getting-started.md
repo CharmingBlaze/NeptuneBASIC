@@ -22,19 +22,26 @@ programs run the same on Windows, Linux and macOS.
 
 ## Installing
 
-NeptuneBASIC is built from its source code with Rust's `cargo` tool:
+Download the NeptuneBASIC folder for your computer (Windows, Linux or
+macOS) from the [releases page](https://github.com/CharmingBlaze/NeptuneBASIC/releases)
+and unzip it anywhere. Nothing else needs installing. The folder holds:
 
-1. Install Rust from [rustup.rs](https://rustup.rs).
-2. Get the NeptuneBASIC source (for example with `git clone`).
-3. In the NeptuneBASIC folder, build it:
+| | |
+|---|---|
+| `neptune-ide` | Neptune IDE, where you write and run programs |
+| `neptune` | the compiler, which the IDE uses; you can also run it yourself |
+| `START.txt` | the first steps, and what to do on macOS and Linux the first time |
+| `cube.nb` and `examples` | programs to run, read and change |
+| `docs` | this manual and the command reference |
+| `blender` | the add-on for making levels in Blender |
 
-```
-cargo build --release
-```
+Keep `neptune` and `neptune-ide` together in that folder. To use `neptune`
+from a terminal anywhere, add the folder to your `PATH`.
 
-The `neptune` program is now in `target/release` (`neptune.exe` on
-Windows). Add that folder to your `PATH`, or type the full path, to use it
-from anywhere.
+**Building it yourself.** If you would rather build NeptuneBASIC from its
+source code, install Rust from [rustup.rs](https://rustup.rs), get the
+source (for example with `git clone`), and in its folder run
+`cargo build --release`. The programs are then in `target/release`.
 
 ## Running a program
 
@@ -63,17 +70,23 @@ The `neptune` program has a few other commands:
 | `neptune run game.nb` | compiles and runs the program |
 | `neptune check game.nb` | only checks it for mistakes |
 | `neptune build game.nb` | makes a stand-alone game you can give to people ([chapter 25](25-sharing.md)) |
+| `neptune kit` | packs the compiler and the IDE into one folder you can give to someone who wants to make games |
 | `neptune commands` | lists every command |
 | `neptune lsp` | the language server, used by editors |
 
 ## An editor
 
-Programs are plain text, so any text editor works. Visual Studio Code is
-best: the NeptuneBASIC extension in `editors/vscode` colours your code,
-shows mistakes as you type, completes command names, shows what each
-command does when you point at it, and runs your program with **F5**.
-Its `README.md` explains how to install it. Other editors that support
-the Language Server Protocol can use `neptune lsp` the same way.
+The easiest place to write programs is **Neptune IDE**, which comes with
+NeptuneBASIC. Start `neptune-ide` from the folder you unzipped, type a program,
+and press **F5** to run it. It colours your code, shows mistakes as you
+type, suggests command names, and has this manual and every command's
+explanation and example built in: put the caret on a command and press
+**F1**. The [IDE guide](../IDE.md) has the rest.
+
+Programs are plain text, so any text editor works too. For Visual Studio
+Code, the extension in `editors/vscode` does much the same as the IDE, and
+its `README.md` explains how to install it. Other editors that support the
+Language Server Protocol can use `neptune lsp`.
 
 ## Your first program
 

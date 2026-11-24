@@ -1,0 +1,155 @@
+; 3D character controller playground. Try everything a character can do:
+; stairs, a gentle ramp, a ramp too steep to climb, a moving platform and a
+; turning one, crates to push, a low tunnel to crouch through, and two walls
+; to jump between.
+; Run from the project folder:  neptune run examples/charcontrol3d.nb
+;
+; W A S D walk, mouse looks, Shift sprints, Ctrl crouches, Space jumps (hold
+; for higher, tap again in the air), Q dashes, N walks through walls, Esc quits.
+; See docs/CHARACTERS.md.
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "Character controller"
+
+BindKey "forward", KEY_W : BindKey "back", KEY_S
+BindKey "left", KEY_A : BindKey "right", KEY_D
+BindKey "sprint", KEY_LSHIFT
+BindKey "crouch", KEY_LCONTROL
+BindKey "jump", KEY_SPACE
+BindKey "dash", KEY_Q
+BindKey "noclip", KEY_N
+
+sun = CreateLight(1)
+RotateEntity sun, 55, 30, 0
+LightShadows sun, True
+AmbientLight 80, 82, 95
+
+Function Block(x#, y#, z#, w#, h#, d#, r, g, b, pitch# = 0)
+    c = CreateCube()
+    ScaleEntity c, w / 2, h / 2, d / 2
+    PositionEntity c, x, y, z
+    RotateEntity c, pitch, 0, 0
+    EntityColor c, r, g, b
+    EntityPhysics c, 2     ; static: the world is made of physics bodies
+    Return c
+End Function
+
+Block 0, -0.5, 0, 80, 1, 80, 90, 120, 90
+
+; stairs: each step is shorter than step_height, so you walk straight up
+For i = 1 To 8
+    Block -10, i * 0.15, 2 + i * 0.7, 4, i * 0.3, 0.7, 150, 150, 170
+Next
+
+; a ramp you can walk up (25 degrees) and one you can't (60 degrees)
+Function Ramp(x#, degrees#, r, g, b)
+    Block x, Sin(degrees) * 5 - 0.25 * Cos(degrees), 2 + Cos(degrees) * 5, 4, 0.5, 10, r, g, b, -degrees
+End Function
+Ramp -4, 25, 120, 170, 120
+Ramp 2, 60, 200, 110, 90
+
+; Platforms are kinematic bodies: the program moves them, and whoever stands
+; on them is carried with no extra code at all.
+slider = CreateCube()
+ScaleEntity slider, 2, 0.25, 2
+PositionEntity slider, 9, 1, 5
+EntityColor slider, 110, 140, 230
+EntityPhysics slider, 3
+
+disc = CreateCube()
+ScaleEntity disc, 3.5, 0.25, 3.5
+PositionEntity disc, 16, 0.75, 5
+EntityColor disc, 110, 200, 220
+EntityPhysics disc, 3
+
+; dynamic crates get pushed
+For i = 0 To 3
+    crate = CreateCube()
+    ScaleEntity crate, 0.5, 0.5, 0.5
+    PositionEntity crate, -15 + i * 1.3, 0.6, -4
+    EntityColor crate, 170, 120, 60
+    EntityPhysics crate, 1, 1, 1
+Next
+
+; a tunnel only 1.2 high: crouch to get through, and you can't stand up inside
+Block -20, 0.6, 3, 1, 1.2, 8, 100, 100, 120
+Block -17, 0.6, 3, 1, 1.2, 8, 100, 100, 120
+Block -18.5, 1.45, 3, 4, 0.5, 8, 100, 100, 120
+
+; two walls to jump between
+Block 8, 5, -8, 0.5, 10, 6, 180, 120, 150
+Block 11, 5, -8, 0.5, 10, 6, 180, 120, 150
+Block 9.5, 10.25, -8, 3.5, 0.5, 6, 240, 200, 90
+
+; a shelf you can jump up through and drop down from
+shelf = Block(-4, 3.2, -8, 8, 0.2, 5, 230, 230, 240)
+EntityOneWay shelf
+
+; ---- the character ----------------------------------------------------
+; The entity's origin is at the feet, which suits most models.
+hero = CreatePivot()
+PositionEntity hero, 0, 0.1, -6
+look = CreateCylinder(16, True, hero)
+ScaleEntity look, 0.4, 0.9, 0.4
+PositionEntity look, 0, 0.9, 0
+EntityColor look, 230, 90, 70
+nose = CreateCube(look)
+ScaleEntity nose, 0.5, 0.15, 0.4
+PositionEntity nose, 0, 0.5, 1
+EntityColor nose, 40, 40, 50
+
+player = CreateCharController(hero, 0.4, 1.8)
+CharSet player, "face_rate", 720      ; turn to face the way it walks
+CharSet player, "air_jumps", 1        ; one extra jump in the air
+CharSet player, "wall_slide", 3       ; slide down walls slowly
+CharSet player, "wall_jump", 1        ; and jump off them
+
+camera = CreateCamera()
+CameraClsColor camera, 130, 180, 230
+yaw# = 0
+pitch# = 20
+CaptureMouse True
+
+lastTime = MilliSecs()
+started = lastTime
+noclip = False
+
+While Not KeyHit(KEY_ESCAPE)
+    now = MilliSecs()
+    seconds# = (now - started) / 1000.0
+
+    yaw = yaw - MouseXSpeed() * 0.15
+    pitch = Clamp(pitch + MouseYSpeed() * 0.15, -10, 70)
+
+    ; Say what the player wants. The controller decides what actually happens.
+    CharWalk player, ActionValue("forward") - ActionValue("back"), ActionValue("right") - ActionValue("left"), yaw
+    CharSprint player, ActionDown("sprint")
+    CharCrouch player, ActionDown("crouch")
+    CharHoldJump player, ActionDown("jump")
+    If ActionHit("jump") Then CharJump player
+    If ActionHit("dash") Then CharDash player, -Sin(yaw), 0, Cos(yaw), 16, 0.18
+    If ActionHit("noclip")
+        noclip = Not noclip
+        If noclip Then CharMode player, CHAR_NOCLIP Else CharMode player, CHAR_WALK
+    End If
+
+    PositionEntity slider, 9 + Sin(seconds * 45) * 3, 1, 5
+    TurnEntity disc, 0, 0.6, 0
+
+    UpdateChar player
+
+    ; Land hard and the camera feels it.
+    If CharLanded(player) And CharImpact(player) > 12 Then CameraShake camera, 0.4, 0.25
+
+    tx# = CharX(player) : ty# = CharY(player) + 1.4 : tz# = CharZ(player)
+    PositionEntity camera, tx + Sin(yaw) * Cos(pitch) * 8, ty + Sin(pitch) * 8, tz - Cos(yaw) * Cos(pitch) * 8
+    RotateEntity camera, pitch, yaw, 0
+
+    UpdateWorld
+    RenderWorld
+    Color 20, 30, 50
+    Text 16, 14, "State: " + CharState(player) + "   Grounded: " + CharGrounded(player) + "   Air jumps: " + CharAirJumpsLeft(player)
+    Text 16, 34, "WASD, mouse, Shift, Ctrl, Space, Q dash, N noclip"
+    Flip
+Wend
+End

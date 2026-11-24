@@ -1,0 +1,87 @@
+Dim a(10), f#(10), s$(3), grid(3, 4), cube#(2, 2, 2)
+For i = 0 To 10 : a(i) = i * i : f(i) = i / 4.0 : Next
+a(3) = 2.5 : a(4) = 3.5 : a(5) = "12"
+f(1) = 7 : f(2) = "1.5"
+Print a(3) + a(4) + a(5) + a(10)
+Print f(1) + f(2) + f(10)
+s(0) = "zero" : s(3) = 3 : Print s(0) + s(1) + s(3)
+For y = 0 To 4 : For x = 0 To 3 : grid(x, y) = x * 10 + y : Next : Next
+Print grid(3, 4) + grid(0, 1) + grid(2, 0)
+cube(1, 2, 0) = 1.25 : Print cube(1, 2, 0) + cube(2, 2, 2)
+i = 7 : Print a(i) : Print a(i - 1) : Print a(a(2))
+Dim a(2) : Print a(0) + a(2)
+Type T
+    Field n, v#, name$, nxt.T
+End Type
+t.T = New T : t\n = 4 : t\v = 1.5 : t\name = "tee"
+u.T = New T : u\n = 6 : t\nxt = u
+Print t\n + u\n : Print t\v * 2 : Print t\name + t\nxt\n
+t\n = t\n + 1 : t\v = t\v + t\n : Print t\n : Print t\v
+Local v[4]
+For i = 0 To 4 : v[i] = i * 3 : Next
+Print v[4] + v[1]
+Function Depth(n, pad$)
+    Local x# = n
+    If n = 0 Then Return 0
+    Return Depth(n - 1, pad + "") + 1
+End Function
+Print Depth(20000, "p")
+Function Name$(n)
+    If n > 0 Then Return Name(n - 1) + "a"
+    Return ""
+End Function
+Print Len(Name(3000))
+Function Many(a, b#, c$, d, e#, f$)
+    Return a + b + Len(c) + d + e + Len(f)
+End Function
+Print Many(1, 2.5, "abc", 4, 5.5, "defgh")
+Global total
+Function Add(n)
+    total = total + n
+End Function
+For i = 1 To 100 : Add i : Next
+Print total
+Try
+    Print a(1) + a(99)
+Catch e$
+    Print "caught " + e
+End Try
+Try
+    Print a(-1)
+Catch e$
+    Print "caught " + e
+End Try
+Try
+    Print grid(1, 9)
+Catch e$
+    Print "caught " + e
+End Try
+z = 0
+Try
+    Print 1 + 2 * (3 + 10 / z)
+Catch e$
+    Print "caught " + e
+End Try
+Try
+    Print 10 Mod z
+Catch e$
+    Print "caught " + e
+End Try
+n.T = Null
+Try
+    Print n\n
+Catch e$
+    Print "caught " + e
+End Try
+Function Fails(k)
+    Local big$ = "x"
+    Return 10 / k
+End Function
+For i = 1 To 3
+    Try
+        Print Fails(i - 2)
+    Catch e$
+        Print "caught " + e
+    End Try
+Next
+Print "done"

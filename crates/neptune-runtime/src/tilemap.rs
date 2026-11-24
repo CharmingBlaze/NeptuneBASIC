@@ -34,6 +34,46 @@ pub struct TileMap {
     terrain: Vec<i32>,
     /// terrain -> (first frame, mode)
     rules: HashMap<i32, (i32, i32)>,
+    /// (ext) Where cells go when they are not simply frames side by side:
+    /// maps from a level editor. `None` for a map made in the program.
+    pub layout: Option<crate::tilegrid::Layout>,
+    /// Cells hold values for the program (LDtk IntGrid, Ogmo grids), not
+    /// frames, so the map is never drawn.
+    pub data_only: bool,
+    /// Frames that play an animation.
+    pub anims: Option<std::sync::Arc<TileAnims>>,
+}
+
+/// Animated tiles: each animated frame's sequence of (frame, milliseconds).
+#[derive(Debug, Default)]
+pub struct TileAnims {
+    seqs: HashMap<i32, (Vec<(i32, u32)>, u32)>,
+}
+
+impl TileAnims {
+    pub fn new(list: impl IntoIterator<Item = (i32, Vec<(i32, u32)>)>) -> TileAnims {
+        let seqs = list.into_iter().filter_map(|(f, s)| { let total: u32 = s.iter().map(|p| p.1).sum(); (total > 0).then_some((f, (s, total))) }).collect();
+        TileAnims { seqs }
+    }
+
+    /// The frame to show for `frame` at time `ms`.
+    pub fn resolve(&self, frame: i32, ms: u32) -> i32 {
+        let Some((seq, total)) = self.seqs.get(&frame) else { return frame };
+        let mut t = ms % total;
+        for &(f, d) in seq {
+            if t < d {
+                return f;
+            }
+            t -= d;
+        }
+        frame
+    }
+}
+
+/// Milliseconds since the first tile was drawn: the clock of animated tiles.
+pub fn clock_ms() -> u32 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u32
 }
 
 /// The 47 distinct blob values, in increasing order.
@@ -72,7 +112,7 @@ impl TileMap {
             return Err(format!("tile map size {width}x{height} is not allowed"));
         }
         let n = (width * height) as usize;
-        Ok(TileMap { image, width, height, tiles: vec![EMPTY; n], terrain: vec![0; n], rules: HashMap::new() })
+        Ok(TileMap { image, width, height, tiles: vec![EMPTY; n], terrain: vec![0; n], rules: HashMap::new(), layout: None, data_only: false, anims: None })
     }
 
     fn index(&self, x: i32, y: i32) -> Option<usize> {
@@ -280,5 +320,15 @@ mod tests {
         assert_eq!((t.width, t.height), (3, 2));
         assert_eq!((t.get(0, 0), t.get(2, 0), t.get(2, 1)), (0, EMPTY, 3));
         assert!(TileMap::load("1,x\n", 1).is_err());
+    }
+
+    #[test]
+    fn animated_frames_follow_the_clock() {
+        let a = TileAnims::new([(5, vec![(5, 100), (6, 50)])]);
+        assert_eq!(a.resolve(5, 0), 5);
+        assert_eq!(a.resolve(5, 100), 6);
+        assert_eq!(a.resolve(5, 149), 6);
+        assert_eq!(a.resolve(5, 150), 5);
+        assert_eq!(a.resolve(9, 77), 9, "not animated");
     }
 }

@@ -44,6 +44,26 @@ EmitSound engine, car                  ; plays from the car and follows it
 A sound emitted from an entity gets quieter with distance and moves
 between the ears as the entity moves around the listener.
 
+## Head-related 3D sound (ext)
+
+Plain 3D sound only pans between left and right. `SetHRTF` filters each sound
+the way a human head and ears do, so through headphones it can seem to come
+from above, below or behind:
+
+```basic
+Graphics3D 800, 600
+If SetHRTF("sounds/head.bin") = 0 Then DebugLog "no head measurements"
+```
+
+The file is an *HRIR sphere*. NeptuneBASIC does not come with one because the
+measurements belong to whoever recorded them: check the licence of the set you
+use before shipping it with a game. Ready-made files built from the IRCAM
+Listen database are in the
+[hrir_sphere_builder](https://github.com/mrDIMAS/hrir_sphere_builder) project,
+under `hrtf_base/IRCAM`. Ears differ, so a set that convinces one player may not
+convince another: let players choose, or turn it off with `SetHRTF` and no file.
+It costs more processor time than panning, and it only helps through headphones.
+
 ## Mixing with audio buses (ext)
 
 A **bus** is a mixer channel that sounds play into. Bus 0 is the master
@@ -120,5 +140,3 @@ turns the music into a radio, and Up/Down change the music volume.
 ## Not supported
 
 * CD audio (`PlayCDTrack` returns no channel).
-* Head-related (HRTF) 3D sound: Fyrox supports it, but it needs a measured
-  head-response data file that NeptuneBASIC does not ship.

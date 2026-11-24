@@ -1,0 +1,62 @@
+; What Neptune Level Editor's Play button runs when the game has no program
+; of its own yet: it loads the level and lets you fly through it.
+; The editor starts it as: neptune run <this file> --override-scene <level>
+
+args$ = CommandLine()
+mark$ = "--override-scene "
+at = Instr(args, mark)
+If at = 0 Then RuntimeError "No level to show. Press Play in Neptune Level Editor."
+file$ = Trim(Mid(args, at + Len(mark)))
+
+Graphics3D 1280, 720, 32, 2
+AppTitle "Play: " + file
+AmbientLight 70, 72, 82
+
+level = LoadLevelFile(file)
+If level = 0 Then RuntimeError "Could not load " + file
+
+eye = CreateCamera()
+CameraClsColor eye, 120, 160, 210
+CameraRange eye, 0.1, 2000
+
+; start where the level says (an object with type = spawn), or just outside
+If CountLevelObjects(level, "spawn") > 0
+    start = LevelObject(level, 1, "spawn")
+    PositionEntity eye, EntityX(start, True), EntityY(start, True) + 1.7, EntityZ(start, True)
+Else
+    PositionEntity eye, 0, 3, -10
+End If
+
+yaw# = 0
+pitch# = 0
+HidePointer
+MoveMouse GraphicsWidth() / 2, GraphicsHeight() / 2
+FlushMouse
+
+frames = 0
+While Not KeyHit(1)
+    ; the pointer's jump to the middle of a new window is not a look
+    frames = frames + 1
+    turn# = MouseXSpeed() * 0.15
+    tilt# = MouseYSpeed() * 0.15
+    If frames > 3
+        yaw = yaw - turn
+        pitch = pitch + tilt
+    End If
+    If pitch > 85 Then pitch = 85
+    If pitch < -85 Then pitch = -85
+    MoveMouse GraphicsWidth() / 2, GraphicsHeight() / 2
+    RotateEntity eye, pitch, yaw, 0
+
+    ; W A S D, Space up, Ctrl down, Shift faster
+    speed# = 0.1
+    If KeyDown(42) Or KeyDown(54) Then speed = 0.35
+    MoveEntity eye, (KeyDown(32) - KeyDown(30)) * speed, 0, (KeyDown(17) - KeyDown(31)) * speed
+    TranslateEntity eye, 0, (KeyDown(57) - KeyDown(29)) * speed, 0
+
+    UpdateWorld
+    RenderWorld
+    Text 10, 10, "W A S D: move    mouse: look    Space / Ctrl: up / down    Shift: faster    Esc: back to the editor"
+    Flip
+Wend
+End

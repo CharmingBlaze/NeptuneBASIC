@@ -62,6 +62,9 @@ pub struct Entity {
     pub name: String,
     pub color: Color,
     pub hidden: bool,
+    /// (ext) Out of the scene with `StoreEntity` (see `store.rs`): its node
+    /// must not be used until it is restored.
+    pub stored: bool,
     /// Texture handles per layer applied with `EntityTexture` (0 = none).
     pub textures: [i32; crate::classic::MAX_LAYERS],
     /// `EntityNormalMap` (ext) texture, 0 = none.
@@ -136,6 +139,15 @@ pub struct Entity {
     /// Inside an `EntityBatch` drawn in the forward pass: standard materials
     /// would be unlit there, so the classic material is used instead.
     pub batch_forward: bool,
+    /// (ext) Custom properties (`EntityProperty`), from Blender or the program.
+    pub props: Vec<(String, String)>,
+    /// (ext) `LoadLevelFile`: the objects of the level that have properties.
+    pub level_objects: Option<Box<Vec<i32>>>,
+    /// (ext) The level this object came from, 0 if none.
+    pub level_of: u32,
+    /// (ext) The level that frees this object, for physics bodies, which
+    /// have left the level's tree.
+    pub level_owner: u32,
 }
 
 /// Program-visible state that persists across frames.
@@ -172,6 +184,9 @@ pub struct World {
     /// `Print`/`Write` text from the VM waiting to be drawn (graphics mode),
     /// and the `Locate` cursor.
     pub print_sink: std::rc::Rc<std::cell::RefCell<String>>,
+    /// (ext) The multiplayer game, shared with the standard library.
+    pub net: neptune_vm::netgame::SharedNet,
+    pub netsync: crate::netsync::NetSync,
     pub cursor: (f32, f32),
     /// Window requests applied by the engine loop.
     pub fullscreen: bool,
@@ -179,8 +194,11 @@ pub struct World {
     pub pending_cursor_visible: Option<bool>,
     pub pending_cursor_pos: Option<(f32, f32)>,
     pub pending_grab: Option<bool>,
-    /// `SaveBuffer BackBuffer()`: file to save the next presented frame to.
+    /// `SaveBuffer BackBuffer()`: file to save the next frame drawn to.
     pub pending_screenshot: Option<String>,
+    /// Whether that file was saved, once the frame has been read;
+    /// `SaveBuffer` waits for this and returns it.
+    pub screenshot_saved: Option<bool>,
     /// Triangles drawn in the last frame (`TrisRendered`).
     pub tris_rendered: i32,
     /// Current drawing buffer (`SetBuffer`), see `buffer.rs`.
@@ -229,6 +247,8 @@ pub struct World {
     /// (ext) 2D physics: bodies, joints, pixels per metre, per-body
     /// (friction, bounce, density, sensor), the last ray hit.
     pub bodies2d: Vec<Option<crate::physics2d::Body2D>>,
+    /// (ext) Character controllers.
+    pub chars: crate::character::Store,
     pub joints2d: Vec<Option<Handle<Node>>>,
     pub physics2d_scale: f32,
     pub physics2d_ready: bool,
@@ -256,6 +276,14 @@ pub struct World {
     /// Bumped whenever an entity may have changed; the pick shapes in
     /// `pick_cache` (scene, generation, shapes) are reused while it stays.
     pub pick_gen: u64,
+    /// A terrain has been made: only then are entities searched for terrains
+    /// to rebuild (a search of every entity, before each mesh upload).
+    pub(crate) any_terrain: bool,
+    /// (ext) What `StoreEntity` took out of the scene, by entity.
+    pub(crate) stored: std::collections::HashMap<u32, fyrox::scene::graph::SubGraph>,
+    /// Sprite quads already uploaded, by their vertices: sprites of the
+    /// same size share one, so the renderer draws them as instances.
+    pub(crate) sprite_quads: std::collections::HashMap<Vec<u32>, fyrox::scene::mesh::surface::SurfaceResource>,
     pub pick_cache: Option<(usize, u64, std::rc::Rc<Vec<crate::commands::PickTarget>>)>,
     /// (ext) Retained GUI widgets.
     pub gui: crate::gui::GuiState,
@@ -283,6 +311,9 @@ pub struct World {
     pub graded_cameras: std::collections::HashSet<Handle<Node>>,
     /// `CreateTileMap` tile maps.
     pub tilemaps: Vec<Option<crate::tilemap::TileMap>>,
+    /// (ext) `LoadTiledMap` maps and their objects.
+    pub tiled_maps: Vec<Option<crate::tiled::TiledMap>>,
+    pub tiled_objects: Vec<Option<crate::tiled::TiledObject>>,
     /// Length of the latest engine update in seconds (1/60 unless `--uncapped`).
     pub update_dt: f32,
     /// Unused mirror cameras made at start-up (see [`MIRROR_POOL`]).
@@ -297,6 +328,14 @@ pub struct World {
     /// Renderer quality (ext); `quality_dirty` asks the engine to apply it.
     pub quality: crate::quality::Quality,
     pub quality_dirty: bool,
+    /// (ext) `RenderScale`: what the program asked for, the player's
+    /// ceiling, and the size of the picture the 3D view is drawn into now.
+    pub render_scale: f32,
+    pub render_scale_max: f32,
+    pub(crate) render_frame: Option<(u32, u32)>,
+    /// (ext) Automatic quality, when on, and when the last frame ended.
+    pub auto_quality: Option<crate::quality::AutoQuality>,
+    pub(crate) last_flip: Option<std::time::Instant>,
     /// Physics joints (`CreateBallJoint`, ...).
     pub joints: Vec<Handle<Node>>,
     pub listener: Option<Handle<Node>>,
@@ -351,6 +390,8 @@ impl Default for World {
             failed_meshes: Default::default(),
             failed_textures: Default::default(),
             tilemaps: Vec::new(),
+            tiled_maps: Vec::new(),
+            tiled_objects: Vec::new(),
             update_dt: crate::particles::UPDATE,
             shaders: Vec::new(),
             shader_cache: Default::default(),
@@ -374,11 +415,15 @@ impl Default for World {
             current_scene: 0,
             prefab_of: Default::default(),
             pick_gen: 0,
+            any_terrain: false,
+            stored: Default::default(),
+            sprite_quads: Default::default(),
             pick_cache: None,
             blend_spaces: Vec::new(),
             tracks: Vec::new(),
             joint_info: Default::default(),
             bodies2d: Vec::new(),
+            chars: Default::default(),
             joints2d: Vec::new(),
             physics2d_scale: crate::physics2d::DEFAULT_SCALE,
             physics2d_ready: false,
@@ -403,6 +448,8 @@ impl Default for World {
             tformed: Vector3::zeros(),
             tform_filter: true,
             print_sink: Default::default(),
+            net: Default::default(),
+            netsync: Default::default(),
             cursor: (0.0, 0.0),
             fullscreen: false,
             pending_fullscreen: None,
@@ -410,10 +457,16 @@ impl Default for World {
             pending_cursor_pos: None,
             pending_grab: None,
             pending_screenshot: None,
+            screenshot_saved: None,
             tris_rendered: 0,
             quality: Default::default(),
             // apply the starting level once the window exists
             quality_dirty: true,
+            auto_quality: crate::quality::auto_requested().then(|| crate::quality::AutoQuality::new(crate::quality::AUTO_TARGET)),
+            last_flip: None,
+            render_scale: 1.0,
+            render_scale_max: crate::renderscale::max_scale(),
+            render_frame: None,
             listener: None,
             listener_rolloff: 1.0,
             listener_distance: 1.0,
@@ -537,7 +590,7 @@ impl<'a> Host3D<'a> {
         self.scenes.as_deref_mut()
     }
 
-    fn scene_ref(&self) -> Option<&Scene> {
+    pub fn scene_ref(&self) -> Option<&Scene> {
         let h = self.current_handle()?;
         self.scenes.as_deref()?.try_get(h).ok()
     }
@@ -554,6 +607,7 @@ impl<'a> Host3D<'a> {
     pub fn ent(&self, id: i32) -> Result<&Entity, String> {
         let scene = self.world.current_scene;
         match self.ent_any(id) {
+            Some(e) if e.stored => Err(format!("Entity {id} is stored (use RestoreEntity)")),
             Some(e) if e.scene == scene => Ok(e),
             Some(e) => Err(format!("Entity {id} is in scene {} (use SetScene)", e.scene + 1)),
             None => Err(format!("Entity {id} does not exist")),
@@ -565,6 +619,7 @@ impl<'a> Host3D<'a> {
         self.world.pick_gen += 1;
         let scene = self.world.current_scene;
         match usize::try_from(id - 1).ok().and_then(|i| self.world.entities.get_mut(i)).and_then(Option::as_mut) {
+            Some(e) if e.stored => Err(format!("Entity {id} is stored (use RestoreEntity)")),
             Some(e) if e.scene == scene => Ok(e),
             Some(e) => Err(format!("Entity {id} is in scene {} (use SetScene)", e.scene + 1)),
             None => Err(format!("Entity {id} does not exist")),
@@ -577,9 +632,10 @@ impl<'a> Host3D<'a> {
     }
 
     /// True for an entity that exists but is in another scene than the
-    /// current one (per-frame work skips it rather than forgetting it).
+    /// current one, or stored (per-frame work skips it rather than
+    /// forgetting it).
     pub fn elsewhere(&self, id: i32) -> bool {
-        self.ent_any(id).is_some_and(|e| e.scene != self.world.current_scene)
+        self.ent_any(id).is_some_and(|e| e.scene != self.world.current_scene || e.stored)
     }
 
     /// World transform of an entity's *parent frame* (identity for roots).
@@ -687,6 +743,7 @@ impl<'a> Host3D<'a> {
             name: String::new(),
             color: Color::WHITE,
             hidden: false,
+            stored: false,
             textures: [0; crate::classic::MAX_LAYERS],
             normal_map: 0,
             shininess: 0.0,
@@ -722,6 +779,10 @@ impl<'a> Host3D<'a> {
             shader: None,
             batch_forward: false,
             ragdoll: None,
+            props: Vec::new(),
+            level_objects: None,
+            level_of: 0,
+            level_owner: 0,
         };
         let id = match self.world.free.pop() {
             Some(i) => {
@@ -748,6 +809,16 @@ impl<'a> Host3D<'a> {
 
     /// Removes an entity and all of its children.
     pub fn free_entity(&mut self, id: i32) -> Result<(), String> {
+        // what is stored inside comes back first, to be removed with the rest
+        self.restore_tree(id)?;
+        crate::character::forget_entity(self, id);
+        crate::netsync::forget_entity(self, id);
+        if self.ent(id)?.level_objects.is_some() {
+            let bodies: Vec<i32> = self.entities().filter(|(_, e)| e.level_owner == id as u32).map(|(i, _)| i).collect();
+            for b in bodies {
+                self.free_entity(b)?;
+            }
+        }
         let (node, parent) = {
             let e = self.ent(id)?;
             // a physics entity's root node is its body
@@ -758,27 +829,19 @@ impl<'a> Host3D<'a> {
                 p.children.retain(|&c| c != id as u32);
             }
         }
+        // mirror cameras live at the scene root, not under their mirror
+        let mut mirror_cams: Vec<Handle<Node>> = Vec::new();
         let mut stack = vec![id as u32];
         while let Some(i) = stack.pop() {
             if let Some(e) = self.world.entities[(i - 1) as usize].take() {
+                mirror_cams.extend(e.mirror.as_ref().map(|m| m.camera));
                 stack.extend(e.children);
                 self.world.free.push(i - 1);
             }
         }
-        // mirror cameras live at the scene root
-        let mirror_cams: Vec<Handle<Node>> = self
-            .world
-            .entities
-            .iter()
-            .flatten()
-            .filter(|e| e.mirror.is_some())
-            .map(|e| e.mirror.as_ref().unwrap().camera)
-            .collect();
         self.graph()?.remove_node(node);
-        let alive: std::collections::HashSet<Handle<Node>> =
-            self.world.entities.iter().flatten().filter_map(|e| e.mirror.as_ref().map(|m| m.camera)).collect();
         for c in mirror_cams {
-            if !alive.contains(&c) && self.graph()?.try_get(c).is_ok() {
+            if self.graph()?.try_get(c).is_ok() {
                 // keep the camera (and its early place in the render order) for later mirrors
                 if let Some(cam) = self.graph()?[c].cast_mut::<fyrox::scene::camera::Camera>() {
                     cam.set_enabled(false);
@@ -881,10 +944,12 @@ impl<'a> Host3D<'a> {
                 let e = self.ent(id)?;
                 (e.col_type, e.radius, e.col_box, e.pick_mode, e.obscurer, e.color, e.textures, e.shininess, e.fx, e.blend)
             };
+            let props = self.ent(id)?.props.clone();
             {
                 let e = self.ent_mut(new)?;
                 e.xf = xf;
                 e.name = name;
+                e.props = props;
                 (e.col_type, e.radius, e.col_box, e.pick_mode, e.obscurer, e.color, e.textures, e.shininess, e.fx, e.blend) = copied;
             }
             self.sync(new)?;
@@ -924,11 +989,13 @@ impl<'a> Host3D<'a> {
             }
             k => k,
         };
+        let props = self.ent(id)?.props.clone();
         let new = self.attach_entity(new_node, kind, parent)?;
         {
             let e = self.ent_mut(new)?;
             e.xf = xf;
             e.name = name;
+            e.props = props;
             e.color = color;
             e.hidden = hidden;
             (e.textures, e.normal_map, e.shininess, e.fx, e.blend, e.order) = look;
@@ -950,6 +1017,7 @@ impl<'a> Host3D<'a> {
         if let Some(mut t) = terrain {
             t.surface = self.surface_handle(new, 0)?;
             self.ent_mut(new)?.terrain = Some(t);
+            self.world.any_terrain = true;
         }
         for c in children {
             self.copy_entity(c as i32, new)?;
@@ -1031,17 +1099,17 @@ impl<'a> Host3D<'a> {
             .ok_or_else(|| format!("Texture {id} does not exist"))
     }
 
-    /// The entities of the current scene.
+    /// The entities of the current scene (not the stored ones).
     pub fn entities_mut(&mut self) -> impl Iterator<Item = (i32, &mut Entity)> {
         self.world.pick_gen += 1;
         let scene = self.world.current_scene;
-        self.world.entities.iter_mut().enumerate().filter_map(move |(i, e)| e.as_mut().filter(|e| e.scene == scene).map(|e| (i as i32 + 1, e)))
+        self.world.entities.iter_mut().enumerate().filter_map(move |(i, e)| e.as_mut().filter(|e| e.scene == scene && !e.stored).map(|e| (i as i32 + 1, e)))
     }
 
-    /// The entities of the current scene.
+    /// The entities of the current scene (not the stored ones).
     pub fn entities(&self) -> impl Iterator<Item = (i32, &Entity)> {
         let scene = self.world.current_scene;
-        self.world.entities.iter().enumerate().filter_map(move |(i, e)| e.as_ref().filter(|e| e.scene == scene).map(|e| (i as i32 + 1, e)))
+        self.world.entities.iter().enumerate().filter_map(move |(i, e)| e.as_ref().filter(|e| e.scene == scene && !e.stored).map(|e| (i as i32 + 1, e)))
     }
 }
 

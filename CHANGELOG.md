@@ -4,6 +4,568 @@ What changed, commit by commit, in plain language. The newest work is at
 the top. Every command mentioned here is explained in
 [docs/COMMANDS.md](docs/COMMANDS.md).
 
+## Ready to share
+
+* **Nothing to install on Windows** – the programs, and every game built
+  with them, now carry Microsoft's C runtime inside them, so they start on
+  PCs without the Visual C++ Redistributable (`.cargo/config.toml`).
+* **One Mac download for every Mac** – the Kit workflow builds the Mac
+  programs for Apple Silicon and Intel and joins them into one, so games
+  built with the download run on both.
+* **What players see the first time** – the sharing chapter says how to
+  get past the Windows and macOS warnings for unsigned games, and to share
+  Linux games as `.tar.gz` so they stay runnable.
+* **A plugin is loaded once** – a game started from its project folder
+  found the same plugin beside itself and in the project's `plugins`
+  folder, loaded both and warned that its commands already existed. Each
+  plugin file name is now loaded once, from the folder beside the program.
+* **Windows file names work on Linux and macOS** – Blitz programs written
+  on Windows say `LoadImage("Media\Player.PNG")`. Every command that takes
+  a file name (and `Include`) now turns `\` into `/` and, when the name
+  does not exist as written, finds the file ignoring capital letters.
+  `neptune build` finds such files too, so they are packed with the game.
+* **Linux first steps** – `START.txt` says how to unpack and start the IDE,
+  which Linux versions it runs on (2022 and newer, X11 or Wayland), and
+  the libraries to install on Ubuntu, Fedora and Arch if one is missing.
+  Open in Blender also finds Blender installed from Flathub.
+* **The download has the documentation** – `neptune kit` now copies the
+  manual, the command reference and the guides into a `docs` folder, and
+  `START.txt` says where to start reading. The notes for people working on
+  NeptuneBASIC stay out of it.
+* **A README for people making games** – it starts with downloading and
+  pressing F5, lists the sample games and the guides, and leaves building
+  from source to the end.
+* **CONTRIBUTING.md** – how the source is laid out, the rules, adding a
+  command, the checks to run and how the download is made.
+* **Developer notes moved** – the architecture, status and benchmark pages
+  are now in `docs/dev`, and `docs/README.md` is an index of the guides.
+  `neptune bench` writes `docs/dev/BENCHMARKS.md`.
+* **The manual starts with the download** – getting started, the IDE guide
+  and the sharing chapter no longer assume NeptuneBASIC was built with
+  `cargo`.
+
+## Checking the download on every system
+
+* **CI starts a packaged game** – on Windows, Linux and macOS it now builds
+  a small game with `neptune build` and runs it, so a game that will not
+  start (on macOS the copied program is changed) fails the build.
+* **The Kit workflow tries its own folder** – it checks an example and
+  builds and starts a game with the packed `neptune`, as someone with the
+  download would.
+* **The Linux download is built on Ubuntu 22.04**, so it also runs on
+  older Linux systems, not only the newest.
+
+## A folder for making games
+
+* **Give someone the IDE and the compiler** – `neptune kit` (after a
+  release build of those two) puts them in `dist/NeptuneBASIC-windows`
+  (or Linux or macOS). Zip that folder. They start the IDE and press F5.
+  The example programs come too (the IDE's Examples menu lists them), and
+  the Blender add-on. Nobody who uses the folder needs Rust or Python. The
+  level editor is left out: levels are made in Blender. The Kit workflow
+  builds the folder on all three systems as a `.zip` (Windows) or `.tar.gz`
+  (Linux, macOS, so the programs stay runnable), and pushing a version tag
+  puts them on a GitHub release.
+* **Program > Open in Blender** – replaces Open Level Editor in the IDE. It
+  finds Blender (on the PATH or where its installer puts it, or the path in
+  Settings), opens the newest `.blend` in the game's folder, and loads the
+  Neptune tab, so the add-on needs no installing. Blender runs it with its
+  own Python.
+* **Long strings no longer crash when freed** – a string built from many
+  thousands of appends was freed one level at a time and could overflow the
+  stack. A string that has been read is also joined from its full text next
+  time, so the old pieces are freed.
+
+## Faster string building
+
+* **`s = s + x` no longer copies `s` every time** – a long chain of
+  appends keeps the text already built and copies only the last block of
+  it. A copy of the string (`t$ = s$`) stays as it was. `Len` reads the
+  length it already knows, and `Left`, `Right`, `Mid` and `Instr` on
+  ordinary text jump to a character instead of walking from the start.
+  The language benchmark's string test goes from 273 ms to 34 ms.
+
+## Neptune Level Editor: the Quad button
+
+* **Quad view is a button on the 3D view** – a Quad button beside the 3D/2D
+  list turns the split view on and off, and is blue while it is on (Ctrl+Alt+Q
+  and the View menu still work). The editor opens on the single 3D view.
+* **Turning quad view off goes back to the 3D view** – it used to keep the
+  view the mouse was over, which could leave you in a flat top or side view.
+
+## Neptune Level Editor: blocking out
+
+* **The block tool** – Shift+B (or the cube on the toolbar), then drag in
+  any view: a box snapped to the grid becomes a grey, solid `col_Block`
+  when you let go. Drawn in a flat view it takes its depth from the last
+  block, so walls drawn from the top come out the same height.
+* **Grid keys** – `[` and `]` halve and double the grid, from 1/16 to 64,
+  and the size shows in the corner of the 3D view. New game folders start
+  with a 0.5 grid, snapped (Fyrox started at 0.05, unsnapped).
+* **Nudging** – the arrow keys move the selection one grid step across the
+  view under the mouse, Page Up and Page Down towards or away from it.
+* **Quad view fixes** – the views no longer swap pictures after the mouse
+  moves from one to another while the editor is otherwise idle, and
+  clicking in the 3D view no longer resets the views.
+
+## Neptune Level Editor: quad view and the Neptune panel
+
+* **Quad view** – *View > Quad View* (Ctrl+Alt+Q) splits the 3D view into
+  four, as in Hammer and UnrealEd: the 3D view, and flat views from the top,
+  the front and the side, each with its own grid. Every tool works in the
+  view under the mouse. Ctrl+Space makes that view fill the window, Numpad 7,
+  1, 3 and 5 show one view, and `neptune-editor --quad` starts split.
+* **The Neptune panel** – between the object list and the Inspector: buttons
+  for Solid, Invisible and Not Solid, and fields for type, physics, shape,
+  mass and prefab, for every selected object at once, with undo. No more
+  typing `col_` or property names by hand.
+* **Open Level Editor in Neptune IDE** – *Program > Open Level Editor*
+  starts the editor on the folder you are working in.
+* **Less clutter** – the File menu no longer offers Fyrox's Export Project
+  (use `neptune build`), the asset browser no longer lists the engine's
+  built-in fonts and shapes, and the object list's rows have more room.
+
+## Neptune Level Editor: our own copy of the editor
+
+* **A short Inspector** – selecting an object now shows its name, position,
+  rotation, scale, whether it is seen and casts shadows, and its properties.
+  The engine's own settings (seventeen rows of them) are left out; start the
+  editor with `--full-inspector` to see everything.
+* **Plain object names** – the object list shows `Coin1`, not `Coin1 (9:1)`.
+* **Words a level designer uses** – the panels are called Objects, Level and
+  Undo History, and the Inspector says `Mesh`, not the type's Rust path.
+* **No build button** – Play checks your program itself, so the hammer beside
+  it is gone, and Play and Stop are in the IDE's green and red.
+* **Starts on the move tool** – the editor used to open on a tool chosen by
+  chance, sometimes the terrain brush.
+* **The starter level's sun and start point are where they belong** – they
+  were all put at the centre of the level.
+* **How** – Fyrox's editor does not let a program change these from outside,
+  so its source (MIT licence) is now kept in `vendor/fyroxed_base` with each
+  of our changes marked.
+
+## Neptune Level Editor: more room for the level
+
+* **The 3D view takes most of the window** – it had half the width and now
+  has more than three quarters. The panels are arranged as in Blender: the
+  view fills the left, the object list is at the top right with the Inspector
+  under it, and the asset browser, the log and the undo list are tabs under
+  the view instead of three panels side by side. The audio panel starts
+  closed. A layout you have arranged yourself is kept; *View > Reset Layout*
+  gives this one.
+* **Blender's keys** – G, R and S pick the move, rotate and scale tools, W the
+  select tool, and X deletes. The camera moves on the arrow keys so that S
+  can be scale. Keys you have changed yourself are kept.
+* **It opens on a level, not a blank window** – without a scene to open, the
+  editor starts with a solid ground, a sun and a place to start, ready to
+  change and to play.
+* **Clearer panels, square buttons** – title bars and text boxes are darker
+  than what the panels hold, so each panel stands apart, and buttons, tick
+  boxes and drop-downs have square corners like the IDE's.
+* **A quieter log** – the engine's own progress reports are off in a new game
+  folder, so warnings and errors are not buried.
+
+## Neptune Level Editor: a first version
+
+* **A 3D level editor of our own** – `neptune-editor <game folder>` opens
+  Fyrox's scene editor in Neptune IDE's colours (Neptune Deep, or Daylight
+  when its light style is chosen), with Neptune's name on the window. It is a
+  separate program, so `neptune` and Neptune IDE build and start as fast as
+  before. See [docs/EDITOR.md](docs/EDITOR.md).
+* **`LoadLevelFile` loads the editor's scenes** – a scene saved by the editor
+  (`.rgs`) now loads like a level from Blender. Its lights and cameras become
+  real lights and cameras your program can change, names starting `col_` and
+  `hit_` make objects solid, and the properties you give objects are read
+  with `EntityProperty`. `neptune build` packs the prefabs such a scene names.
+* **A new example** – `examples/editorlevel.nb` rolls a ball around a level
+  loaded from a scene file.
+* **Play runs your level** – the editor's Play button now saves the level and
+  runs it with `neptune`. If the game folder has a `main.nb` it runs your
+  game, which can read the level's name from `CommandLine()`. "Look Around"
+  needs no program at all: it flies you through the level with W A S D and
+  the mouse. `neptune-editor mygame level.rgs --play` opens a level and plays
+  it at once.
+* **What it cannot do yet** – there are no Neptune buttons for solid objects
+  and properties, and scenes that use model or texture files have not been
+  tested. Levels from Blender work as before.
+
+## Neptune IDE: rename, replace across files and smaller fixes
+
+* **Rename Symbol (Ctrl+R)** – renames a variable, function, array, type,
+  field, label or enum member everywhere it means the same thing, including
+  in `Include`d files. A function's local stays in that function, and renaming
+  `score` leaves `AddScore` alone. Nothing is saved until you say so. It also
+  works in VS Code through the language server.
+* **Errors as you type now see your unsaved `Include`d files** – a program
+  was checked against the saved copy of each file it includes, and was not
+  checked again when an included file changed.
+* **Replace across the whole project** – Find in Files now has a "Replace with"
+  box and a Replace All button. Each file is opened and changed without being
+  saved, so you can check it and undo it first.
+* **The active tab stays in view** – with more tabs than fit, the tab you
+  switch to now scrolls into sight.
+* **Find in Files shows the file name first** – a long folder path used to
+  push the name out of sight.
+* **The Command Reference jumps to the right command** – opening a command
+  from the editor used to leave the list showing a different part of it.
+* **The call stack shows names as you wrote them** – `AddScore`, not
+  `addscore`.
+
+## Better depth of field, god rays and lens flares
+
+* **Depth of field has clean edges now** – sharp objects no longer smear into
+  the blurred background behind them, and a blurred object close to the camera
+  now spreads softly over what is behind it. Your existing `builtin:dof`
+  settings keep working. It takes more samples than before, so it costs a
+  little more to draw.
+* **`SetDepthOfField`** – turns depth of field on for a camera in one call,
+  like `SetRainEffect`. A focus distance of 0 turns it off.
+* **`SetGodRays`** – shafts of light from the sun that pass between trees,
+  pillars and anything else in the way. Give it a light and it follows that
+  light by itself.
+* **`SetLensFlare`** – a glow, a streak and coloured circles from a bright
+  light, which fade when something moves in front of it. If your sky is a big
+  sphere, both this and `SetGodRays` take a `sky_distance` so that the sphere
+  does not block the sun.
+* **`builtin:godrays` and `builtin:lensflare`** – the same effects for use
+  with `LoadPostProcess`, and custom effects can now read `nb_viewProj`, the
+  camera of the current frame. See them together in `examples/lensfx.nb`.
+* **Motion blur no longer flickers on fast screens** – on a screen faster
+  than 60 Hz, most frames showed no blur at all, and after a stutter one frame
+  could smear across a large part of the screen. The blur now follows the
+  game's own updates, and its new `maxLength` setting caps how long a streak
+  can get.
+* **A new "Lens effects" section in the shader guide** – how to tune each
+  effect, make the focus follow the player's aim and use a sky dome, and what
+  each effect costs. It is in `docs/shaders/06-post-processing.md`.
+
+## Screenshots always show the right frame
+
+* **`SaveBuffer BackBuffer(), "shot.png"` no longer saves a black or
+  out-of-date picture** – on some graphics cards (laptops with two of them
+  especially) the saved image was all black, or showed a frame from a moment
+  earlier or later. The picture is now always the frame your program last
+  flipped, 2D drawing included, on Windows, Linux and macOS. The same goes
+  for `FrontBuffer()`.
+* **The file is there when `SaveBuffer` returns** – the command now waits for
+  the frame to be drawn (one frame, as `Flip` does), so you can `LoadImage`
+  the file on the very next line, and the return value tells the truth: 1 if
+  the file was saved, 0 if not. If the window is minimized and nothing is
+  drawn, it gives up after two seconds and returns 0.
+
+## Old and slow graphics cards, and laptops with two
+
+* **Games now use the fast graphics card on laptops that have two** – Windows
+  was giving NeptuneBASIC the slow power-saving card. On the laptop this was
+  found on, a scene that ran at 41 to 89 frames a second (depending on the
+  quality level) now runs at the 144 its screen can show.
+  `GraphicsCardName` tells you which card is drawing.
+* **The player can hold the quality down** – `neptune run --max-quality low`,
+  or the `NEPTUNE_MAX_QUALITY` setting for a finished game, is a ceiling that
+  the program cannot go over. Until now a game that asked for
+  `QUALITY_HIGH` ignored `--quality low`.
+* **Quality that looks after itself** – `AutoQuality 50` steps the quality
+  level down while the game runs slower than 50 frames a second, and takes a
+  step back if it made no difference. `neptune run --quality auto` does the
+  same for any program.
+* **A benchmark of the quality levels** – `benchmarks/quality.nb` (part of
+  `neptune bench`) shows what each level is worth on your graphics card. On
+  a built-in AMD card, low is twice as fast as ultra.
+* **`RenderScale`: the 3D view at a lower resolution** – `RenderScale 0.5`
+  draws the 3D view half as wide and half as high and stretches it over the
+  window, which is what helps a slow graphics card most. Text, 2D drawing
+  and the GUI stay sharp. On a built-in AMD card a heavy scene went from 42
+  to 81 frames a second on ultra, and from 97 to 265 on low. Players can set
+  it for any game with `neptune run --render-scale 0.5`, which the program
+  cannot go over.
+
+## Programs run two to four times faster
+
+* **The interpreter that runs your BASIC code is much faster** – loops,
+  arithmetic, arrays, function calls and `Type` fields all gained. On the
+  language benchmark, 20 million loop iterations went from 1189 ms to 283 ms,
+  a quicksort of 200,000 numbers from 411 ms to 115 ms, recursive calls from
+  135 ms to 49 ms, and updating 200,000 objects from 545 ms to 262 ms.
+  Programs do exactly what they did before; nothing in the language changed.
+* **Big `Dim` arrays of numbers use a sixth of the memory** – an integer or
+  float array now takes 4 bytes an element instead of 24, so a 5-million-cell
+  map takes 20 MB instead of 120 MB, and working through it is over four
+  times faster.
+* **Thousands of sprites** – 5000 sprites facing the camera ran at 14 frames
+  a second and now run at 66. Sprites of the same size share their shape, so
+  the graphics card draws them in one go. Sprites that each have a different
+  `ScaleSprite` do not gain; use `ScaleEntity` for those.
+* **2D drawing in bulk** – `DrawImage`, `Rect`, `Oval` and `Line` are sent to
+  the graphics card together when they follow each other with the same image
+  or colour. 10,000 `DrawImage`s a frame went from 54 to 132 frames a second.
+  What is drawn later is still on top.
+* **Big worlds build and unload quickly** – `CopyEntity` and `FreeEntity`
+  got slower the more objects there were: making 40,000 copies took 3.9
+  seconds and freeing them 4.7. They now take 55 and 83 milliseconds, and a
+  chunk of 400 objects can be freed and another built in under a millisecond.
+* **A freed mirror stops drawing** – after `FreeEntity` on a mirror, its
+  hidden camera kept rendering the scene every frame. It is now switched off
+  and reused by the next `CreateMirror`.
+* **Worlds too big for the scene: `StoreEntity` and `RestoreEntity`** – a
+  hidden entity still costs a little time every frame, so tens of thousands
+  of them slow a game down with nothing on screen. `StoreEntity` takes an
+  entity and its children out of the world without freeing them, and
+  `RestoreEntity` puts them back exactly as they were; `EntityStored` tells
+  which it is. Walking through a world of 40,000 objects with the far parts
+  stored runs at 176 frames a second, against 36 with them hidden.
+  `examples/bigworld.nb` lets you switch between the two. Other commands
+  fail on a stored entity, and entities with physics, cameras and mirrors
+  cannot be stored.
+* **New benchmark and tool for large games** – `benchmarks/world.nb` (part of
+  `neptune bench`) keeps a world of 40,000 objects in chunks and walks
+  through it. `tools/gen_big_program.py` writes a program of any size; one of
+  218,000 lines compiles in 1.4 seconds.
+* **Not faster yet: building long strings** – `s = s + x` in a loop still
+  copies the whole string each time.
+* For people working on NeptuneBASIC: `cargo run --release -p neptune-vm
+  --example langbench` runs the language benchmark in seconds without building
+  the engine. How the interpreter got faster is described under *VM design*
+  in `docs/ARCHITECTURE.md`.
+
+## Compiler fixes: `Try` with `Goto` and `Gosub`, very deep code, byte order marks
+
+* **`Try` stays correct when you jump out of it** – leaving a `Try` block with
+  `Goto`, or with the `Return` of a `Gosub`, used to leave its `Catch` active,
+  so a later error jumped back into a block the program had already left. An
+  error caught across a `Gosub` no longer leaves a stale `Return` address.
+* **Jumping into a `Try` block is now a compile error** – a `Goto` or `Gosub`
+  from outside would skip setting up its `Catch`.
+* **Very deep code no longer crashes the compiler** – it now reports
+  "code is nested too deeply, or this statement is too long". The limits are
+  about 200 levels of nesting, 1000 `ElseIf` arms, and 4000 operators in one
+  statement.
+* **Files that start with a byte order mark now compile** – some Windows
+  editors save UTF-8 files this way. This applies to included files too.
+
+## Multiplayer that is easy, and works over the internet
+
+* **A whole multiplayer game in a few lines** – `NetPlay` finds a game or starts
+  one, `NetTemplate` and `NetSpawn` put an entity on every computer, and it moves
+  smoothly on all of them by itself. `examples/games/coinrush.nb` is a complete
+  game built this way.
+* **Play over the internet with an invite** – `NetInvite` gives a code, and
+  `NetJoin` joins with it. Nobody has to open a port on their router. This uses
+  the iroh library, so connections are encrypted, and a relay server carries
+  the traffic when two computers cannot reach each other directly. `NetRelay`
+  chooses your own relay for a released game.
+* **Shared values and events** – `NetSet` and `NetGet` keep a value the same on
+  every computer, `NetSend` and `NetRecv` report things that happen.
+* **Test without a second computer** – `neptune run --players 2` starts two
+  copies side by side, and `NetSimulate` pretends the network is bad.
+* **Characters the host checks, that still answer instantly** – put a
+  character controller on a `NetTemplate` and use `NetCharacter`. Your own
+  character moves the moment you press a key, the host re-runs your buttons to
+  check them, and if they ever disagree it slides to where the host says it is.
+  A modified game can't run faster, and `CharImpulse` from the host reaches the
+  player. `examples/netcharacters.nb` shows it.
+* **Shots hit what you saw them hit** – other players are drawn a moment in the
+  past, so a shot lined up on a moving target used to look like a miss to the
+  host. `NetFire` tells the host what the shooter could see and `NetHit` checks
+  the shot against that, up to half a second back, and works just like
+  `LinePick`.
+* **`NetPing` is now measured through the game's own connection**, so it counts
+  what `NetSimulate` adds in both directions.
+* **`reliable=0` now works** – `SendNetMsg` could only send reliably, so one lost
+  packet held up everything behind it.
+* **A slow player can no longer freeze the game** – all network traffic now runs
+  on its own thread, and the host keeps passing on messages during loading
+  screens. Starting or joining a game no longer freezes the window either.
+* **`StartNetGame` only finds copies of the same program** – it used to join any
+  NeptuneBASIC game on the network.
+* **Players that vanish are noticed** – within about 8 seconds, even if the
+  connection dropped silently.
+* **A client can no longer pretend to be someone else** – the host now checks who
+  sent each message, and only lets a computer remove its own players.
+* **Games from before this change cannot join these** – the network format has
+  changed. TCP streams and UDP streams are not affected.
+
+## Full Tiled support, and maps from LDtk, Ogmo, Sprite Fusion, Pyxel Edit and Aseprite
+
+* **`LoadTiledMap` now reads almost all of Tiled** - isometric, staggered,
+  hexagonal and infinite maps, compressed layers (Base64, zlib and gzip),
+  tilesets of separate images and of any tile size, animated tiles, picture
+  layers, layer opacity, tint and parallax, object templates and text objects.
+  Only Zstandard compression is still refused, and the error says what to
+  change. Tiled `.world` files load too.
+* **Collision shapes drawn on tiles** - `TiledMapBody2D` makes a physics body
+  from them, and `TiledTileType` and `TiledTileProperty` read a tile's data.
+* **Other editors, same command** - `LoadTiledMap` also opens LDtk projects,
+  Ogmo Editor 3 levels, Sprite Fusion and Pyxel Edit exports and the tilemap
+  layers of `.aseprite` files. `CountTiledLevels` and `TiledLevelName` list
+  the levels of a file, and a second argument loads one by name.
+* **Grids of any shape** - `TileAt` and `TileMapBody2D` work on diamonds and
+  hexagons, and `TileMapPickX/Y` and `TileMapCellCenterX/Y` go between pixels
+  and cells.
+* **`DrawTiledObject`** draws a tile object at its place, size and rotation.
+* **`Camera2D` no longer stops working after the first frame** in a program
+  that draws nothing after switching the camera off with `Camera2DEnable`.
+* **`neptune build`** packs what these maps need: tilesets, templates,
+  separate level files, Ogmo projects and pictures.
+
+## Breakpoint conditions, crowds, jumps for agents and head-related sound
+
+* **Breakpoints can have conditions** – in VS Code and the Neptune IDE a
+  breakpoint can stop only when something is true
+  (`lives < 2 And player\x > 10`) or only on certain hits (`5`, `>=5`, `%5`). A
+  condition that cannot be worked out stops and says why. In the IDE, right-click
+  the margin to set one; they are remembered with the session.
+* **Debugger indices can be sums** – watches and hovers accept `grid(i + 1)`.
+* **Crowds** – `AgentCrowd` makes an agent look ahead and choose a way past
+  the others, instead of only being pushed apart when they touch.
+* **Jumps, ladders and doors for agents** – `CreateNavLink` joins places a
+  navigation mesh cannot, and `FindPath` and agents use it. `NavLinkEnable`,
+  `FreeNavLink` and `AgentOnLink` go with it, and `DebugNavMesh` draws links.
+* **Head-related 3D sound** – `SetHRTF` makes sounds seem to come from above
+  and behind through headphones, using a file of head measurements that the
+  game supplies.
+
+## See-through surfaces no longer vanish or punch holes
+
+* **Solid things are now always drawn first** – entities using `EntityAlpha`,
+  `EntityBlend`, vertex alpha or alpha textures, and particles, are drawn after
+  everything solid. Before, a large mesh could be drawn after them, which left
+  holes showing the background or hid them completely.
+* **See-through surfaces no longer hide what is behind them** – alpha-blended
+  entities do not write depth any more, as additive and multiplied ones already
+  did. `examples/blending.nb` shows each kind in front of a large mesh.
+
+## Three racing demos in the style of a 1990s console
+
+* **Dirt bike, jet ski and four-wheeler races** – `examples/games/dirtbike.nb`
+  (a sunset canyon, with air tricks), `jetski.nb` (a tropical lagoon with waves,
+  ramps and buoys) and `quadrace.nb` (a climb to a snowy pass and back). Each
+  has computer rivals, laps, a mini-map and engine sounds it makes itself.
+* **A plane race too** – `examples/games/skyrace.nb`: biplanes round a volcano
+  island, with boost hoops and barrel rolls, flying on a character controller
+  in `CHAR_FLY` mode.
+* **Commented from top to bottom** – what they share is in
+  `examples/games/retro64.nb`: painted-on lighting, fog, track building, and
+  how to drive a vehicle with a character controller. Nothing needs loading:
+  every model, texture and sound is made by the program.
+
+## Better tutorials, explanations and examples
+
+* **Two projects that build a whole game, step by step** – Star Catcher in 2D
+  and Crystal Hunt in 3D, running the program after every step. See
+  [Build a whole game](docs/MANUAL.md#build-a-whole-game).
+* **Practice in every chapter** – chapters 2 to 25 end with exercises, hints
+  and worked answers.
+* **Clearer command explanations** – 262 short descriptions were rewritten from
+  what each command really does: units, ranges, what it returns when it fails,
+  and what is easy to get wrong.
+* **Examples that teach** – about 200 bare examples now show the command doing
+  a job and what to expect.
+* **In the IDE** – the Command Reference shows each command's example, which
+  opens as a new program with one click, and the manual has Previous and Next
+  buttons.
+
+## Neptune IDE
+
+* **An IDE made for NeptuneBASIC** – the new `neptune-ide` program. It
+  works like the Blitz3D IDE (F5 runs, F1 explains the command at the caret,
+  tabs for files, a list of functions, types and labels), with square-cornered
+  looks and four colour themes, one of them Blitz's own blue.
+* **Editing** – undo and redo, copy and paste, multiple carets, folding,
+  minimap, moving and duplicating lines, Blitz-style automatic capitals,
+  indenting by block, and a command that tidies a whole file.
+* **Help while you type** – errors as you type, suggestions with parameters
+  and descriptions, hover help, go to definition, a searchable command
+  reference, and the whole manual inside the IDE.
+* **Finding your way** – a file tree, an outline, find and replace, find in
+  all files, and a palette that searches files, symbols and every command.
+* **Running and debugging** – run, stop, check and build from the toolbar;
+  a failed program takes you to its error. Breakpoints, stepping, the call
+  stack, variables and watches.
+* Closing the IDE never loses work: unsaved text comes back next time.
+* See the guide, [docs/IDE.md](docs/IDE.md).
+
+## Character controllers
+
+* **Characters that move like game characters** – `CreateCharController` for
+  3D and `CreateCharController2D` for 2D. The same commands work for both. Say
+  where the player wants to go with `CharMove` and `CharJump`, and call
+  `UpdateChar`.
+* **The ground** – slopes up to a limit, stairs, sticking to the ground going
+  downhill, and riding moving and turning platforms.
+* **Jumps that feel fair** – a jump still works just after leaving an edge or
+  just before landing, and letting go early makes a shorter one. Also double
+  jumps, wall slides and wall jumps.
+* **Everything else** – sprint, crouch (it waits until there's room to stand),
+  dash, knockback, one-way platforms you can drop through, pushing crates, and
+  fly and noclip modes for ladders, swimming and top-down games.
+* **Easy to tune and to animate** – about 25 settings by name (`CharSet`),
+  events such as `CharLanded` and `CharImpact` for sounds and fall damage, and
+  `CharState` gives one word to pick an animation by.
+* See the guide, [docs/CHARACTERS.md](docs/CHARACTERS.md), and the playgrounds
+  `examples/charcontrol3d.nb` and `examples/charcontrol2d.nb`.
+
+## 2D levels and sprites from other tools
+
+* **Maps from Tiled** – `LoadTiledMap` loads a level drawn in the free Tiled
+  editor, with all its layers and flipped tiles, and `DrawTiledMap` draws it.
+  Each layer is an ordinary tile map (`TiledLayer`), so it can be made solid
+  or changed during the game.
+* **Objects** – places and areas marked in Tiled, with their custom values:
+  `CountTiledObjects` and `TiledObject` find every coin or enemy of a type.
+* **Sprite sheets** – `LoadSheetImage` loads sheets from Aseprite and
+  TexturePacker. `Anim2DPlayTag` plays Aseprite's named animations with their
+  own timing, and can be called every frame.
+* See the new guide, [docs/TOOLS2D.md](docs/TOOLS2D.md), and the small game
+  `examples/tiledmap.nb`.
+* `neptune build` also packs the tilesets and pictures maps and sheets use.
+* **Fixed:** with `Camera2D` on, `DrawTileMap` stopped drawing tile maps wider
+  than the screen once you scrolled past the first screenful.
+
+## Call stacks on runtime errors
+
+* When a program stops with a runtime error, the message now lists the calls
+  that led there, each with its file, line and function, back to the main
+  program. `Gosub`s are included. If the chain is very long, the middle is
+  left out.
+
+## Levels from Blender
+
+* **Build levels in Blender** – `LoadLevelFile` loads a whole level from one file:
+  shapes, materials, lights, cameras, where things are placed and what they
+  are. See the new guide, [docs/BLENDER.md](docs/BLENDER.md).
+* **Lights and cameras come across** – sun, point and spot lights look much as
+  they do in Blender. Cameras from the level start off and are switched on
+  with `CameraProjMode`.
+* **Solid by name** – objects named `col_...` are solid, and `hit_...` are
+  solid and invisible. It works with physics and with `Collisions`.
+* **Custom properties** – values typed on objects in Blender can be read with
+  `EntityProperty`, `EntityPropertyInt` and `EntityPropertyFloat`.
+  `CountLevelObjects` and `LevelObject` find every object of a type, such as
+  all the coins. Properties can also make objects fall (`physics`), set their
+  shape and mass, hide them, or place another model file there (`prefab`).
+* **Blender add-on** – `tools/blender/neptune_levels.py` adds a Neptune tab
+  with buttons for solid objects and properties and one-click export.
+* **A sample level** – `examples/level.nb` is a small game in a courtyard
+  built in Blender, and `examples/media/courtyard.blend` is its source.
+* **Models with lights now load** – Blender marks lights as something a
+  reader must understand, so any export containing a light used to fail in
+  `LoadMesh`. Those files now load.
+* `neptune build` also packs the model files a level places.
+
+## Debugger
+
+* **Debug in VS Code** – press F5 on a `.nb` file. Click in the margin to set
+  breakpoints, step into, over and out of functions, and pause a running
+  game, even one stuck in an endless loop.
+* **See what the program is doing** – the call stack, local and global
+  variables, `Dim` arrays and objects you can open field by field; hover over
+  a variable or add a watch such as `player\pos\x` or `grid(1, i)`.
+* **Stops where things go wrong** – a runtime error nothing catches stops the
+  program at that line with its variables still there. `Stop` pauses the
+  program too, as it did in Blitz3D's debugger.
+* Run without debugging is now Ctrl+F5 (F5 before). Other editors can use
+  `neptune dap`.
+
 ## Cloth and ropes
 
 * **Cloth** – `CreateCloth` makes a sheet that hangs, falls, flaps in the
@@ -265,7 +827,7 @@ effects without writing any. The guide is
 * **`neptune bench`** – Runs the benchmark programs in `benchmarks/`
   (language, entities, models, physics, queries, rendering) and the island
   and beach demos, and writes the results with a description of the machine
-  to [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Anyone can re-run it to
+  to [docs/BENCHMARKS.md](docs/dev/BENCHMARKS.md). Anyone can re-run it to
   compare.
 * **`neptune run --uncapped`** – Runs a program without vsync and without
   the engine's 60 updates a second, so frame rates show what the machine

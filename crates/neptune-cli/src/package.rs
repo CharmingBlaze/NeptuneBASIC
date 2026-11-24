@@ -156,6 +156,61 @@ fn gltf_uris(text: &str) -> Vec<String> {
     out
 }
 
+/// Adds a model and the files it needs: a `.gltf` file's textures and
+/// buffers, and the prefabs a level's objects name.
+fn add_model_files(rel: &Path, root: &Path, found: &mut BTreeSet<PathBuf>) {
+    let dir = rel.parent().unwrap_or(Path::new(""));
+    let is = |ext: &str| rel.extension().is_some_and(|x| x.eq_ignore_ascii_case(ext));
+    if is("gltf") {
+        if let Ok(text) = std::fs::read_to_string(root.join(rel)) {
+            for uri in gltf_uris(&text) {
+                let p = dir.join(uri);
+                if root.join(&p).is_file() {
+                    found.insert(p);
+                }
+            }
+        }
+    }
+    if is("rgs") {
+        // a scene from Neptune Level Editor: the prefabs its objects name
+        let Ok(text) = std::fs::read_to_string(root.join(rel)) else { return };
+        for name in neptune_runtime::level::scene_prefabs(&text) {
+            let Some(p) = neptune_runtime::level::prefab_path(&rel.to_string_lossy(), &name, |c| root.join(c).is_file()) else { continue };
+            if found.insert(p.clone()) {
+                add_model_files(&p, root, found);
+            }
+        }
+        return;
+    }
+    if !is("gltf") && !is("glb") {
+        return;
+    }
+    let Ok(level) = std::fs::read(root.join(rel)).map_err(|e| e.to_string()).and_then(|b| neptune_runtime::level::parse_level(&b)) else { return };
+    let level_path = rel.to_string_lossy();
+    for node in &level.nodes {
+        let Some(name) = neptune_runtime::level::prop(&node.props, "prefab") else { continue };
+        let Some(p) = neptune_runtime::level::prefab_path(&level_path, name, |c| root.join(c).is_file()) else { continue };
+        if found.insert(p.clone()) {
+            add_model_files(&p, root, found);
+        }
+    }
+}
+
+/// Adds the files a level editor's map or a sprite sheet needs: tilesets and images.
+fn add_2d_files(rel: &Path, root: &Path, found: &mut BTreeSet<PathBuf>) {
+    let is = |ext: &str| rel.extension().is_some_and(|x| x.eq_ignore_ascii_case(ext));
+    if !["tmx", "tmj", "json", "xml", "ldtk", "world", "ase", "aseprite"].iter().any(|e| is(e)) {
+        return;
+    }
+    let path = rel.to_string_lossy();
+    let read = |p: &Path| std::fs::read_to_string(root.join(p)).map_err(|e| e.to_string());
+    let mut files = neptune_runtime::tiled::dependencies(&path, &neptune_runtime::tiled::DiskFiles { root: root.to_path_buf() }).unwrap_or_default();
+    if let Some(sheet) = read(rel).ok().and_then(|text| neptune_runtime::spritesheet::parse_sheet(&text).ok()) {
+        files.push(neptune_runtime::spritesheet::image_path(&path, &sheet));
+    }
+    found.extend(files.into_iter().filter(|p| root.join(p).is_file()));
+}
+
 /// Media files named by string literals that exist relative to `root`.
 pub fn media_files(entries: &[Entry], root: &Path) -> BTreeSet<PathBuf> {
     let mut found = BTreeSet::new();
@@ -164,23 +219,17 @@ pub fn media_files(entries: &[Entry], root: &Path) -> BTreeSet<PathBuf> {
             if lit.is_empty() || lit.contains('\n') {
                 continue;
             }
-            let rel = PathBuf::from(&lit);
-            if rel.is_absolute() || lit.contains("..") {
+            if Path::new(&lit).is_absolute() || lit.contains("..") {
                 continue;
             }
-            if root.join(&rel).is_file() {
+            // the name on disk, for Windows spellings on Linux and macOS
+            let joined = root.join(&lit).to_string_lossy().into_owned();
+            let full = PathBuf::from(neptune_lang::paths::host_path(&joined).unwrap_or(joined));
+            let Ok(rel) = full.strip_prefix(root).map(Path::to_path_buf) else { continue };
+            if full.is_file() {
                 found.insert(rel.clone());
-                if rel.extension().is_some_and(|x| x.eq_ignore_ascii_case("gltf")) {
-                    if let Ok(text) = std::fs::read_to_string(root.join(&rel)) {
-                        let dir = rel.parent().unwrap_or(Path::new(""));
-                        for uri in gltf_uris(&text) {
-                            let p = dir.join(uri);
-                            if root.join(&p).is_file() {
-                                found.insert(p);
-                            }
-                        }
-                    }
-                }
+                add_model_files(&rel, root, &mut found);
+                add_2d_files(&rel, root, &mut found);
             }
         }
     }
@@ -271,6 +320,53 @@ pub fn build(main: &str, out: Option<&str>, console: bool) -> Result<PathBuf, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_maps_and_a_sheets_files_are_packed() {
+        let root = std::env::temp_dir().join(format!("neptune_pack2d_{}", std::process::id()));
+        std::fs::create_dir_all(root.join("maps")).unwrap();
+        let map = r#"{"tilewidth":2,"tileheight":2,"width":1,"height":1,"tilesets":[{"firstgid":1,"source":"a.tsj"}],"layers":[]}"#;
+        std::fs::write(root.join("maps/m.tmj"), map).unwrap();
+        std::fs::write(root.join("maps/a.tsj"), r#"{"name":"a","image":"a.png","tilewidth":2,"tileheight":2,"tilecount":1,"columns":1}"#).unwrap();
+        std::fs::write(root.join("maps/a.png"), b"x").unwrap();
+        std::fs::write(root.join("s.json"), r#"{"frames":[{"frame":{"x":0,"y":0,"w":1,"h":1}}],"meta":{"image":"s.png"}}"#).unwrap();
+        std::fs::write(root.join("s.png"), b"x").unwrap();
+        let text = "m = LoadTiledMap(\"maps/m.tmj\") : s = LoadSheetImage(\"s.json\")";
+        let entries = vec![Entry { key: "m".into(), canon: "m".into(), text: text.into() }];
+        let found = media_files(&entries, &root);
+        std::fs::remove_dir_all(&root).ok();
+        let names: Vec<String> = found.iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
+        assert_eq!(names, ["maps/a.png", "maps/a.tsj", "maps/m.tmj", "s.json", "s.png"]);
+    }
+
+    #[test]
+    fn a_levels_prefabs_are_packed() {
+        let root = std::env::temp_dir().join(format!("neptune_pack_{}", std::process::id()));
+        std::fs::create_dir_all(root.join("levels")).unwrap();
+        let level = r#"{"scenes":[{"nodes":[0]}],"nodes":[{"name":"A","extras":{"prefab":"tree.gltf"}}]}"#;
+        std::fs::write(root.join("levels/a.gltf"), level).unwrap();
+        std::fs::write(root.join("levels/tree.gltf"), r#"{"buffers":[{"uri":"tree.bin"}]}"#).unwrap();
+        std::fs::write(root.join("levels/tree.bin"), b"x").unwrap();
+        let entries = vec![Entry { key: "m".into(), canon: "m".into(), text: "l = LoadLevelFile(\"levels/a.gltf\")".into() }];
+        let found = media_files(&entries, &root);
+        std::fs::remove_dir_all(&root).ok();
+        let names: Vec<String> = found.iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
+        assert_eq!(names, ["levels/a.gltf", "levels/tree.bin", "levels/tree.gltf"]);
+    }
+
+    #[test]
+    fn an_editor_scenes_prefabs_are_packed() {
+        let root = std::env::temp_dir().join(format!("neptune_pack_rgs_{}", std::process::id()));
+        std::fs::create_dir_all(root.join("levels")).unwrap();
+        let scene = r#"Item0[Name<str:"prefab">]{ Value[Id<u32:2>0<str:"tree.gltf">]{} }"#;
+        std::fs::write(root.join("levels/a.rgs"), scene).unwrap();
+        std::fs::write(root.join("levels/tree.gltf"), "{}").unwrap();
+        let entries = vec![Entry { key: "m".into(), canon: "m".into(), text: "l = LoadLevelFile(\"levels/a.rgs\")".into() }];
+        let found = media_files(&entries, &root);
+        std::fs::remove_dir_all(&root).ok();
+        let names: Vec<String> = found.iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
+        assert_eq!(names, ["levels/a.rgs", "levels/tree.gltf"]);
+    }
 
     #[test]
     fn payload_round_trip() {

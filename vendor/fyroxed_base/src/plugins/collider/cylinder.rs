@@ -1,0 +1,128 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::{
+    fyrox::{
+        core::{algebra::Vector3, pool::Handle},
+        scene::{collider::ColliderShape, node::Node, Scene},
+    },
+    plugins::collider::{
+        make_handle, try_get_collider_shape, try_get_collider_shape_mut, ShapeGizmoTrait,
+        ShapeHandleValue,
+    },
+};
+use fyrox::scene::pivot::Pivot;
+use fyrox::scene::sprite::Sprite;
+
+pub struct CylinderShapeGizmo {
+    radius_handle: Handle<Sprite>,
+    half_height_handle: Handle<Sprite>,
+}
+
+impl CylinderShapeGizmo {
+    pub fn new(visible: bool, root: Handle<Pivot>, scene: &mut Scene) -> Self {
+        Self {
+            radius_handle: make_handle(scene, root, visible),
+            half_height_handle: make_handle(scene, root, visible),
+        }
+    }
+}
+
+impl ShapeGizmoTrait for CylinderShapeGizmo {
+    fn for_each_handle(&self, func: &mut dyn FnMut(Handle<Sprite>)) {
+        for handle in [self.radius_handle, self.half_height_handle] {
+            func(handle)
+        }
+    }
+
+    fn handle_local_position(
+        &self,
+        handle: Handle<Sprite>,
+        collider: Handle<Node>,
+        scene: &Scene,
+    ) -> Option<Vector3<f32>> {
+        let Some(ColliderShape::Cylinder(cylinder)) = try_get_collider_shape(collider, scene)
+        else {
+            return None;
+        };
+
+        if handle == self.radius_handle {
+            Some(Vector3::new(cylinder.radius, 0.0, 0.0))
+        } else if handle == self.half_height_handle {
+            Some(Vector3::new(0.0, cylinder.half_height, 0.0))
+        } else {
+            None
+        }
+    }
+
+    fn handle_major_axis(
+        &self,
+        handle: Handle<Sprite>,
+        _collider: Handle<Node>,
+        _scene: &Scene,
+    ) -> Option<Vector3<f32>> {
+        if handle == self.radius_handle {
+            Some(Vector3::x())
+        } else if handle == self.half_height_handle {
+            Some(Vector3::y())
+        } else {
+            None
+        }
+    }
+
+    fn value_by_handle(
+        &self,
+        handle: Handle<Sprite>,
+        collider: Handle<Node>,
+        scene: &Scene,
+    ) -> Option<ShapeHandleValue> {
+        let Some(ColliderShape::Cylinder(cylinder)) = try_get_collider_shape(collider, scene)
+        else {
+            return None;
+        };
+
+        if handle == self.radius_handle {
+            Some(ShapeHandleValue::Scalar(cylinder.radius))
+        } else if handle == self.half_height_handle {
+            Some(ShapeHandleValue::Scalar(cylinder.half_height))
+        } else {
+            None
+        }
+    }
+
+    fn set_value_by_handle(
+        &self,
+        handle: Handle<Sprite>,
+        value: ShapeHandleValue,
+        collider: Handle<Node>,
+        scene: &mut Scene,
+    ) {
+        let Some(ColliderShape::Cylinder(cylinder)) = try_get_collider_shape_mut(collider, scene)
+        else {
+            return;
+        };
+
+        if handle == self.radius_handle {
+            cylinder.radius = value.into_scalar().max(0.0);
+        } else if handle == self.half_height_handle {
+            cylinder.half_height = value.into_scalar().max(0.0);
+        }
+    }
+}

@@ -9,6 +9,7 @@ Programs decide what to do with `If` and `Select`.
 - [ElseIf](#elseif)
 - [Select](#select)
 - [Tips](#tips)
+- [Try it yourself](#try-it-yourself)
 
 ## If on one line
 
@@ -187,5 +188,89 @@ Grade B
 - **`IIf`** picks between two values in an expression
   ([chapter 3](03-expressions.md#choosing-a-value-iif)):
   `Print IIf(won, "You win", "You lose")`.
+
+## Try it yourself
+
+1. **The castle gate.** The guard lets you in only if your level is 5 or more
+   *and* you carry the pass. Set `level = 7` and `hasPass = True`, and print
+   `The gate opens.` or `The guard blocks your way.`
+   *Hint: use an `If` block with `Else`, and join the two tests with `And`.*
+2. **Damage report.** A hit does `damage = 18` points. Print `Miss` for 0,
+   `Weak hit` for 1 to 9, `Good hit` for 10 to 19 and `Critical hit!` for 20
+   or more.
+   *Hint: `Select True` lets each `Case` be a condition, and the first true one wins.*
+3. **Tiny adventure.** You stand in front of a locked door and have typed the
+   command `"open"`, and you have `hasKey = False`. Use `Select` on the
+   command: for `"open"`, say the door opens if you have the key and that it
+   is locked if you do not; for `"look"` describe the room; anything else
+   prints `I don't understand.`
+   *Hint: you can put an `If` block inside a `Case`.*
+
+### Answers
+
+1.
+
+```basic
+level = 7
+hasPass = True
+If level >= 5 And hasPass
+    Print "The gate opens."
+Else
+    Print "The guard blocks your way."
+EndIf
+```
+
+```output
+The gate opens.
+```
+
+`And` is true only when both sides are true. Level 7 is at least 5 and
+`hasPass` is `True`, so the first part runs. Change either value and the
+`Else` part runs instead.
+
+2.
+
+```basic
+damage = 18
+Select True
+    Case damage = 0 : Print "Miss"
+    Case damage < 10 : Print "Weak hit"
+    Case damage < 20 : Print "Good hit"
+    Default : Print "Critical hit!"
+End Select
+```
+
+```output
+Good hit
+```
+
+The cases are checked from the top, and the first true one runs. 18 is not 0
+and not below 10, but it is below 20, so it prints `Good hit`. Anything left
+over (20 or more) reaches `Default`.
+
+3.
+
+```basic
+command = "open"
+hasKey = False
+Select command
+    Case "open"
+        If hasKey
+            Print "The door swings open."
+        Else
+            Print "The door is locked."
+        EndIf
+    Case "look" : Print "You see a stone room with one wooden door."
+    Default : Print "I don't understand."
+End Select
+```
+
+```output
+The door is locked.
+```
+
+`Select` works with text, so the `"open"` case is chosen. Inside it, an
+ordinary `If` block checks the key. Try changing `hasKey` to `True`, or the
+command to `"look"` or `"dance"`.
 
 [Contents](../MANUAL.md) · Previous: [3. Expressions and operators](03-expressions.md) · Next: [5. Loops](05-loops.md)

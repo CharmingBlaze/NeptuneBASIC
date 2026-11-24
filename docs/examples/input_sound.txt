@@ -147,8 +147,9 @@ EnableDirectInput 0
 If DirectInputEnabled() = 0 Then Print "DirectInput is off"
 
 === JoyType
-; 0 = no controller, 2 = gamepad
-If JoyType(0) = 0 Then Print "No controller on port 0" Else Print "Gamepad found"
+; choose the control scheme when the game starts
+If JoyType(0) = 0 Then control$ = "keyboard" Else control$ = "gamepad"
+Print "Controls: " + control$   ; keyboard, when no gamepad is connected
 
 === CountJoys
 pads = CountJoys()         ; how many controllers are connected
@@ -366,6 +367,12 @@ BusReverb cave, 0                ; 0 removes the reverb again
 world = CreateAudioBus("world")
 BusFilter world, FILTER_LOWPASS, 800     ; only sounds below about 800 Hz pass
 BusFilter world, FILTER_NONE             ; back to normal
+
+=== SetHRTF
+; head-related 3D sound, if the game has the measurements
+Graphics3D 800, 600
+If SetHRTF("sounds/head.bin") = 0 Then DebugLog "plain panning"
+SetHRTF                          ; no file: back to plain panning
 
 === SoundBus
 ; every later PlaySound of this sound goes into the voices bus

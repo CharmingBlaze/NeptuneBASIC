@@ -1,0 +1,627 @@
+; JET SKI - a race round a tropical lagoon, in the style of a 1990s console.
+; Run from the repository root:  neptune run examples/games/jetski.nb
+;
+;   W / S ........ throttle and brake        A / D ........ steer
+;   Space ........ hop                       R ............ back on the course
+;   P ............ let the computer ride     Esc .......... quit
+;
+; The shared look, course building and vehicle rules are in retro64.nb. This
+; file adds what is special about racing on water:
+;
+;   * Waves are only a picture. The character controllers ride on one flat,
+;     invisible floor, and the model bobs up and down on the waves drawn above
+;     it. The race stays fair, and the sea can be as
+;     lively as we like.
+;   * The water is a small patch of grid that travels with the camera.
+;   * Real ramps float on the course: solid meshes the controllers drive up.
+
+Include "retro64.nb"
+
+SeedRnd 21
+
+Const COURSE_HALF# = 17         ; half the width of the course, in metres
+Const SKI_TOP# = 34             ; metres a second
+Const RACE_LAPS = 3
+Const SEA_CELLS = 38            ; squares along each side of the moving water
+Const SEA_CELL# = 7.5           ; metres per square
+Const SEA_FLOOR# = -2.6         ; height of the hidden floor the riders drive on
+Const CREST_GRAVITY# = 18       ; how hard a ski falls after leaving a crest
+
+; ---- a bright tropical noon --------------------------------------------------
+RetroWindow "Jet Ski", 186, 224, 246, 140, 640
+SetSun 0.5, 0.8, 0.35, 255, 248, 228, 150, 160, 176
+MakeSky 26, 104, 214, 186, 224, 246, 255, 255, 255, 0.5, 255, 255, 235
+InitBeeps
+
+; Tell the toolkit that shadows and the camera should stop at the sea, and that
+; the seabed in hMap says nothing about where a jet ski takes off.
+waterLevel = 0
+crestLaunch = False
+
+; ---- the course ----------------------------------------------------------------
+LandSetup 200, 5
+TrackPoint -260, -240 : TrackPoint -100, -285 : TrackPoint 60, -230
+TrackPoint 220, -275  : TrackPoint 330, -160  : TrackPoint 290, -30
+TrackPoint 180, 20    : TrackPoint 120, 130   : TrackPoint 230, 230
+TrackPoint 130, 320   : TrackPoint -30, 270   : TrackPoint -130, 180
+TrackPoint -280, 230  : TrackPoint -350, 90   : TrackPoint -260, -40
+TrackPoint -340, -150
+TrackBuild 3
+For s = 0 To trackCount - 1
+    trackY(s) = SEA_FLOOR       ; the riders start on the hidden floor
+Next
+TrackStamp 48, 2
+
+; ---- islands --------------------------------------------------------------------
+; Each island is a soft bump in the seabed: a position, a radius and a height.
+Dim isleX#(12), isleZ#(12), isleR#(12), isleH#(12)
+Global isles
+Function Isle(x#, z#, r#, h#)
+    isleX(isles) = x : isleZ(isles) = z : isleR(isles) = r : isleH(isles) = h
+    isles = isles + 1
+End Function
+Isle 0, -40, 125, 38
+Isle -190, 70, 58, 16
+Isle 190, -130, 48, 14
+Isle 25, 165, 55, 18
+Isle 410, 330, 110, 42
+Isle -430, -340, 115, 46
+Isle 400, -420, 90, 30
+Isle -440, 330, 100, 34
+Isle -80, -395, 60, 16
+
+For j = 0 To mapN
+    For i = 0 To mapN
+        x# = GridX(i) : z# = GridZ(j)
+        h# = -13 + Fractal(x * 0.02, z * 0.02, 3) * 7
+        For isle = 0 To isles - 1
+            d# = Sqr((x - isleX(isle)) ^ 2 + (z - isleZ(isle)) ^ 2)
+            If d < isleR(isle)
+                k# = 1 - d / isleR(isle)
+                bump# = k * k * (3 - 2 * k) * (isleH(isle) + 14)
+                bump = bump * (0.75 + Fractal(x * 0.05 + 7, z * 0.05 + 3, 3) * 0.5)
+                h = h + bump
+            End If
+        Next
+        ; steep land all round, so that the map has no visible edge
+        h = h + SmoothStep(430, 495, Max(Abs(x), Abs(z))) * 60
+        ; keep the course itself deep enough to race on
+        If h > -6 Then h = -6 + (h + 6) * SmoothStep(24, 44, TrackDistance(i, j))
+        hMap(i, j) = h
+    Next
+Next
+
+; ---- painting: pale sand under the water, then beach, jungle and rock -------------
+sand = RGB(236, 220, 170)
+seabed = RGB(226, 208, 150)
+jungle = RGB(72, 150, 66)
+hillGrass = RGB(112, 164, 72)
+rock = RGB(128, 118, 110)
+For j = 0 To mapN
+    For i = 0 To mapN
+        y# = hMap(i, j)
+        If y < 1.2
+            c = MixRGB(sand, seabed, SmoothStep(1, -2.5, y))
+            ; the water is see-through, so the deep seabed has to be deep blue
+            c = MixRGB(c, RGB(16, 88, 172), SmoothStep(-1.5, -6, y))
+        Else
+            c = MixRGB(sand, jungle, SmoothStep(1.2, 3.2, y))
+            c = MixRGB(c, hillGrass, SmoothStep(8, 20, y))
+            c = MixRGB(c, rock, SmoothStep(24, 36, y))
+        End If
+        cMap(i, j) = JitterRGB(c, 6)
+    Next
+Next
+BuildLand MakeDetailTexture(205, 255, 16), 2
+UpdateWorld : RenderWorld
+
+; The floor the riders actually drive on, completely see-through. It is a grid
+; of small squares because collision tests lose accuracy against a single giant
+; shape: on one huge box the riders jittered up and down by a quarter of a metre.
+Const FLOOR_CELLS = 40, FLOOR_CELL# = 26
+floor = CreateMesh()
+floorSurf = CreateSurface(floor)
+For j = 0 To FLOOR_CELLS
+    For i = 0 To FLOOR_CELLS
+        AddVertex floorSurf, (i - FLOOR_CELLS / 2) * FLOOR_CELL, 0, (j - FLOOR_CELLS / 2) * FLOOR_CELL
+    Next
+Next
+For j = 0 To FLOOR_CELLS - 1
+    For i = 0 To FLOOR_CELLS - 1
+        a = j * (FLOOR_CELLS + 1) + i
+        AddTriangle floorSurf, a + FLOOR_CELLS + 1, a + FLOOR_CELLS + 2, a + 1
+        AddTriangle floorSurf, a + FLOOR_CELLS + 1, a + 1, a
+    Next
+Next
+UpdateNormals floor
+PositionEntity floor, 0, SEA_FLOOR, 0
+EntityAlpha floor, 0
+EntityPhysics floor, 2, 5
+
+; ---- the sea -----------------------------------------------------------------------
+; A sine wave with a sharpened top: broad troughs and pointed crests, the shape
+; of a real swell.
+Function Peak#(angle#)
+    p# = 0.5 + 0.5 * Sin(angle)
+    Return 2 * p * p - 1
+End Function
+
+; The height of the sea at a place and time: two big swells crossing, with a
+; small chop on top. Numbers are degrees per metre, so 6 means a swell about
+; 60 metres long. Waves die away as the water shallows, which keeps beaches dry.
+Function Wave#(x#, z#, t#)
+    deep# = SmoothStep(-0.5, -5, GroundY(x, z))
+    swell# = Peak(x * 2.2 + z * 6.1 + t * 70) * 1.25 + Peak(z * 3.4 - x * 4.8 + t * 55) * 0.7
+    Return (swell + Sin(x * 9 + z * 11 - t * 90) * 0.2) * deep
+End Function
+
+; The moving patch. Vertices are in a fixed order, so each frame we only need to
+; say how high each one is and what colour it should be.
+Dim seaHeight#(SEA_CELLS, SEA_CELLS)      ; this frame's height of each corner
+Global seaMesh = CreateMesh()
+Global seaSurf = CreateSurface(seaMesh)
+For j = 0 To SEA_CELLS
+    For i = 0 To SEA_CELLS
+        AddVertex seaSurf, i * SEA_CELL, 0, j * SEA_CELL, i / 3.0, j / 3.0
+    Next
+Next
+For j = 0 To SEA_CELLS - 1
+    For i = 0 To SEA_CELLS - 1
+        a = j * (SEA_CELLS + 1) + i
+        AddTriangle seaSurf, a + SEA_CELLS + 1, a + SEA_CELLS + 2, a + 1
+        AddTriangle seaSurf, a + SEA_CELLS + 1, a + 1, a
+    Next
+Next
+EntityFX seaMesh, 1 + 2 + 32           ; full bright, painted colours, see-through
+
+; A small rippled texture slides across it, to make the surface look alive.
+Global ripple = CreateTexture(64, 64, 1 + 8)
+SetBuffer TextureBuffer(ripple)
+For y = 0 To 63
+    For x = 0 To 63
+        speck# = Noise2(x / 8.0, y / 8.0, 8) * 0.6 + Noise2(x / 4.0, y / 4.0, 16) * 0.4
+        level = 208 + 47 * SmoothStep(0.45, 0.72, speck)
+        WritePixel x, y, $FF000000 Or RGB(level, level, level)
+    Next
+Next
+SetBuffer BackBuffer()
+EntityTexture seaMesh, ripple
+
+; Past the patch there is only a flat ring, with a hole for the patch to sit in.
+Global seaRing = CreateMesh()
+ringSurf = CreateSurface(seaRing)
+Dim ringX#(4), ringZ#(4)
+inner# = (SEA_CELLS - 2) * SEA_CELL / 2
+outer# = 2400
+ringX(0) = -1 : ringZ(0) = -1 : ringX(1) = 1 : ringZ(1) = -1
+ringX(2) = 1 : ringZ(2) = 1 : ringX(3) = -1 : ringZ(3) = 1
+For k = 0 To 3
+    AddVertex ringSurf, ringX(k) * inner, 0, ringZ(k) * inner
+    AddVertex ringSurf, ringX(k) * outer, 0, ringZ(k) * outer
+    VertexColor ringSurf, k * 2, 22, 112, 184
+    VertexColor ringSurf, k * 2 + 1, 22, 112, 184
+Next
+For k = 0 To 3
+    m = (k + 1) Mod 4
+    AddTriangle ringSurf, k * 2, k * 2 + 1, m * 2 + 1
+    AddTriangle ringSurf, k * 2, m * 2 + 1, m * 2
+Next
+EntityFX seaRing, 1 + 2 + 16
+
+Function UpdateSea(t#)
+    ; Move the patch only in whole squares, so waves stay fixed to the world
+    ; instead of sliding around with the camera.
+    ox = Floor(EntityX(camera) / SEA_CELL) - SEA_CELLS / 2
+    oz = Floor(EntityZ(camera) / SEA_CELL) - SEA_CELLS / 2
+    ; See-through things are drawn farthest first, judged by each mesh's origin.
+    ; Keeping the water's origin far ahead of the camera means it is drawn
+    ; before the spray, so it can never paint over the spray.
+    seaX# = (ox + SEA_CELLS / 2) * SEA_CELL - Sin(EntityYaw(camera)) * 1800
+    seaZ# = (oz + SEA_CELLS / 2) * SEA_CELL + Cos(EntityYaw(camera)) * 1800
+    PositionEntity seaMesh, seaX, 0, seaZ
+    PositionEntity seaRing, (ox + SEA_CELLS / 2) * SEA_CELL, -0.5, (oz + SEA_CELLS / 2) * SEA_CELL
+    PositionTexture ripple, t * 0.03, t * 0.05
+    For j = 0 To SEA_CELLS
+        For i = 0 To SEA_CELLS
+            wx# = (ox + i) * SEA_CELL
+            wz# = (oz + j) * SEA_CELL
+            h# = Wave(wx, wz, t)
+            ; fade the swells out towards the rim, so it meets the flat ring
+            edge = Min(Min(i, j), Min(SEA_CELLS - i, SEA_CELLS - j))
+            h = -0.5 + (h + 0.5) * SmoothStep(0, 7, edge)
+            index = j * (SEA_CELLS + 1) + i
+            VertexCoords seaSurf, index, wx - seaX, h, wz - seaZ
+
+            ; Blue in the deep, turquoise over sand, and pale on the wave tops.
+            ; Shallow water is also clearer, so the sand shows through it.
+            depth# = Clamp(-GroundY(wx, wz) / 12, 0, 1)
+            crest# = Clamp((h - 0.2) * 0.32, 0, 0.55)
+            r# = 62 + (20 - 62) * depth + 190 * crest
+            g# = 208 + (108 - 208) * depth + 130 * crest
+            b# = 204 + (186 - 204) * depth + 60 * crest
+
+            ; Light the swell. Comparing with the neighbours already done says
+            ; which way this bit of water leans: towards the sun is brighter.
+            ; Nothing else makes the shape of a wave show up as well as this.
+            seaHeight(i, j) = h
+            If i > 0 And j > 0
+                lit# = Clamp(1 + (sunX * (seaHeight(i - 1, j) - h) + sunZ * (seaHeight(i, j - 1) - h)) / SEA_CELL * 3, 0.55, 1.45)
+                r = r * lit : g = g * lit : b = b * lit
+            End If
+            VertexColor seaSurf, index, Min(r, 255), Min(g, 255), Min(b, 255), 0.45 + 0.5 * depth
+        Next
+    Next
+End Function
+
+; ---- a floating ramp: a wedge of stripes, and a real solid mesh ----------------------
+Const RAMP_LEN# = 24, RAMP_HIGH# = 7, RAMP_HALF# = 6
+Function MakeRamp(s)
+    e = CreateMesh()
+    surf = CreateSurface(e)
+    For k = 0 To 7
+        z0# = k * RAMP_LEN / 8 - RAMP_LEN / 2
+        z1# = (k + 1) * RAMP_LEN / 8 - RAMP_LEN / 2
+        y0# = k * RAMP_HIGH / 8
+        y1# = (k + 1) * RAMP_HIGH / 8
+        v = AddVertex(surf, -RAMP_HALF, y0, z0)
+        AddVertex surf, RAMP_HALF, y0, z0
+        AddVertex surf, RAMP_HALF, y1, z1
+        AddVertex surf, -RAMP_HALF, y1, z1
+        For q = 0 To 3
+            If k Mod 2 = 0
+                VertexColor surf, v + q, 250, 206, 50
+            Else
+                VertexColor surf, v + q, 226, 60, 50
+            End If
+        Next
+        AddTriangle surf, v, v + 3, v + 2
+        AddTriangle surf, v, v + 2, v + 1
+    Next
+    ; two sides and the tall back of the wedge
+    For side = -1 To 1 Step 2
+        v = AddVertex(surf, side * RAMP_HALF, 0, -RAMP_LEN / 2)
+        AddVertex surf, side * RAMP_HALF, 0, RAMP_LEN / 2
+        AddVertex surf, side * RAMP_HALF, RAMP_HIGH, RAMP_LEN / 2
+        For q = 0 To 2
+            VertexColor surf, v + q, 150, 110, 70
+        Next
+        AddTriangle surf, v, v + 1, v + 2
+    Next
+    v = AddVertex(surf, -RAMP_HALF, 0, RAMP_LEN / 2)
+    AddVertex surf, RAMP_HALF, 0, RAMP_LEN / 2
+    AddVertex surf, RAMP_HALF, RAMP_HIGH, RAMP_LEN / 2
+    AddVertex surf, -RAMP_HALF, RAMP_HIGH, RAMP_LEN / 2
+    For q = 0 To 3
+        VertexColor surf, v + q, 120, 86, 56
+    Next
+    AddTriangle surf, v, v + 2, v + 1
+    AddTriangle surf, v, v + 3, v + 2
+    UpdateNormals e
+    EntityFX e, 1 + 2 + 16
+    PositionEntity e, trackX(s), SEA_FLOOR, trackZ(s)
+    RotateEntity e, 0, ATan2(-trackDX(s), trackDZ(s)), 0
+    EntityPhysics e, 2, 5
+End Function
+
+MakeRamp ctrlSample(1) + 6
+MakeRamp ctrlSample(4) + 12
+MakeRamp ctrlSample(8) + 6
+MakeRamp ctrlSample(12) + 10
+UpdateWorld : RenderWorld
+
+; ---- scenery ------------------------------------------------------------------------
+PropsBegin
+placed = 0
+tries = 0
+While placed < 520 And tries < 12000
+    tries = tries + 1
+    x# = Rnd(-480, 480)
+    z# = Rnd(-480, 480)
+    y# = GroundY(x, z)
+    If y > 1.6 And y < 22 And SlopeAt(x, z) < 0.6
+        If Rand(1, 5) > 1
+            PropPalm x, y - 0.3, z, Rnd(1.3, 2.3)
+        Else
+            ; a dark, round jungle bush
+            PropTube x, y - 0.2, z, Rnd(1.6, 3), 0, Rnd(1.6, 2.6), 6, RGB(44, 112, 58), RGB(70, 140, 70)
+        End If
+        placed = placed + 1
+    End If
+Wend
+
+; Rocks standing in the shallows give the beaches something to break against.
+placed = 0
+tries = 0
+While placed < 70 And tries < 8000
+    tries = tries + 1
+    x# = Rnd(-470, 470)
+    z# = Rnd(-470, 470)
+    y# = GroundY(x, z)
+    If y > -2.5 And y < 0.6 And TrackDistanceAt(x, z) > COURSE_HALF + 6
+        PropRock x, y, z, Rnd(1, 2.6), RGB(116, 108, 104)
+        placed = placed + 1
+    End If
+Wend
+
+; A lighthouse on the big island, painted in rings.
+lx# = -10 : lz# = -35
+ly# = GroundY(lx, lz) - 1
+For ring = 0 To 7
+    col = RGB(236, 236, 236)
+    If ring Mod 2 = 0 Then col = RGB(222, 60, 52)
+    PropTube lx, ly + ring * 3.2, lz, 3.4 - ring * 0.22, 3.4 - (ring + 1) * 0.22, 3.2, 8, col
+Next
+PropTube lx, ly + 25.6, lz, 1.5, 1.5, 2.2, 8, RGB(250, 236, 150)
+PropTube lx, ly + 27.8, lz, 2.1, 0, 2.2, 8, RGB(200, 54, 48)
+AddSolid lx, lz, 3.5
+
+; Grass huts on stilts by the water, and a pier reaching out from one of them.
+Function PropHut(x#, y#, z#, yaw#)
+    For a = 0 To 3
+        PropTube x + Cos(a * 90 + 45 + yaw) * 3, y - 1, z + Sin(a * 90 + 45 + yaw) * 3, 0.16, 0.16, 3.2, 4, RGB(116, 84, 52)
+    Next
+    PropBox x, y + 2.2, z, 2.6, 2, 2.6, yaw, RGB(198, 158, 104)
+    PropTube x, y + 4.2, z, 4.4, 0, 3, 6, RGB(190, 158, 86), RGB(216, 186, 112)
+    AddSolid x, z, 3.2
+End Function
+
+; Huts go wherever the shoreline happens to be.
+placed = 0
+tries = 0
+While placed < 14 And tries < 8000
+    tries = tries + 1
+    x# = Rnd(-300, 300)
+    z# = Rnd(-300, 300)
+    y# = GroundY(x, z)
+    If y > 1.6 And y < 3.4 And SlopeAt(x, z) < 0.3
+        PropHut x, y, z, Rnd(90)
+        placed = placed + 1
+    End If
+Wend
+
+; The start arch sits right on the water.
+PropArch 0, COURSE_HALF, 9, RGB(30, 110, 230), RGB(250, 250, 250)
+PropsEnd
+FarMountains 1500, -2, 120, 40, RGB(150, 188, 212), RGB(170, 206, 226)
+
+; ---- buoys mark both sides of the course, and bob on the waves -----------------------
+Type Buoy
+    Field e, x#, z#
+End Type
+
+Function AddBuoy(x#, z#, r, g, b)
+    n.Buoy = New Buoy
+    n\x = x : n\z = z
+    n\e = CreatePivot()
+    PartBall n\e, 0, 0.3, 0, 0.75, 0.7, 0.75, r, g, b
+    PartBox n\e, 0, 1.3, 0, 0.1, 0.6, 0.1, 240, 240, 240
+    PartBall n\e, 0, 2, 0, 0.28, 0.28, 0.28, r, g, b
+    AddSolid x, z, 0.8
+End Function
+
+For s = 0 To trackCount - 1 Step 20
+    px# = trackDZ(s) * COURSE_HALF
+    pz# = -trackDX(s) * COURSE_HALF
+    AddBuoy trackX(s) + px, trackZ(s) + pz, 240, 80, 50
+    AddBuoy trackX(s) - px, trackZ(s) - pz, 250, 214, 60
+Next
+
+; ---- gulls: two flapping triangles going round in circles ------------------------------
+Type Gull
+    Field e, wing1, wing2, cx#, cy#, cz#, r#, a#, rate#
+End Type
+
+Function MakeWing(parent, side)
+    wing = CreateMesh(0, parent)
+    s = CreateSurface(wing)
+    AddVertex s, 0, 0, 0.5
+    AddVertex s, 0, 0, -0.4
+    AddVertex s, side * 1.5, 0, -0.2
+    AddTriangle s, 0, 1, 2
+    UpdateNormals wing
+    EntityFX wing, 1 + 16
+    EntityColor wing, 245, 245, 250
+    Return wing
+End Function
+
+For i = 1 To 12
+    g.Gull = New Gull
+    g\e = CreatePivot()
+    PartBall g\e, 0, 0, 0, 0.22, 0.2, 0.55, 245, 245, 250
+    g\wing1 = MakeWing(g\e, -1)
+    g\wing2 = MakeWing(g\e, 1)
+    g\cx = Rnd(-260, 260) : g\cz = Rnd(-260, 260) : g\cy = Rnd(16, 42)
+    g\r = Rnd(25, 70) : g\a = Rnd(360) : g\rate = Rnd(14, 30)
+Next
+
+; ---- the jet skis --------------------------------------------------------------------
+Function BuildSki(v.Rider)
+    b = v\body
+    ; the hull: a long box, with a shorter one tipped up to make the bow
+    PartBox b, 0, 0.45, -0.25, 0.46, 0.26, 1.1, v\r, v\g, v\b
+    nose = PartBox(b, 0, 0.56, 1.05, 0.38, 0.17, 0.62, v\r, v\g, v\b)
+    RotateEntity nose, -14, 0, 0
+    PartBox b, 0, 0.25, -0.2, 0.36, 0.1, 1.05, 240, 240, 245       ; white underside
+    PartBox b, 0, 0.8, -0.65, 0.2, 0.12, 0.62, 34, 34, 42          ; seat
+    v\steer1 = CreatePivot(b)
+    PositionEntity v\steer1, 0, 1.1, 0.45
+    PartBox v\steer1, 0, 0, 0, 0.05, 0.3, 0.05, 80, 80, 90
+    PartBox v\steer1, 0, 0.3, 0, 0.42, 0.04, 0.04, 30, 30, 36      ; handlebars
+
+    PartBox b, 0, 1.38, -0.42, 0.22, 0.34, 0.16, 240, 110, 40      ; life jacket
+    For side = -1 To 1 Step 2
+        PartBox b, side * 0.26, 0.82, -0.3, 0.09, 0.3, 0.12, 220, 170, 130  ; leg
+        PartBox b, side * 0.27, 1.45, 0, 0.07, 0.08, 0.34, 220, 170, 130   ; arm
+    Next
+    PartBall b, 0, 1.92, -0.32, 0.2, 0.2, 0.22, 220, 170, 130      ; head
+    PartBall b, 0, 2.02, -0.34, 0.21, 0.13, 0.23, v\r, v\g, v\b    ; cap
+
+    ; a jet of spray thrown up behind, and a wake that lingers on the water
+    v\dust = CreateEmitter(MakePuffTexture())
+    EmitterMax v\dust, 90
+    EmitterRate v\dust, 0
+    EmitterLife v\dust, 0.3, 0.65
+    EmitterVelocity v\dust, 0, 3.5, 0, 1.4
+    EmitterSize v\dust, 0.22, 0.5
+    EmitterColor v\dust, 255, 255, 255, 220
+    EmitterFadeColor v\dust, 230, 245, 255, 0
+    EmitterGravity v\dust, 0, -16, 0
+
+    v\extra = CreateEmitter(MakePuffTexture())
+    EmitterMax v\extra, 200
+    EmitterRate v\extra, 0
+    EmitterLife v\extra, 0.7, 1.3
+    EmitterVelocity v\extra, 0, 0.1, 0, 0.3
+    EmitterSize v\extra, 0.6, 0.7
+    EmitterColor v\extra, 255, 255, 255, 110
+    EmitterFadeColor v\extra, 220, 240, 255, 0
+
+    ; There is nothing for a shadow to lie on but moving water.
+    HideEntity v\blob
+End Function
+
+Function AddSki.Rider(name$, isPlayer, row, side, r, g, b, skill#)
+    v.Rider = NewRider(name, isPlayer, -4 - row * 5, side * 6, SKI_TOP, 15, 104, r, g, b)
+    v\skill = skill
+    ; The ramps are 17 degrees. Anything much steeper than that is a beach to stop at.
+    CharSet v\ctrl, "max_slope", 22
+    CharSet v\ctrl, "snap", 0.5
+    CharSet v\ctrl, "jump_speed", 9
+    BuildSki v
+    v\bob = -SEA_FLOOR       ; start at the surface, not on the hidden floor
+    Return v
+End Function
+
+player = AddSki("YOU", True, 2, 1, 230, 50, 60, 1)
+AddSki "MARINA", False, 0, -1, 250, 205, 50, 0.97
+AddSki "CORAL", False, 0, 1, 250, 120, 180, 0.94
+AddSki "REEF", False, 1, -1, 60, 210, 120, 0.91
+AddSki "TIDE", False, 1, 1, 60, 150, 250, 0.87
+AddSki "SKIPPER", False, 2, -1, 180, 110, 240, 0.83
+
+engineSound = MakeEngine("jetski", 60, 0.3)
+If engineSound
+    SoundVolume engineSound, 0.5
+    engineChannel = PlaySound(engineSound)
+End If
+
+StartRace RACE_LAPS
+ChaseCamera player, 8, 3.4, True, 0.02, -SEA_FLOOR
+seconds# = 0
+
+; ---- the main loop ---------------------------------------------------------------------
+While Not KeyHit(KEY_ESCAPE)
+    dt# = LastFrameTime()
+    seconds = seconds + dt
+    UpdateRace dt
+
+    If ActionHit("reset")
+        If raceState = STATE_DONE Then RestartRace Else RespawnRider player
+    End If
+
+    For v.Rider = Each Rider
+        c = v\ctrl
+        x# = CharX(c) : z# = CharZ(c)
+        ; driven up on the sand, the ski has almost no speed at all
+        limit# = v\top * RubberBand(v)
+        If GroundY(x, z) > -0.3 Then limit = 7
+
+        If raceState = STATE_COUNTDOWN
+            DriveRider v, 0, 0, 0, limit, dt
+        ElseIf v\isPlayer And autopilot = False And raceState = STATE_RACE
+            If ActionHit("jump") Then CharJump c
+            DriveRider v, ActionValue("gas"), ActionValue("brake"), ActionValue("left") - ActionValue("right"), limit, dt
+        Else
+            ThinkAI v, COURSE_HALF, seconds
+            If v\finished Then aiThrottle = aiThrottle * 0.5
+            DriveRider v, aiThrottle, aiBrake, aiSteer, limit, dt
+        End If
+
+        ; Which way does the sea face here? Measure the height either side.
+        x = CharX(c) : z = CharZ(c)
+        h# = Wave(x, z, seconds)
+        nx# = (Wave(x - 1.5, z, seconds) - Wave(x + 1.5, z, seconds)) / 3
+        nz# = (Wave(x, z - 1.5, seconds) - Wave(x, z + 1.5, seconds)) / 3
+
+        ; How close to the water is it? This is a smooth number, from 1 on the
+        ; water to 0 up on a ramp, and never a sudden yes or no. A yes or no
+        ; would make the ski snap between riding the waves and ignoring them.
+        onWater# = 1 - SmoothStep(0, 3.5, CharY(c) - Max(SEA_FLOOR, GroundY(x, z)))
+
+        ; Where the model should be, measured up from the rider on the floor.
+        wantBob# = (h + 0.12 - CharY(c)) * onWater
+
+        ; Riding the swell. The model is always at least on the surface, and it
+        ; falls no faster than gravity allows. So when a crest drops away quicker
+        ; than that, the ski simply keeps going and flies off the top of the wave.
+        flying = v\bob > wantBob + 0.05
+        fallen# = v\bob + (v\bobSpeed - CREST_GRAVITY * dt) * dt
+        oldSpeed# = v\bobSpeed
+        newBob# = Max(fallen, wantBob)
+        v\bobSpeed = (newBob - v\bob) / dt
+        v\bob = newBob
+
+        ; Coming back down: squash the suspension, harder for a bigger drop.
+        If flying And newBob <= wantBob + 0.001 And oldSpeed < -3
+            v\squash = Min(1, -oldSpeed / 12)
+            If v\isPlayer Then CameraShake camera, Min(0.5, -oldSpeed * 0.04), 0.2
+        End If
+
+        ; The bow follows the climb and the fall, off ramps and off waves alike.
+        wantPitch# = -3 - Abs(v\speed) * 0.16 - ATan2(v\bobSpeed + CharVY(c), Max(8, v\speed)) * 0.7
+        wantRoll# = v\steer * 30 * Min(1, Abs(v\speed) / 14)
+        ease# = Clamp(11 * dt, 0, 1)
+        v\posePitch = v\posePitch + (wantPitch - v\posePitch) * ease
+        v\poseRoll = v\poseRoll + (wantRoll - v\poseRoll) * ease
+
+        ; In the air there is no wave to line up with, so it levels out.
+        lean# = onWater
+        If flying Then lean = lean * 0.3
+        PoseRider v, nx * lean, 1, nz * lean, v\bob, v\posePitch, v\poseRoll, dt
+
+        If onWater > 0.7 And flying = False
+            EmitterRate v\dust, Abs(v\speed) * 1.2
+            EmitterRate v\extra, Abs(v\speed) * 2.5
+        Else
+            EmitterRate v\dust, 0
+            EmitterRate v\extra, 0
+        End If
+        rearX# = x + Sin(v\yaw) * 2.2
+        rearZ# = z - Cos(v\yaw) * 2.2
+        PositionEntity v\dust, rearX, h + 0.5, rearZ
+        PositionEntity v\extra, rearX, h + 0.1, rearZ
+
+        If CharLanded(c)
+            If v\isPlayer And CharImpact(c) > 8 Then CameraShake camera, 0.35, 0.2
+        End If
+        CheckStuck v, dt
+    Next
+
+    ; Everything that bobs follows the same wave function as the water does.
+    For n.Buoy = Each Buoy
+        PositionEntity n\e, n\x, Wave(n\x, n\z, seconds) - 0.1, n\z
+        RotateEntity n\e, Sin(seconds * 60 + n\x) * 7, 0, Cos(seconds * 50 + n\z) * 7
+    Next
+    For g.Gull = Each Gull
+        g\a = g\a + g\rate * dt
+        PositionEntity g\e, g\cx + Cos(g\a) * g\r, g\cy, g\cz + Sin(g\a) * g\r
+        RotateEntity g\e, 0, -g\a, 0
+        flap# = Sin(seconds * 300 + g\r * 9) * 28
+        RotateEntity g\wing1, 0, 0, flap
+        RotateEntity g\wing2, 0, 0, -flap
+    Next
+
+    If engineChannel Then ChannelPitch engineChannel, 11025 * (0.7 + 1.3 * Abs(player\speed) / SKI_TOP)
+
+    ; The camera rides the swell too, a little less than the ski does, and must
+    ; never end up under a crest.
+    waterLevel = Wave(camX, camZ, seconds)
+    ChaseCamera player, 8, 3.4, False, dt, player\bob * 0.75 - SEA_FLOOR * 0.25
+    UpdateSea seconds
+    UpdateWorld
+    RenderWorld
+
+    DrawRaceHud "JET SKI"
+    RetroFlip
+Wend
+End

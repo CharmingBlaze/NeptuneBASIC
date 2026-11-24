@@ -247,6 +247,33 @@ fn inferred_object_variables() {
 }
 
 #[test]
+fn string_append_keeps_aliases_and_length() {
+    let src = r#"
+a$ = "hi"
+b$ = a
+a = a + "!"
+Print a
+Print b
+s$ = ""
+For i = 1 To 500
+    s = s + Chr(65 + (i Mod 26))
+Next
+t$ = s
+s = s + "Z"
+Print Len(s) + " " + Len(t)
+Print Left(t, 3) + Right(t, 3) + Right(s, 1)
+u$ = ""
+For i = 1 To 40
+    u = u + "é"
+Next
+Print Len(u)
+w$ = "ééxé"
+Print Mid(w, 2, 2) + " " + Instr(w, "x") + " " + Left(w, 1) + Right(w, 2)
+"#;
+    assert_eq!(ok(src), "hi!\nhi\n501 500\nBCDEFGZ\n40\néx 3 éxé\n");
+}
+
+#[test]
 fn string_functions_and_interpolation() {
     let src = r#"
 s$ = "Hello, World"
@@ -320,6 +347,124 @@ End Try
 }
 
 #[test]
+fn goto_out_of_try_drops_only_the_blocks_it_leaves() {
+    let src = r#"
+Try
+  Try
+    Goto out
+  Catch e$
+    Print "inner"
+  End Try
+  .out
+  Throw "x"
+Catch e$
+  Print "outer"
+End Try
+"#;
+    assert_eq!(ok(src), "outer\n");
+    // leaving everything: nothing is left to catch the Throw
+    let e = compile_err("Try\nGoto out\nCatch e$\nPrint \"wrong\"\nEnd Try\n.out\nThrow \"uncaught\"\n");
+    assert!(e.contains("uncaught"), "{e}");
+    // a jump inside one Try, and into its own Catch, leaves it alone or fully
+    assert_eq!(ok("Try\nGoto a\nPrint \"no\"\n.a\nThrow \"x\"\nCatch e$\nPrint e\nEnd Try\n"), "x\n");
+    assert_eq!(ok("Try\nGoto a\nCatch e$\n.a\nPrint \"in catch\"\nEnd Try\n"), "in catch\n");
+}
+
+#[test]
+fn gosub_return_restores_error_handlers() {
+    let src = r#"
+Try
+  Gosub s
+  Throw "after"
+Catch m$
+  Print m
+End Try
+End
+.s
+Try
+  Return
+Catch e$
+  Print "wrong"
+End Try
+"#;
+    assert_eq!(ok(src), "after\n");
+    // Gosub and its label inside one Try keep that Try active
+    let src = r#"
+Try
+  Gosub s
+  Throw "still caught"
+  .s
+  Return
+Catch m$
+  Print m
+End Try
+"#;
+    assert_eq!(ok(src), "still caught\n");
+}
+
+#[test]
+fn catch_forgets_gosubs_it_interrupted() {
+    let src = r#"
+Try
+  Gosub bad
+  Print "wrong"
+Catch e$
+  Print "caught"
+End Try
+Return
+.bad
+Throw "x"
+"#;
+    assert_eq!(ok(src), "caught\n");
+}
+
+#[test]
+fn cannot_jump_into_a_try() {
+    let e = compile_err("Goto a\nTry\n.a\nCatch e$\nEnd Try\n");
+    assert!(e.contains("cannot jump into a 'Try' block"), "{e}");
+    let e = compile_err("Gosub a\nTry\n.a\nCatch e$\nEnd Try\n");
+    assert!(e.contains("cannot jump into a 'Try' block"), "{e}");
+    let e = compile_err("Try\nGoto a\nCatch e$\nEnd Try\nTry\n.a\nCatch e$\nEnd Try\n");
+    assert!(e.contains("cannot jump into a 'Try' block"), "{e}");
+}
+
+#[test]
+fn deep_code_compiles_or_reports_an_error() {
+    let parens = |n: usize| format!("Print {}1{}\n", "(".repeat(n), ")".repeat(n));
+    let ifs = |n: usize| format!("{}Print 1\n{}", "If 1\n".repeat(n), "EndIf\n".repeat(n));
+    let unary = |n: usize| format!("Print {}1\n", "- ".repeat(n));
+    let chain = |n: usize| format!("Print 1{}\n", " + 1".repeat(n));
+    let calls = |n: usize| format!("Function f(a)\nReturn a\nEnd Function\nPrint {}1{}\n", "f(".repeat(n), ")".repeat(n));
+    let interp = |n: usize| format!("Print {}1{}\n", "$\"{".repeat(n), "}\"".repeat(n));
+    let elseifs = |n: usize| format!("x = {n}\nIf x = 0\nPrint 0\n{}EndIf\n", (1..=n).map(|i| format!("ElseIf x = {i}\nPrint {i}\n")).collect::<String>());
+    let fields = |n: usize| format!("Type T\nField t.T\nEnd Type\na.T = New T\nb.T = a{}\n", "\\t".repeat(n));
+    let too_deep = "nested too deeply";
+
+    assert_eq!(ok(&parens(150)), "1\n");
+    assert_eq!(ok(&ifs(200)), "1\n");
+    assert_eq!(ok(&chain(3000)), "3001\n");
+    assert_eq!(ok(&calls(150)), "1\n");
+    assert_eq!(ok(&elseifs(900)), "900\n");
+
+    for src in [parens(50_000), ifs(50_000), unary(50_000), chain(50_000), calls(50_000), interp(1_000), elseifs(5_000), fields(50_000)] {
+        let e = compile_err(&src);
+        assert!(e.contains(too_deep), "{e}");
+        assert_eq!(e.matches("error:").count(), 1, "{e}");
+    }
+    // the deepest mix the limit allows must still fit on the compiler's stack
+    let mix = format!("{}Print 1{}\n{}", "If 1\n".repeat(150), " + 1".repeat(1_500), "EndIf\n".repeat(150));
+    assert_eq!(ok(&mix), "1501\n");
+}
+
+#[test]
+fn byte_order_mark_is_ignored() {
+    assert_eq!(ok("\u{feff}Print 1\n"), "1\n");
+    let e = compile_err("\u{feff}Print (\n");
+    assert!(e.contains("main.nb:1:"), "{e}");
+    assert!(!e.contains('\u{feff}'), "{e}");
+}
+
+#[test]
 fn runtime_errors_have_locations() {
     let e = run("x = 1\ny = 0\nPrint x / y\n").unwrap_err();
     assert!(e.contains("Integer divide by zero"), "{e}");
@@ -368,6 +513,23 @@ fn file_io_roundtrip() {
          f = ReadFile(\"{path}\")\nPrint ReadInt(f)\nPrint ReadFloat(f)\nPrint ReadString(f)\nPrint ReadLine(f)\nPrint Eof(f)\nCloseFile f\nPrint FileType(\"{path}\")\n"
     );
     assert_eq!(ok(&src), "1234\n2.5\nneptune\nline two\n1\n1\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn windows_file_names_work_everywhere() {
+    // Blitz programs come from Windows: backslashes and the wrong letter case
+    // must find the file on Linux and macOS too
+    let dir = std::env::temp_dir().join(format!("neptune_names_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(dir.join("Media"));
+    std::fs::write(dir.join("Media").join("Score.txt"), "42\n").unwrap();
+    let root = dir.to_string_lossy().replace('\\', "/");
+    let src = format!(
+        "f = ReadFile(\"{root}\\MEDIA\\score.TXT\")\nPrint ReadLine(f)\nCloseFile f\nPrint FileType(\"{root}\\media\")\n\
+         CopyFile \"{root}\\media\\score.txt\", \"{root}\\media\\Copy.txt\"\nPrint FileSize(\"{root}/Media/Copy.txt\")\n"
+    );
+    assert_eq!(ok(&src), "42\n2\n3\n");
+    assert!(dir.join("Media").join("Copy.txt").is_file());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -591,11 +753,34 @@ Print CountHostIPs("127.0.0.1") >= 1
 fn blitz3d_language_audit() {
     // A sweep of Blitz3D syntax and built-in behaviour (typed arrays, type
     // lists, Data, Gosub/Goto, rounding, shifts, string functions, ...).
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/programs/");
-    let src = std::fs::read_to_string(format!("{dir}blitz_audit.nb")).unwrap();
-    let expected = std::fs::read_to_string(format!("{dir}blitz_audit.expected")).unwrap().replace("\r\n", "\n");
     // Rand/Rnd lines only check ranges, so the output is deterministic
+    program_matches("blitz_audit");
+}
+
+/// Runs `tests/programs/<name>.nb` and compares with `<name>.expected`.
+fn program_matches(name: &str) {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/programs/");
+    let src = std::fs::read_to_string(format!("{dir}{name}.nb")).unwrap();
+    let expected = std::fs::read_to_string(format!("{dir}{name}.expected")).unwrap().replace("\r\n", "\n");
     assert_eq!(ok(&src), expected);
+}
+
+// The expected output of the next two was printed by the interpreter as it
+// was before superinstructions (`neptune-lang/src/fuse.rs`), typed `Dim`
+// arrays and the in-place value stack: they must not change what programs do.
+
+#[test]
+fn fused_instructions_behave_like_the_plain_ones() {
+    // every comparison against variables and constants, loops up and down,
+    // arithmetic with constants (wrapping, negative divisors), NaN
+    program_matches("fused_ops");
+}
+
+#[test]
+fn stack_and_arrays_behave_as_before() {
+    // typed arrays with conversions and bounds errors, fields, vectors,
+    // recursion deep enough to grow the stack, errors caught mid-expression
+    program_matches("stack_and_arrays");
 }
 
 fn warnings(src: &str) -> String {
@@ -622,4 +807,57 @@ fn settings_save_and_load() {
     let out = ok(&src);
     std::fs::remove_file(&file).ok();
     assert_eq!(out, "0\n1\nAnn 1200 0.5\nnone 7\n0\n0\n");
+}
+
+#[test]
+fn runtime_errors_list_the_calls_that_led_there() {
+    let e = compile_err(
+        "Function Divide(a, b)
+    Return a / b
+End Function
+
+Function Half(n)
+    Return Divide(n, 0)
+End Function
+
+Gosub work
+End
+
+.work
+Print Half(10)
+Return
+",
+    );
+    let lines: Vec<&str> = e.lines().collect();
+    assert_eq!(lines.len(), 5, "{e}");
+    assert_eq!(lines[0], "runtime error: Integer divide by zero");
+    assert!(lines[1].starts_with("  at ") && lines[1].ends_with(":2:5 (in divide)"), "{e}");
+    assert!(lines[2].starts_with("  called from ") && lines[2].ends_with(":6:5 (in half)"), "{e}");
+    assert!(lines[3].starts_with("  called from ") && lines[3].ends_with(":13:1 (in <main>)"), "{e}");
+    assert!(lines[4].starts_with("  called from ") && lines[4].ends_with(":9:1 (in <main>)"), "{e}");
+}
+
+#[test]
+fn runtime_error_in_the_main_program_has_no_callers() {
+    let e = compile_err("x = 0\nPrint 1 / x\n");
+    assert_eq!(e.lines().count(), 2, "{e}");
+    assert!(!e.contains("called from"), "{e}");
+}
+
+#[test]
+fn very_deep_call_stacks_leave_out_the_middle() {
+    let e = compile_err(
+        "Function Down(n)
+    If n = 0 Then RuntimeError \"bottom\"
+    Return Down(n - 1)
+End Function
+Print Down(100)
+",
+    );
+    let lines: Vec<&str> = e.lines().collect();
+    // message, where it happened, 16 callers, the gap, 4 callers
+    assert_eq!(lines.len(), 23, "{e}");
+    assert_eq!(lines[0], "runtime error: bottom");
+    assert_eq!(lines[18], "  ... 81 more calls ...", "{e}");
+    assert!(lines[22].ends_with(":5:1 (in <main>)"), "{e}");
 }

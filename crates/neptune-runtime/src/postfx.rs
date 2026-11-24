@@ -6,8 +6,8 @@
 //! reads `nb_screenTexture` (the image so far), `nb_originalTexture` (the
 //! scene before any effect), `nb_depthTexture` (everything drawn,
 //! forward-drawn surfaces included) and `nb_normalTexture` (G-buffer), with `nb_resolution`, `nb_time`, `nb_cameraPos`, `nb_clip`
-//! (near, far), `nb_invViewProj` and `nb_prevViewProj` (last frame, for
-//! motion blur). `LoadPostProcess("builtin:<name>")` gives ready-made
+//! (near, far), `nb_viewProj`, `nb_invViewProj` and `nb_prevViewProj` (last
+//! frame, for motion blur). `LoadPostProcess("builtin:<name>")` gives ready-made
 //! effects (see `BUILTIN`).
 //!
 //! Effects run in order (`SetPostProcessOrder`); a negative priority
@@ -54,7 +54,8 @@ use neptune_vm::value::Value;
 use crate::commands::Cmd;
 use crate::shader::{parse_numbers, property, ShaderObj, Val};
 use crate::shadersrc::Lang;
-use crate::world::{Host3D, Kind};
+use crate::transform::WorldXform;
+use crate::world::{Host3D, Kind, LightKind};
 
 const VOID: Result<Value, String> = Ok(Value::Null);
 
@@ -78,6 +79,8 @@ pub struct Effect {
     pub input: Input,
     pub output: i32,
     pub scale: f32,
+    /// Entity whose place sets the `sun` parameter each frame (0 = none).
+    pub source: i32,
 }
 
 /// One effect ready to draw.
@@ -100,6 +103,34 @@ pub struct Entry {
 pub struct Frame {
     pub entries: Vec<Entry>,
     pub time: f32,
+    /// Counts game updates, which the engine may draw more or less often than.
+    pub tick: u64,
+}
+
+/// A camera at the last two game updates, for `nb_prevViewProj`. The engine
+/// can draw several times per update (a fast screen) or once for several
+/// (after a hitch), so "last frame" has to follow updates, not draws.
+#[derive(Debug, Clone, Copy)]
+struct CameraHistory {
+    tick: u64,
+    current: Matrix4<f32>,
+    previous: Matrix4<f32>,
+}
+
+impl CameraHistory {
+    fn new(tick: u64, vp: Matrix4<f32>) -> Self {
+        CameraHistory { tick, current: vp, previous: vp }
+    }
+
+    /// Records this draw and returns the camera to measure movement from.
+    fn advance(&mut self, tick: u64, vp: Matrix4<f32>) -> Matrix4<f32> {
+        if tick != self.tick {
+            self.tick = tick;
+            self.previous = self.current;
+        }
+        self.current = vp;
+        self.previous
+    }
 }
 
 #[derive(Debug, Default)]
@@ -369,30 +400,125 @@ vec4 nb_post(vec2 uv) {
 uniform float focusRange = 6.0;
 uniform float maxBlur = 6.0;
 //! fragment
+float nb_coc(float d) { return clamp(abs(d - focusDistance) / max(focusRange, 0.01) - 0.5, 0.0, 1.0) * maxBlur; }
 vec4 nb_post(vec2 uv) {
     float d = nb_linearDepth(uv);
-    float coc = clamp(abs(d - focusDistance) / max(focusRange, 0.01) - 0.5, 0.0, 1.0) * maxBlur;
-    vec3 c = texture(nb_screenTexture, uv).rgb;
-    if (coc < 0.5) return vec4(c, 1.0);
-    vec3 sum = c;
+    float coc = nb_coc(d);
+    vec3 sum = texture(nb_screenTexture, uv).rgb;
     float total = 1.0;
-    for (int i = 0; i < 24; ++i) {
+    float band = max(maxBlur / 6.0, 0.5);
+    // Each sample spreads over a disc of its own blur size and counts only if
+    // that disc reaches this pixel. Things behind this pixel can spread no
+    // further than its own blur, so sharp objects keep clean edges, while a
+    // blurred object in front still spreads softly over what is behind it.
+    for (int i = 0; i < 40; ++i) {
         float a = float(i) * 2.39996;
-        float r = sqrt(float(i + 1) / 24.0) * coc;
-        vec2 o = vec2(cos(a), sin(a)) * r * nb_texel();
-        sum += texture(nb_screenTexture, uv + o).rgb;
+        float r = sqrt(float(i + 1) / 40.0) * maxBlur;
+        vec2 p = uv + vec2(cos(a), sin(a)) * r * nb_texel();
+        float sd = nb_linearDepth(p);
+        float s = nb_coc(sd);
+        if (sd > d) s = min(s, coc * 2.0);
+        sum += mix(sum / total, texture(nb_screenTexture, p).rgb, smoothstep(r - band, r + band, s));
         total += 1.0;
     }
     return vec4(sum / total, 1.0);
 }
 "),
+    ("godrays", 0, "// light shafts from the sun; sun is x, y, z in world space and w: 0 = the
+// direction towards the sun, 1 = a position
+uniform float amount = 0.6;
+uniform vec3 color = vec3(1.0, 0.92, 0.75);
+uniform vec4 sun = vec4(0.4, 0.6, 0.7, 0.0);
+uniform float reach = 0.9;
+uniform float spread = 0.9;
+uniform float skyDistance = 0.0;
+//! fragment
+vec4 nb_post(vec2 uv) {
+    vec3 c = texture(nb_screenTexture, uv).rgb;
+    vec4 clip = nb_viewProj * vec4(-sun.x, sun.y, sun.z, sun.w);
+    if (clip.w <= 0.0) return vec4(c, 1.0);
+    vec2 suv = clip.xy / clip.w * 0.5 + 0.5;
+    vec2 off = max(abs(suv - 0.5) - 0.5, vec2(0.0));
+    float fade = 1.0 - smoothstep(0.0, 0.7, max(off.x, off.y));
+    if (fade <= 0.0) return vec4(c, 1.0);
+    float limit = sun.w > 0.5 ? clip.w : 1.0e9;
+    if (skyDistance > 0.0) limit = min(limit, skyDistance);
+    vec2 aspect = vec2(nb_resolution.x / nb_resolution.y, 1.0);
+    vec2 stp = (suv - uv) * reach / 48.0;
+    // a different start for each pixel hides the banding of 48 samples
+    vec2 q = uv + stp * fract(52.9829189 * fract(dot(uv * nb_resolution, vec2(0.06711056, 0.00583715))));
+    float sum = 0.0;
+    for (int i = 0; i < 48; ++i) {
+        if (q.x >= 0.0 && q.x <= 1.0 && q.y >= 0.0 && q.y <= 1.0) {
+            bool open = texture(nb_depthTexture, q).r >= 1.0 || nb_linearDepth(q) >= limit;
+            if (open) sum += pow(max(1.0 - length((q - suv) * aspect) / max(spread, 0.01), 0.0), 3.0);
+        }
+        q += stp;
+    }
+    vec3 rays = clamp(color * sum / 48.0 * amount * fade, 0.0, 1.0);
+    return vec4(1.0 - (1.0 - c) * (1.0 - rays), 1.0);
+}
+"),
+    ("lensflare", 0, "// glow, streak and ghosts of a bright light; sun as in godrays
+uniform float amount = 0.7;
+uniform float size = 1.0;
+uniform vec3 color = vec3(1.0, 0.92, 0.8);
+uniform vec4 sun = vec4(0.4, 0.6, 0.7, 0.0);
+uniform float skyDistance = 0.0;
+//! fragment
+float nb_disc(vec2 p, float r, float edge) { return 1.0 - smoothstep(r * (1.0 - edge), r, length(p)); }
+vec4 nb_post(vec2 uv) {
+    vec3 c = texture(nb_screenTexture, uv).rgb;
+    vec4 clip = nb_viewProj * vec4(-sun.x, sun.y, sun.z, sun.w);
+    if (clip.w <= 0.0) return vec4(c, 1.0);
+    vec2 suv = clip.xy / clip.w * 0.5 + 0.5;
+    vec2 off = max(abs(suv - 0.5) - 0.5, vec2(0.0));
+    float fade = 1.0 - smoothstep(0.0, 0.15, max(off.x, off.y));
+    if (fade <= 0.0) return vec4(c, 1.0);
+    float limit = sun.w > 0.5 ? clip.w : 1.0e9;
+    if (skyDistance > 0.0) limit = min(limit, skyDistance);
+    // how much of the light is hidden: a centre and two rings of samples
+    float vis = 0.0;
+    for (int i = 0; i < 13; ++i) {
+        float r = i == 0 ? 0.0 : (i < 7 ? 5.0 : 11.0);
+        float a = float(i) * 1.0472;
+        vec2 q = suv + vec2(cos(a), sin(a)) * r * nb_texel();
+        if (q.x >= 0.0 && q.x <= 1.0 && q.y >= 0.0 && q.y <= 1.0
+            && (texture(nb_depthTexture, q).r >= 1.0 || nb_linearDepth(q) >= limit)) vis += 1.0;
+    }
+    vis *= fade / 13.0;
+    if (vis <= 0.0) return vec4(c, 1.0);
+    vec2 aspect = vec2(nb_resolution.x / nb_resolution.y, 1.0);
+    vec2 p = (uv - 0.5) * aspect;
+    vec2 s = (suv - 0.5) * aspect;
+    float scale = max(size, 0.01);
+    vec2 d = (p - s) / scale;
+    float dist = length(d);
+    vec3 flare = color * (0.035 / (dist + 0.035) * (1.0 - smoothstep(0.1, 0.9, dist))
+        + exp(-abs(d.y) * 90.0) * exp(-abs(d.x) * 2.5) * 0.35);
+    const float where[6] = float[6](0.45, 0.8, -0.3, -0.55, -0.9, -1.35);
+    const float radius[6] = float[6](0.03, 0.07, 0.05, 0.12, 0.08, 0.18);
+    for (int i = 0; i < 6; ++i) {
+        vec2 g = p - s * where[i];
+        float r = radius[i] * scale;
+        float tone = float(i) * 1.7;
+        vec3 tint = vec3(0.6, 0.6, 0.6) + vec3(0.4, 0.3, 0.4) * vec3(cos(tone), cos(tone + 2.1), cos(tone + 4.2));
+        flare += tint * vec3(nb_disc(g, r * 1.03, 0.25), nb_disc(g, r, 0.25), nb_disc(g, r * 0.97, 0.25)) * 0.09;
+    }
+    vec3 light = clamp(flare * vis * amount, 0.0, 1.0);
+    return vec4(1.0 - (1.0 - c) * (1.0 - light), 1.0);
+}
+"),
     ("motionblur", 0, "uniform float amount = 1.0;
+uniform float maxLength = 0.08;
 //! fragment
 vec4 nb_post(vec2 uv) {
     vec3 world = nb_worldPosAt(uv);
     vec4 prev = nb_prevViewProj * vec4(world, 1.0);
     vec2 puv = prev.xy / prev.w * 0.5 + 0.5;
     vec2 v = (uv - puv) * amount;
+    float len = length(v);
+    if (len > maxLength) v *= maxLength / len;
     vec3 c = vec3(0.0);
     for (int i = 0; i < 12; ++i) c += texture(nb_screenTexture, uv - v * (float(i) / 11.0 - 0.5)).rgb;
     return vec4(c / 12.0, 1.0);
@@ -582,7 +708,7 @@ pub struct PostPass {
     /// ping-pong, original copy, and per-effect outputs; LDR and HDR sets
     targets: HashMap<(bool, usize), Target>,
     outputs: HashMap<i32, Target>,
-    prev_vp: HashMap<Handle<Node>, Matrix4<f32>>,
+    history: HashMap<Handle<Node>, CameraHistory>,
     tex_fbs: HashMap<usize, GpuFrameBuffer>,
     /// copy of the scene's depth, forward-drawn surfaces included
     depth_copy: Option<Target>,
@@ -597,7 +723,7 @@ impl PostPass {
             programs: HashMap::new(),
             targets: HashMap::new(),
             outputs: HashMap::new(),
-            prev_vp: HashMap::new(),
+            history: HashMap::new(),
             tex_fbs: HashMap::new(),
             depth_copy: None,
             plugin,
@@ -669,10 +795,8 @@ impl PostPass {
         let frame = frame.borrow();
         let entries: Vec<&Entry> = frame.entries.iter().filter(|e| e.hdr == hdr && (e.cameras.is_empty() || e.cameras.contains(&cam))).collect();
         let vp_now = ctx.observer.position.view_projection_matrix;
+        let prev_vp = self.history.entry(cam).or_insert_with(|| CameraHistory::new(frame.tick, vp_now)).advance(frame.tick, vp_now);
         if entries.is_empty() {
-            if !hdr {
-                self.prev_vp.insert(cam, vp_now);
-            }
             return Ok(stats);
         }
         let server = ctx.server;
@@ -689,7 +813,6 @@ impl PostPass {
         let mut ping = 0usize;
         let mut on_screen = false;
         let inv_vp = vp_now.try_inverse().unwrap_or_else(Matrix4::identity);
-        let prev_vp = self.prev_vp.get(&cam).copied().unwrap_or(vp_now);
         let cam_pos = ctx.observer.position.translation;
         let clip = Vector2::new(ctx.observer.position.z_near, ctx.observer.position.z_far);
         let last = entries.len() - 1;
@@ -762,6 +885,7 @@ impl PostPass {
             // properties: the effect's values, then the frame values
             let mut props: Vec<(&str, MaterialProperty)> = e.props.iter().map(|(n, p)| (n.as_str(), p.clone())).collect();
             props.push(("nb_wvp", MaterialProperty::Matrix4(wvp)));
+            props.push(("nb_viewProj", MaterialProperty::Matrix4(vp_now)));
             props.push(("nb_invViewProj", MaterialProperty::Matrix4(inv_vp)));
             props.push(("nb_prevViewProj", MaterialProperty::Matrix4(prev_vp)));
             props.push(("nb_cameraPos", MaterialProperty::Vector3(Vector3::new(cam_pos.x, cam_pos.y, cam_pos.z))));
@@ -814,9 +938,6 @@ impl PostPass {
         // the last effect drew elsewhere: put the result on screen
         if !on_screen && !Rc::ptr_eq(&current.0, &screen.0) {
             stats += Self::blit(ctx, &current, &ctx.framebuffer.clone(), viewport)?;
-        }
-        if !hdr {
-            self.prev_vp.insert(cam, vp_now);
         }
         Ok(stats)
     }
@@ -872,7 +993,7 @@ impl Host3D<'_> {
         if o.resource.is_none() {
             eprintln!("post-process effect {name}: {}", o.error);
         }
-        let fx = Effect { shader, name: name.to_string(), enabled: true, order: 0, priority, cameras: Vec::new(), input: Input::Previous, output: 0, scale: 1.0 };
+        let fx = Effect { shader, name: name.to_string(), enabled: true, order: 0, priority, cameras: Vec::new(), input: Input::Previous, output: 0, scale: 1.0, source: 0 };
         let list = &mut self.world.postfx.effects;
         let id = match list.iter().position(Option::is_none) {
             Some(i) => {
@@ -926,6 +1047,13 @@ impl Host3D<'_> {
 
     /// Rebuilds the frame the render pass draws (after the program ran).
     pub fn update_postfx(&mut self) -> Result<(), String> {
+        let followers: Vec<(i32, i32)> = self.world.postfx.effects.iter().flatten().filter(|e| e.source != 0 && e.enabled).map(|e| (e.shader, e.source)).collect();
+        for (shader, source) in followers {
+            // a freed source leaves the sun where it last was
+            if let Ok(sun) = self.sun_of(source) {
+                self.shader_set(shader, "sun", Val::Floats(sun))?;
+            }
+        }
         let mut entries = Vec::new();
         let mut list: Vec<(i32, Effect)> = self.world.postfx.effects.iter().enumerate().filter_map(|(i, e)| e.clone().map(|e| (i as i32 + 1, e))).collect();
         list.sort_by_key(|(id, e)| (e.priority.signum(), e.order, *id));
@@ -985,7 +1113,14 @@ impl Host3D<'_> {
         let mut f = self.world.postfx.frame.borrow_mut();
         f.entries = entries;
         f.time = self.world.shader_time;
+        f.tick = f.tick.wrapping_add(1);
         Ok(())
+    }
+
+    /// The `sun` parameter for an entity (Blitz space).
+    fn sun_of(&self, source: i32) -> Result<Vec<f32>, String> {
+        let directional = matches!(self.ent(source)?.kind, Kind::Light { kind: LightKind::Directional, .. });
+        Ok(sun_vector(directional, &self.world_of(source)?))
     }
 
     fn set_effect_param(&mut self, e: i32, name: &str, value: &str) -> Result<(), String> {
@@ -1017,6 +1152,33 @@ pub fn camera_builtin(h: &mut Host3D, cam: i32, name: &str) -> Result<i32, Strin
 pub fn effect_set(h: &mut Host3D, e: i32, name: &str, v: Vec<f32>) -> Result<(), String> {
     let s = h.effect(e)?.shader;
     h.shader_set(s, name, Val::Floats(v))
+}
+
+/// x, y, z, w of a light for `sun`: a directional light is a direction
+/// towards the sun (w = 0), anything else a position (w = 1).
+fn sun_vector(directional: bool, w: &WorldXform) -> Vec<f32> {
+    if directional {
+        let k = w.rot.column(2);
+        vec![-k.x, -k.y, -k.z, 0.0]
+    } else {
+        let p = w.position();
+        vec![p.x, p.y, p.z, 1.0]
+    }
+}
+
+/// `SetGodRays` and `SetLensFlare`: turns the effect on or off and follows `source`.
+fn sun_effect(h: &mut Host3D, cam: i32, name: &str, amount: f32, source: i32) -> Result<i32, String> {
+    if source != 0 {
+        h.ent(source)?;
+    }
+    let id = camera_builtin(h, cam, name)?;
+    let fx = h.effect_mut(id)?;
+    fx.enabled = amount > 0.0;
+    if source != 0 {
+        fx.source = source;
+    }
+    effect_set(h, id, "amount", vec![amount])?;
+    Ok(id)
 }
 
 /// The post-processing commands; see the module comment.
@@ -1154,12 +1316,34 @@ pub static COMMANDS: &[(&str, Cmd)] = &[
         effect_set(h, id, "heightFalloff", vec![a[5].float()])?;
         VOID
     }),
+    // ---- lens effects on a camera
+    ("SetDepthOfField%camera#focus_distance#focus_range=6#max_blur=6", |h, a, _| {
+        let id = camera_builtin(h, a[0].int(), "dof")?;
+        h.effect_mut(id)?.enabled = a[1].float() > 0.0;
+        effect_set(h, id, "focusDistance", vec![a[1].float()])?;
+        effect_set(h, id, "focusRange", vec![a[2].float()])?;
+        effect_set(h, id, "maxBlur", vec![a[3].float()])?;
+        VOID
+    }),
+    ("SetGodRays%camera#amount%source=0#red=255#green=235#blue=190#sky_distance=0", |h, a, _| {
+        let id = sun_effect(h, a[0].int(), "godrays", a[1].float(), a[2].int())?;
+        effect_set(h, id, "color", vec![a[3].float() / 255.0, a[4].float() / 255.0, a[5].float() / 255.0])?;
+        effect_set(h, id, "skyDistance", vec![a[6].float()])?;
+        VOID
+    }),
+    ("SetLensFlare%camera#amount%source=0#size=1#sky_distance=0", |h, a, _| {
+        let id = sun_effect(h, a[0].int(), "lensflare", a[1].float(), a[2].int())?;
+        effect_set(h, id, "size", vec![a[3].float()])?;
+        effect_set(h, id, "skyDistance", vec![a[4].float()])?;
+        VOID
+    }),
 ];
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::shadersrc::{process, DiskIncludes, Input as SrcInput};
+    use crate::transform::Xform;
     use std::collections::BTreeSet;
 
     #[test]
@@ -1171,5 +1355,34 @@ mod tests {
             fyrox::material::shader::Shader::from_string(&p.ron).unwrap_or_else(|e| panic!("{name}: {e:?}"));
         }
         assert!(builtin("DepthOfField").is_some());
+    }
+
+    #[test]
+    fn camera_history_follows_game_updates_not_draws() {
+        let vp = |x: f32| Matrix4::new_translation(&Vector3::new(x, 0.0, 0.0));
+        let mut h = CameraHistory::new(1, vp(0.0));
+        assert_eq!(h.advance(1, vp(0.0)), vp(0.0));
+        // a new update moved the camera: every draw of it sees the same movement
+        assert_eq!(h.advance(2, vp(1.0)), vp(0.0));
+        assert_eq!(h.advance(2, vp(1.0)), vp(0.0));
+        assert_eq!(h.advance(2, vp(1.0)), vp(0.0));
+        // the camera stopped: no movement, so no blur stays behind
+        assert_eq!(h.advance(3, vp(1.0)), vp(1.0));
+        // several updates in one draw measure from the last one drawn
+        assert_eq!(h.advance(9, vp(5.0)), vp(1.0));
+    }
+
+    #[test]
+    fn sun_is_opposite_where_a_directional_light_shines() {
+        // pitched 90 degrees the light shines straight down, so the sun is straight up
+        let w = WorldXform::identity().child(&Xform { rot: crate::transform::rotation(90.0, 0.0, 0.0), ..Default::default() });
+        let s = sun_vector(true, &w);
+        assert!(s[0].abs() < 1e-3 && (s[1] - 1.0).abs() < 1e-3 && s[2].abs() < 1e-3 && s[3] == 0.0, "{s:?}");
+    }
+
+    #[test]
+    fn sun_is_the_position_of_anything_else() {
+        let w = WorldXform::identity().child(&Xform { pos: fyrox::core::algebra::Vector3::new(1.0, 2.0, 3.0), ..Default::default() });
+        assert_eq!(sun_vector(false, &w), vec![1.0, 2.0, 3.0, 1.0]);
     }
 }

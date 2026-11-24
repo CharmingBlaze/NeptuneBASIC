@@ -15,10 +15,11 @@
 
 use std::collections::HashMap;
 
+use fyrox::asset::untyped::ResourceKind;
 use fyrox::scene::sound::{
     filter::{AllPassFilterEffect, BandPassFilterEffect, HighPassFilterEffect, HighShelfFilterEffect, LowPassFilterEffect, LowShelfFilterEffect},
     reverb::Reverb as FyroxReverb,
-    AudioBus, AudioBusGraph, Effect,
+    AudioBus, AudioBusGraph, Effect, HrirSphere, HrirSphereResource, HrirSphereResourceExt, HrtfRenderer, Renderer, SAMPLE_RATE as ENGINE_RATE,
 };
 
 use crate::world::Host3D;
@@ -70,12 +71,17 @@ pub struct Buses {
     /// Changed whenever anything changes; per scene, what was copied.
     version: u32,
     synced: HashMap<usize, u32>,
+    /// `SetHRTF`: head measurements for 3D sound, if any.
+    hrtf: Option<HrirSphereResource>,
+    /// Changed by `SetHRTF`; per scene, what was copied.
+    hrtf_gen: u32,
+    hrtf_applied: HashMap<usize, u32>,
 }
 
 impl Default for Buses {
     fn default() -> Self {
         let master = Bus { name: AudioBusGraph::PRIMARY_BUS.to_string(), parent: -1, volume: 1.0, filter: None, reverb: None, fx_gen: 0 };
-        Buses { list: vec![Some(master)], applied: HashMap::new(), version: 0, synced: HashMap::new() }
+        Buses { list: vec![Some(master)], applied: HashMap::new(), version: 0, synced: HashMap::new(), hrtf: None, hrtf_gen: 0, hrtf_applied: HashMap::new() }
     }
 }
 
@@ -164,6 +170,25 @@ impl Host3D<'_> {
         Ok(self.world.audio.get(b)?.name.clone())
     }
 
+    /// `SetHRTF`: 3D sound through head measurements from a file, or back to
+    /// plain panning with no file. 1 if it worked, 0 if the file is unusable
+    /// (which leaves the sound as it was).
+    pub fn set_hrtf(&mut self, file: &str) -> Result<i32, String> {
+        let hrtf = if file.is_empty() {
+            None
+        } else {
+            match HrirSphere::from_file(file, ENGINE_RATE) {
+                Ok(sphere) => Some(HrirSphereResource::from_hrir_sphere(sphere, ResourceKind::Embedded)),
+                Err(_) => return Ok(0),
+            }
+        };
+        self.world.audio.hrtf = hrtf;
+        self.world.audio.hrtf_gen += 1;
+        self.world.audio.version += 1;
+        self.sync_buses()?;
+        Ok(1)
+    }
+
     /// Copies the bus settings into the current scene's sound engine if
     /// anything changed since it was last done for this scene.
     pub fn sync_buses(&mut self) -> Result<(), String> {
@@ -175,9 +200,14 @@ impl Host3D<'_> {
         let buses: Vec<(i32, Bus)> = self.world.audio.list.iter().enumerate().filter_map(|(i, b)| b.clone().map(|b| (i as i32, b))).collect();
         let done: HashMap<i32, u32> = buses.iter().filter_map(|(id, _)| self.world.audio.applied.get(&(scene_id, *id)).map(|g| (*id, *g))).collect();
         let mut applied = Vec::new();
+        let hrtf_gen = self.world.audio.hrtf_gen;
+        let new_renderer = (self.world.audio.hrtf_applied.get(&scene_id).copied().unwrap_or(0) != hrtf_gen).then(|| self.world.audio.hrtf.clone().map_or(Renderer::Default, |r| Renderer::HrtfRenderer(HrtfRenderer::new(r))));
         {
             let scene = self.scene()?;
             let mut state = scene.graph.sound_context.state();
+            if let Some(renderer) = new_renderer {
+                state.set_renderer(renderer);
+            }
             let graph = state.bus_graph_mut();
             let mut handles = HashMap::new();
             for (id, bus) in &buses {
@@ -210,6 +240,7 @@ impl Host3D<'_> {
             self.world.audio.applied.insert((scene_id, id), gen);
         }
         self.world.audio.synced.insert(scene_id, version);
+        self.world.audio.hrtf_applied.insert(scene_id, hrtf_gen);
         Ok(())
     }
 }

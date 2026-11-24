@@ -124,6 +124,10 @@ impl Host3D<'_> {
             self.world.debug.line(b + lift, c + lift, color);
             self.world.debug.line(c + lift, a + lift, color);
         }
+        let links: Vec<(V3, V3)> = self.navmesh(n)?.links.iter().flatten().filter(|l| l.enabled).map(|l| (l.a, l.b)).collect();
+        for (a, b) in links {
+            self.world.debug.line(a + lift, b + lift, color);
+        }
         Ok(())
     }
 

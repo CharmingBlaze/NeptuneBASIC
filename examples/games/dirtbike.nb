@@ -1,0 +1,397 @@
+; DIRT BIKE - motocross through a sunset canyon, in the style of a 1990s console.
+; Run from the repository root:  neptune run examples/games/dirtbike.nb
+;
+;   W / S ........ throttle and brake        A / D ........ steer
+;   Up arrow ..... wheelie, or backflip      Down arrow ... nose down, or frontflip
+;   Q / E ........ spin in the air           R ............ back on the track
+;   P ............ let the computer ride     Esc .......... quit
+;
+; Everything is made by this program: there are no models or textures to load.
+; The look, the track and the vehicle rules are shared with the other racing
+; demos and live in retro64.nb. What is left here is what makes this one a
+; dirt bike game: the canyon, the jumps, the bike and the air tricks.
+
+Include "retro64.nb"
+
+SeedRnd 7       ; the same seed builds the same canyon every time
+
+Const HALF_WIDTH# = 8           ; half the width of the track, in metres
+Const SHOULDER# = 18            ; how far the track fades into the land
+Const BIKE_TOP# = 36            ; metres a second: about 130 km/h
+Const RACE_LAPS = 3
+
+; ---- the look of this place: a low, warm sun and long purple shadows -------
+RetroWindow "Dirt Bike", 238, 160, 118, 90, 620
+SetSun -0.62, 0.42, 0.66, 255, 214, 165, 142, 112, 140
+MakeSky 66, 88, 168, 248, 176, 120, 255, 168, 150, 0.46, 255, 236, 170
+InitBeeps
+
+; ---- the track: a loop through points written out by hand ---------------------
+; Move any of these and the land, the rivals and the mini-map all follow.
+LandSetup 240, 2
+TrackPoint -130, -175 : TrackPoint -20, -185 : TrackPoint 100, -175
+TrackPoint 180, -135  : TrackPoint 200, -55  : TrackPoint 150, -5
+TrackPoint 85, -25    : TrackPoint 40, -70   : TrackPoint -20, -60
+TrackPoint -60, -5    : TrackPoint -20, 55   : TrackPoint 60, 50
+TrackPoint 130, 75    : TrackPoint 175, 135  : TrackPoint 120, 190
+TrackPoint 30, 180    : TrackPoint -60, 130  : TrackPoint -140, 160
+TrackPoint -200, 100  : TrackPoint -205, 0   : TrackPoint -170, -90
+TrackBuild 2.5
+
+; ---- the land ---------------------------------------------------------------
+; Canyon country is flat valley floor, flat mesa top and cliffs between them.
+; SmoothStep gives exactly that: nothing, a sudden climb, then nothing again.
+; First a rough measure of how far each point is from the track (every 4th
+; sample is plenty), so that the cliffs can stand back and leave a wide floor.
+TrackStamp 72, 4
+For j = 0 To mapN
+    For i = 0 To mapN
+        x# = GridX(i)
+        z# = GridZ(j)
+        rolling# = 5 + Fractal(x * 0.03 + 11, z * 0.03 + 5, 3) * 9
+        mesa# = Fractal(x * 0.0125 + 3, z * 0.0125 + 9, 4)
+        cliffs# = SmoothStep(0.5, 0.56, mesa) * 26 + SmoothStep(0.6, 0.64, mesa) * 20
+        cliffs = cliffs * SmoothStep(24, 68, TrackDistance(i, j))
+        ; high walls all round, so the edge of the world is never seen
+        rim# = SmoothStep(190, 235, Max(Abs(x), Abs(z))) * 90
+        hMap(i, j) = rolling + cliffs + rim
+    Next
+Next
+
+; Lay the track on that land, smooth out its rises, then add the jumps.
+; TrackJump is given a sample number: ctrlSample(n) is where hand-placed point n is.
+TrackFollowGround 90
+TrackJump ctrlSample(0) + 12, 8, 3.5          ; a warm-up kicker on the start straight
+TrackJump ctrlSample(1) + 26, 9, 6.5          ; the big one
+TrackWhoops ctrlSample(4) + 6, 5, 0.9         ; bumps to rattle the teeth
+TrackJump ctrlSample(8) + 8, 7, 4.5
+TrackJump ctrlSample(11) + 14, 8, 5.5
+TrackJump ctrlSample(14) + 8, 8, 5
+TrackWhoops ctrlSample(16) + 8, 6, 1
+TrackJump ctrlSample(18) + 14, 9, 6
+
+TrackStamp HALF_WIDTH + SHOULDER + 3
+TrackCarve HALF_WIDTH, SHOULDER
+
+; Banked edges: a low wall of dirt each side, thrown up by earlier riders.
+For j = 0 To mapN
+    For i = 0 To mapN
+        d# = TrackDistance(i, j)
+        If d > HALF_WIDTH And d < HALF_WIDTH + 5
+            hMap(i, j) = hMap(i, j) + Sin((d - HALF_WIDTH) / 5 * 180) * 1.1
+        End If
+    Next
+Next
+
+; ---- painting the land --------------------------------------------------------
+; A colour for every grid point. The cliffs get stripes by height, the rock
+; layers of a real canyon. A little wobble stops them being too perfect.
+Dim strata(4)
+strata(0) = RGB(196, 96, 58) : strata(1) = RGB(226, 158, 96)
+strata(2) = RGB(170, 72, 54) : strata(3) = RGB(240, 200, 150)
+valley = RGB(214, 150, 96)
+dirtMiddle = RGB(206, 150, 100)   ; packed down by the racing line
+dirtEdge = RGB(142, 88, 56)       ; loose, churned dirt at the sides
+
+For j = 0 To mapN
+    For i = 0 To mapN
+        x# = GridX(i) : z# = GridZ(j)
+        wobble# = Fractal(x * 0.08, z * 0.08, 2) * 5
+        band = Floor((hMap(i, j) + wobble) / 6)
+        rock = strata(((band Mod 4) + 4) Mod 4)
+        ; level ground is sandy, steep ground is bare rock
+        slope# = Abs(hMap(Min(i + 1, mapN), j) - hMap(i, j)) + Abs(hMap(i, Min(j + 1, mapN)) - hMap(i, j))
+        c = MixRGB(valley, rock, SmoothStep(0.5, 1.6, slope))
+        d# = TrackDistance(i, j)
+        trackColour = MixRGB(dirtMiddle, dirtEdge, SmoothStep(2, HALF_WIDTH, d))
+        c = MixRGB(trackColour, c, SmoothStep(HALF_WIDTH, HALF_WIDTH + 3, d))
+        cMap(i, j) = JitterRGB(c, 7)
+    Next
+Next
+
+detail = MakeDetailTexture(205, 255, 16)
+land = BuildLand(detail, 4)
+UpdateWorld : RenderWorld      ; physics sees new bodies after the first frame
+
+; ---- scenery --------------------------------------------------------------------
+; A tall cactus with two arms. Three tubes and a colour.
+Function PropCactus(x#, y#, z#, size#)
+    green = RGB(66, 112, 72)
+    PropTube x, y, z, 0.32 * size, 0.28 * size, 3.4 * size, 6, green, RGB(90, 140, 88)
+    a# = Rnd(360)
+    ax# = Cos(a) * 0.8 * size : az# = Sin(a) * 0.8 * size
+    PropTube x + ax, y + 1.5 * size, z + az, 0.2 * size, 0.18 * size, 1.5 * size, 5, green
+    PropBox x + ax / 2, y + 1.4 * size, z + az / 2, 0.42 * size, 0.2 * size, 0.2 * size, -a, green
+    PropTube x - ax, y + 2 * size, z - az, 0.2 * size, 0.18 * size, 1.2 * size, 5, green
+    PropBox x - ax / 2, y + 1.9 * size, z - az / 2, 0.42 * size, 0.2 * size, 0.2 * size, -a, green
+    AddSolid x, z, 0.4 * size
+End Function
+
+; A stack of three tyres marks the outside of the corners.
+Function PropTyres(x#, y#, z#)
+    For k = 0 To 2
+        col = RGB(32, 32, 38)
+        If k = 1 Then col = RGB(232, 232, 232)
+        PropTube x, y + k * 0.42, z, 0.68, 0.68, 0.42, 7, col
+    Next
+    AddSolid x, z, 0.75
+End Function
+
+PropsBegin
+; Scatter by throwing darts at the map, and keep only the ones that land well.
+placed = 0
+tries = 0
+While placed < 420 And tries < 9000
+    tries = tries + 1
+    x# = Rnd(-225, 225)
+    z# = Rnd(-225, 225)
+    y# = GroundY(x, z)
+    near# = TrackDistanceAt(x, z)
+    If near > HALF_WIDTH + 5 And y < 60 And SlopeAt(x, z) < 0.45
+        Select Rand(1, 4)
+            Case 1, 2
+                PropCactus x, y, z, Rnd(0.8, 1.5)
+            Case 3
+                PropRock x, y, z, Rnd(0.6, 2.2), RGB(156, 92, 66)
+            Default
+                ; a dry little shrub is just a squat cone
+                PropTube x, y, z, Rnd(0.7, 1.3), 0, Rnd(0.6, 1), 5, RGB(150, 140, 74), RGB(182, 168, 96)
+        End Select
+        placed = placed + 1
+    End If
+Wend
+
+; Tyres and flags along the edge of the track.
+For s = 0 To trackCount - 1 Step 16
+    side = 1
+    If (s / 16) Mod 2 = 0 Then side = -1
+    x# = trackX(s) + trackDZ(s) * side * (HALF_WIDTH + 2.4)
+    z# = trackZ(s) - trackDX(s) * side * (HALF_WIDTH + 2.4)
+    y# = GroundY(x, z)
+    PropTyres x, y, z
+    PropTube x, y + 1.2, z, 0.06, 0.06, 2.6, 4, RGB(240, 240, 240)
+    propCX = x : propCY = y + 3 : propCZ = z
+    flag = RGB(232, 60, 56)
+    If (s / 16) Mod 4 < 2 Then flag = RGB(250, 214, 60)
+    PropTri x, y + 3.8, z, x, y + 2.9, z, x + 1.2, y + 3.35, z + 0.4, flag
+Next
+
+; A start arch, and a grandstand full of very small, very excited people.
+PropArch 0, HALF_WIDTH + 1.5, 7, RGB(240, 240, 240), RGB(30, 30, 36)
+gx# = trackX(16) - trackDZ(16) * (HALF_WIDTH + 12)
+gz# = trackZ(16) + trackDX(16) * (HALF_WIDTH + 12)
+gy# = GroundY(gx, gz)
+For row = 0 To 4
+    PropBox gx - trackDZ(16) * row * 1.6, gy, gz + trackDX(16) * row * 1.6, 14, 0.8 + row * 0.9, 0.9, ATan2(trackDZ(16), trackDX(16)), RGB(120, 120, 150)
+    For seat = 0 To 22
+        along# = -13 + seat * 1.2
+        px# = gx - trackDZ(16) * row * 1.6 + trackDX(16) * along
+        pz# = gz + trackDX(16) * row * 1.6 + trackDZ(16) * along
+        PropBox px, gy + 0.8 + row * 0.9, pz, 0.25, 0.9, 0.25, 0, RGB(Rand(60, 255), Rand(60, 255), Rand(60, 255))
+    Next
+Next
+PropsEnd
+; Purple peaks far beyond the canyon walls.
+FarMountains 1150, -10, 190, 44, RGB(176, 104, 116), RGB(226, 148, 120)
+
+; ---- the bike -------------------------------------------------------------------
+; v\body turns round the rear wheel, which is what makes a wheelie look right.
+; So everything is built forward of it, and the pivot sits behind the middle.
+Function BuildBike(v.Rider)
+    PositionEntity v\body, 0, 0, -0.85
+    b = v\body
+    v\radius = 0.42
+    v\wheel1 = PartWheel(b, 0, 0.42, 0, 0.42, 0.09)
+
+    ; the fork and front wheel turn together
+    v\steer1 = CreatePivot(b)
+    PositionEntity v\steer1, 0, 1.15, 1.6
+    v\wheel2 = PartWheel(v\steer1, 0, -0.73, 0.02, 0.42, 0.08)
+    For side = -1 To 1 Step 2
+        PartBox v\steer1, side * 0.12, -0.25, 0, 0.03, 0.5, 0.03, 200, 200, 210
+    Next
+    PartBox v\steer1, 0, 0.3, 0, 0.42, 0.03, 0.03, 40, 40, 44      ; handlebars
+
+    PartBox b, 0, 0.75, 0.75, 0.13, 0.17, 0.55, v\r, v\g, v\b      ; fuel tank
+    PartBox b, 0, 0.5, 0.75, 0.14, 0.2, 0.28, 60, 60, 70           ; engine
+    PartBox b, 0, 0.92, 0.25, 0.14, 0.05, 0.42, 30, 30, 36         ; seat
+    PartBox b, 0, 0.72, 0.05, 0.05, 0.05, 0.42, 180, 180, 190      ; swing arm
+    PartBox b, 0, 0.88, 1.4, 0.16, 0.05, 0.3, v\r, v\g, v\b        ; front mudguard
+    PartBox b, 0.15, 0.65, 0.15, 0.04, 0.04, 0.42, 110, 110, 118   ; exhaust
+
+    ; the rider
+    PartBox b, 0, 1.3, 0.55, 0.2, 0.34, 0.14, v\r, v\g, v\b        ; chest
+    For side = -1 To 1 Step 2
+        PartBox b, side * 0.2, 0.9, 0.6, 0.08, 0.32, 0.1, 40, 40, 90   ; leg
+        PartBox b, side * 0.24, 1.3, 0.85, 0.06, 0.08, 0.32, v\r, v\g, v\b ; arm
+    Next
+    PartBall b, 0, 1.8, 0.72, 0.21, 0.21, 0.25, 240, 240, 245      ; helmet
+    PartBox b, 0, 1.82, 0.96, 0.17, 0.07, 0.03, 20, 20, 40         ; visor
+
+    ; Dust thrown up from the rear wheel.
+    v\dust = CreateEmitter(MakePuffTexture())
+    EmitterMax v\dust, 120
+    EmitterRate v\dust, 0
+    EmitterLife v\dust, 0.3, 0.8
+    EmitterVelocity v\dust, 0, 1.6, 0, 1.4
+    EmitterSize v\dust, 0.5, 2.2
+    EmitterColor v\dust, 214, 170, 120, 170
+    EmitterFadeColor v\dust, 238, 190, 150, 0
+    EmitterGravity v\dust, 0, 0.5, 0
+End Function
+
+Function AddBike.Rider(name$, isPlayer, row, side, r, g, b, skill#)
+    v.Rider = NewRider(name, isPlayer, -4 - row * 5, side * 3.2, BIKE_TOP, 17, 118, r, g, b)
+    v\skill = skill
+    BuildBike v
+    Return v
+End Function
+
+player = AddBike("YOU", True, 2, 1, 230, 60, 50, 1)
+AddBike "SANDS", False, 0, -1, 250, 200, 60, 0.97
+AddBike "VIPER", False, 0, 1, 60, 200, 110, 0.93
+AddBike "HAWK", False, 1, -1, 80, 130, 240, 0.9
+AddBike "BLAZE", False, 1, 1, 240, 120, 40, 0.86
+AddBike "DUSTY", False, 2, -1, 210, 100, 210, 0.82
+
+; ---- air tricks -------------------------------------------------------------------
+; The controller only ever moves an upright capsule, so tricks are nothing but a
+; picture: spin the model while it is in the air, then see how it lands.
+ClearAction "gas" : BindKey "gas", KEY_W : BindJoy "gas", JOY_A
+ClearAction "brake" : BindKey "brake", KEY_S : BindJoy "brake", JOY_B
+BindKey "back", KEY_UP : BindJoyAxis "back", "y", -1
+BindKey "nose", KEY_DOWN : BindJoyAxis "nose", "y", 1
+BindKey "spinL", KEY_Q : BindJoy "spinL", JOY_LB
+BindKey "spinR", KEY_E : BindJoy "spinR", JOY_RB
+
+Global trickPitch#, trickSpin#, score#, comboText$, comboTime#, crashTime#, wheelie#
+
+Function LandTrick(v.Rider)
+    ; how far from upright are we, counting whole turns as upright again?
+    If Abs(AngleDiff(0, trickPitch)) > 55 Or Abs(AngleDiff(0, trickSpin)) > 55
+        crashTime = 1.4
+        v\speed = 0
+        CameraShake camera, 1.2, 0.5
+        comboText = "BAILED!"
+        comboTime = 1.4
+    Else
+        flips = Floor(Abs(trickPitch) / 300)
+        spins = Floor(Abs(trickSpin) / 300)
+        If flips + spins > 0
+            points = flips * 500 + spins * 300 + Int(v\air * 100)
+            score = score + points
+            comboText = "+" + points
+            If flips > 0 Then comboText = "FLIP " + comboText
+            If spins > 0 Then comboText = "SPIN " + comboText
+            comboTime = 1.6
+        End If
+    End If
+    trickPitch = 0
+    trickSpin = 0
+End Function
+
+; ---- engine ------------------------------------------------------------------------
+engineSound = MakeEngine("bike", 90, 0.12)
+If engineSound
+    SoundVolume engineSound, 0.45
+    engineChannel = PlaySound(engineSound)
+End If
+
+StartRace RACE_LAPS
+ChaseCamera player, 7, 3.2, True, 0.02
+seconds# = 0
+
+; ---- the main loop ------------------------------------------------------------------
+While Not KeyHit(KEY_ESCAPE)
+    dt# = LastFrameTime()
+    seconds = seconds + dt
+    UpdateRace dt
+
+    If ActionHit("reset")
+        If raceState = STATE_DONE
+            RestartRace
+            score = 0
+        Else
+            RespawnRider player
+        End If
+        trickPitch = 0 : trickSpin = 0 : crashTime = 0
+    End If
+    crashTime = Max(0, crashTime - dt)
+
+    For v.Rider = Each Rider
+        ; off the dirt the bike is much slower, so the track is worth staying on
+        limit# = v\top * RubberBand(v)
+        If TrackDistanceAt(CharX(v\ctrl), CharZ(v\ctrl)) > HALF_WIDTH + 3 Then limit = limit * 0.55
+
+        If raceState = STATE_COUNTDOWN
+            DriveRider v, 0, 0, 0, limit, dt
+        ElseIf v\isPlayer And autopilot = False And raceState = STATE_RACE
+            If crashTime > 0
+                DriveRider v, 0, 0, 0, limit, dt
+            Else
+                DriveRider v, ActionValue("gas"), ActionValue("brake"), ActionValue("left") - ActionValue("right"), limit, dt
+            End If
+        Else
+            ; rivals, autopilot, and the player's lap of honour after the finish
+            ThinkAI v, HALF_WIDTH, seconds
+            If v\finished Then aiThrottle = aiThrottle * 0.5
+            DriveRider v, aiThrottle, aiBrake, aiSteer, limit, dt
+        End If
+
+        ; Lean into corners, more the faster it goes, and rear up over jumps.
+        lean# = v\steer * 34 * Min(1, Abs(v\speed) / 14)
+        c = v\ctrl
+        pitch# = 0
+        If CharGrounded(c) = 0 Then pitch = -ATan2(CharVY(c), Max(4, v\speed)) * 0.55
+
+        If v\isPlayer And autopilot = False
+            If CharGrounded(c)
+                ; hold Up to wheelie, which earns a trickle of points at speed
+                target# = 0
+                If ActionValue("back") > 0.3 And v\speed > 5
+                    target = -32
+                    score = score + 40 * dt
+                End If
+                wheelie = wheelie + (target - wheelie) * Clamp(8 * dt, 0, 1)
+                pitch = pitch + wheelie
+            Else
+                trickPitch = trickPitch + (ActionValue("nose") - ActionValue("back")) * 420 * dt
+                trickSpin = trickSpin + (ActionValue("spinL") - ActionValue("spinR")) * 560 * dt
+                pitch = pitch + trickPitch
+            End If
+            If CharLanded(c) Then LandTrick v
+            If crashTime > 0 Then pitch = pitch + crashTime * 360   ; over the handlebars
+            PoseRider v, CharGroundNX(c), CharGroundNY(c), CharGroundNZ(c), 0, pitch, lean, dt, trickSpin
+        Else
+            PoseRider v, CharGroundNX(c), CharGroundNY(c), CharGroundNZ(c), 0, pitch, lean, dt
+        End If
+
+        ; Dust comes from the rear wheel, and only when it is on the ground.
+        PositionEntity v\dust, EntityX(v\body, True), CharY(c) + 0.1, EntityZ(v\body, True)
+        If CharGrounded(c)
+            EmitterRate v\dust, Abs(v\speed) * 2
+        Else
+            EmitterRate v\dust, 0
+        End If
+
+        CheckStuck v, dt
+    Next
+
+    If CharLanded(player\ctrl) And CharImpact(player\ctrl) > 14 Then CameraShake camera, 0.45, 0.25
+
+    ; Engine pitch climbs with speed.
+    If engineChannel Then ChannelPitch engineChannel, 11025 * (0.75 + 1.5 * Abs(player\speed) / BIKE_TOP)
+
+    ChaseCamera player, 7, 3.2, False, dt
+    UpdateWorld
+    RenderWorld
+
+    DrawRaceHud "DIRT BIKE"
+    BigText GraphicsWidth() - 24 - TextWidth2("SCORE " + Int(score), 5), GraphicsHeight() - 44, "SCORE " + Int(score), 5, 255, 255, 255
+    If comboTime > 0
+        comboTime = comboTime - dt
+        BigText GraphicsWidth() / 2, 150, comboText, 9, 255, 230, 90, True
+    End If
+    RetroFlip
+Wend
+End

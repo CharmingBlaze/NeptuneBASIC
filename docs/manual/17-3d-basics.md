@@ -16,6 +16,7 @@ moving and turning them, and seeing them through a camera.
 - [Lights](#lights)
 - [Distances and directions](#distances-and-directions)
 - [A first 3D scene](#a-first-3d-scene)
+- [Try it yourself](#try-it-yourself)
 
 ## The 3D world
 
@@ -268,5 +269,177 @@ While Not KeyHit(KEY_ESCAPE)
     Flip
 Wend
 ```
+
+## Try it yourself
+
+All of these use the built-in shapes, so they need no files.
+
+1. **Spinning shapes.** Put a cube, a sphere and a cone side by side in front
+   of a camera, on a green floor, each a different colour. Make each of them
+   turn slowly. Escape quits.
+   *Hint: `PositionEntity` places each shape, and `TurnEntity` inside the loop turns it a little every frame.*
+2. **Windmill.** Build a windmill: a tall tower, with a hub at the top that
+   carries four blades, which turn round and round facing the camera.
+   *Hint: make the hub a pivot, make each blade the child of its own pivot at 0, 90, 180 and 270 degrees of roll, and then only the hub needs turning.*
+3. **Ghost chase.** Drive a box around a floor with the arrow keys (as in the
+   tank example). A bright yellow ball lies somewhere on the floor: drive into it
+   to score a point and make it jump somewhere new. A ghost sphere chases
+   you, a little faster each time you score. When it catches you, show
+   `Caught!` with your score and stop moving.
+   *Hint: `EntityDistance` tells when two things touch, and the ghost uses `DeltaYaw` to turn towards you, like the enemy example.*
+
+### Answers
+
+1.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 2, -10
+CameraClsColor camera, 20, 30, 60
+light = CreateLight()
+TurnEntity light, 45, 30, 0
+
+floor = CreatePlane()
+EntityColor floor, 60, 150, 70
+
+cube = CreateCube()
+PositionEntity cube, -4, 1, 0
+EntityColor cube, 230, 60, 60
+
+ball = CreateSphere(32)
+PositionEntity ball, 0, 1, 0
+EntityColor ball, 240, 220, 60
+
+cone = CreateCone(24)
+PositionEntity cone, 4, 1, 0
+EntityColor cone, 60, 120, 240
+
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity cube, 0.5, 1, 0
+    TurnEntity ball, 0, 2, 0
+    TurnEntity cone, 0, -1.5, 0
+    RenderWorld
+    Flip
+Wend
+```
+
+Every shape is created at the middle of the world and then moved with
+`PositionEntity`. The shapes are 2 units tall and sit at y = 1, so they rest
+on the floor. Inside the loop, `TurnEntity` turns each one a few degrees a
+frame, and `RenderWorld` followed by `Flip` shows the result. (The sphere
+is smooth and one colour, so its spinning is hard to see; the cube and the
+cone show it clearly.)
+
+2.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 5, -20
+CameraLookAt camera, 0, 5, 0
+CameraClsColor camera, 130, 180, 235
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 40, 30, 0
+
+ground = CreatePlane()
+EntityColor ground, 80, 150, 60
+
+tower = CreateCylinder(24)
+ScaleEntity tower, 0.8, 4, 0.8
+PositionEntity tower, 0, 4, 0
+EntityColor tower, 220, 210, 190
+
+hub = CreatePivot()
+PositionEntity hub, 0, 8, -1
+For i = 0 To 3
+    arm = CreatePivot(hub)
+    RotateEntity arm, 0, 0, i * 90
+    blade = CreateCube(arm)
+    ScaleEntity blade, 0.25, 2, 0.05
+    PositionEntity blade, 0, 2.2, 0
+    EntityColor blade, 150, 90, 40
+Next
+
+While Not KeyHit(KEY_ESCAPE)
+    TurnEntity hub, 0, 0, 1.5
+    RenderWorld
+    Flip
+Wend
+```
+
+The hub is an invisible pivot, and each blade hangs off its own pivot that is
+rolled to a different angle, so the four blades point up, left, down and
+right. Because the blades are children, they follow whatever the hub does,
+and turning the one hub roll-by-roll spins them all together. The hub is
+slightly in front of the tower (z = -1, towards the camera) so the blades
+do not pass through it.
+
+3.
+
+```basic
+Graphics3D 1280, 720
+camera = CreateCamera()
+PositionEntity camera, 0, 40, -30
+CameraLookAt camera, 0, 0, 0
+CameraClsColor camera, 15, 20, 40
+light = CreateLight(LIGHT_DIRECTIONAL)
+TurnEntity light, 60, 20, 0
+
+floor = CreatePlane()
+EntityColor floor, 50, 90, 60
+
+tank = CreateCube()
+ScaleEntity tank, 1, 0.5, 1.5
+PositionEntity tank, 0, 0.5, 0
+EntityColor tank, 80, 200, 255
+
+orb = CreateSphere(16)
+PositionEntity orb, 10, 1, 10
+EntityColor orb, 255, 220, 60
+
+ghost = CreateSphere(16)
+ScaleEntity ghost, 1.2, 1.2, 1.2
+PositionEntity ghost, -25, 1, 25
+EntityColor ghost, 230, 230, 255
+EntityAlpha ghost, 0.7
+
+SeedRnd MilliSecs()
+score = 0
+caught = False
+
+While Not KeyHit(KEY_ESCAPE)
+    If Not caught
+        If KeyDown(KEY_LEFT) Then TurnEntity tank, 0, 3, 0
+        If KeyDown(KEY_RIGHT) Then TurnEntity tank, 0, -3, 0
+        If KeyDown(KEY_UP) Then MoveEntity tank, 0, 0, 0.25
+        If KeyDown(KEY_DOWN) Then MoveEntity tank, 0, 0, -0.15
+        PositionEntity tank, Clamp(EntityX(tank), -30, 30), 0.5, Clamp(EntityZ(tank), -30, 30)
+
+        ; the ghost turns towards the tank and drifts after it
+        TurnEntity ghost, 0, DeltaYaw(ghost, tank) * 0.1, 0
+        MoveEntity ghost, 0, 0, 0.06 + score * 0.01
+
+        If EntityDistance(tank, orb) < 2
+            score = score + 1
+            PositionEntity orb, Rnd(-28, 28), 1, Rnd(-28, 28)
+        EndIf
+        If EntityDistance(tank, ghost) < 2 Then caught = True
+    EndIf
+
+    RenderWorld
+    Text 10, 10, "Orbs: " + score
+    If caught Then Text 640, 340, "Caught! You collected " + score + " orbs.", True, True
+    Flip
+Wend
+```
+
+`EntityDistance` is the touching test for both the orb and the ghost: when the
+tank is close enough to the orb it scores and the orb is moved to a random
+place. The ghost turns a tenth of the way towards the tank each frame and
+moves forward at a speed that grows with `score`, always slower than the tank
+at the start. When it is caught, `caught` stays true, so the whole update
+part is skipped and the picture freezes, but the loop still runs, so Escape
+still quits.
 
 [Contents](../MANUAL.md) · Previous: [16. Sound and movies](16-sound.md) · Next: [18. 3D models and looks](18-3d-models.md)

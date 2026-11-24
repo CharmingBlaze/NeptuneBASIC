@@ -15,6 +15,7 @@ and single pixels. Everything here also works on top of a 3D scene
 - [Collisions between images](#collisions-between-images)
 - [Drawing into images and textures](#drawing-into-images-and-textures)
 - [Pixels](#pixels)
+- [Try it yourself](#try-it-yourself)
 
 ## The screen
 
@@ -258,5 +259,132 @@ Wend
 ```
 
 Pixels are read from images and textures, not from the screen itself.
+
+## Try it yourself
+
+1. **Night sky.** Draw a night scene in an 800 x 600 window: a dark blue sky,
+   a green hill along the bottom, a pale yellow moon, and a title centred at
+   the top. Escape quits.
+   *Hint: `ClsColor` sets the sky, and shapes drawn later go on top of earlier ones.*
+2. **Traffic light.** Draw a dark box with three lamps, red at the top, yellow
+   in the middle and green at the bottom. Only one lamp is bright at a time,
+   and the light changes every two seconds: red, then green, then yellow, then
+   red again. Write the name of the colour under the box.
+   *Hint: `(MilliSecs() / 2000) Mod 3` counts 0, 1, 2, 0, 1, 2 ... as time goes by.*
+3. **Ring of badges.** Draw a gold badge with a number on it into an image,
+   once, before the loop. Then show twelve copies of it in a ring around the
+   middle of the window, which slowly turns round.
+   *Hint: `SetBuffer ImageBuffer(badge)` draws into the image, `SetBuffer BackBuffer()` goes back, and `Cos` and `Sin` give a point on a circle.*
+
+### Answers
+
+1.
+
+```basic
+Graphics 800, 600
+ClsColor 10, 15, 50
+
+; 60 stars, put in fixed places once
+Dim starX(59)
+Dim starY(59)
+SeedRnd 7
+For i = 0 To 59
+    starX(i) = Rand(0, 799)
+    starY(i) = Rand(0, 380)
+Next
+
+While Not KeyHit(KEY_ESCAPE)
+    Cls
+    Color 255, 255, 255
+    For i = 0 To 59
+        Plot starX(i), starY(i)
+    Next
+    Color 250, 245, 190 : Oval 560, 80, 90, 90          ; the moon
+    Color 30, 110, 50 : Oval -200, 460, 1200, 400       ; a hill
+    Color 255, 255, 255
+    Text 400, 20, "Night Sky", True, False
+    Flip
+Wend
+```
+
+`ClsColor` is the colour that `Cls` clears to, so it is the sky. The stars
+are placed once, before the loop, so they stay still instead of jumping about
+each frame. After that each shape is drawn on top of what is already there:
+stars, moon, then the hill. The `True` in `Text` centres the title on x = 400.
+
+2.
+
+```basic
+Graphics 800, 600
+
+While Not KeyHit(KEY_ESCAPE)
+    phase = (MilliSecs() / 2000) Mod 3        ; 0, 1, 2, 0, 1, 2, ...
+
+    Cls
+    Color 40, 40, 40 : Rect 340, 100, 120, 340      ; the box
+
+    ; dim lamps
+    Color 70, 20, 20 : Oval 365, 120, 70, 70
+    Color 70, 60, 10 : Oval 365, 210, 70, 70
+    Color 15, 70, 25 : Oval 365, 300, 70, 70
+
+    ; the bright lamp and its name
+    Select phase
+        Case 0
+            Color 255, 40, 40 : Oval 365, 120, 70, 70
+            name$ = "STOP"
+        Case 1
+            Color 40, 255, 80 : Oval 365, 300, 70, 70
+            name$ = "GO"
+        Case 2
+            Color 255, 220, 40 : Oval 365, 210, 70, 70
+            name$ = "GET READY"
+    End Select
+
+    Color 255, 255, 255
+    Text 400, 470, name, True, False
+    Flip
+Wend
+```
+
+`MilliSecs() / 2000` is a whole number that goes up by one every two
+seconds, and `Mod 3` wraps it round to 0, 1, 2. The dim lamps are drawn
+first every frame; then the `Select` draws one bright lamp on top of its dim
+one, and chooses the words for the label.
+
+3.
+
+```basic
+Graphics 800, 600
+
+; draw the badge once, into an image
+badge = CreateImage(64, 64)
+SetBuffer ImageBuffer(badge)
+Color 255, 200, 0 : Oval 0, 0, 64, 64
+Color 160, 100, 0 : Oval 6, 6, 52, 52, False
+Color 90, 50, 0 : Text 32, 32, "7", True, True
+SetBuffer BackBuffer()
+MidHandle badge
+
+spin# = 0
+While Not KeyHit(KEY_ESCAPE)
+    spin = spin + 0.5
+    Cls
+    For i = 0 To 11
+        a# = i * 30 + spin
+        DrawImageEx badge, 400 + 200 * Cos(a), 300 + 200 * Sin(a), 0, a, 1, 1, 1
+    Next
+    Color 255, 255, 255
+    Text 10, 10, "Escape quits"
+    Flip
+Wend
+```
+
+The badge is drawn into the image only once, which is much cheaper than
+drawing its shapes twelve times every frame. `MidHandle` makes each copy
+sit centred on the point it is drawn at. The points on the ring come from
+`Cos` for across and `Sin` for down, 30 degrees apart (360 divided by
+12), and adding `spin` turns them all a little more each frame.
+`DrawImageEx` turns each badge by the same angle.
 
 [Contents](../MANUAL.md) · Previous: [12. The game loop](12-game-loop.md) · Next: [14. 2D games](14-2d-games.md)

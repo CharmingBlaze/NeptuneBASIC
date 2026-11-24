@@ -49,10 +49,24 @@ programmed before.
 | [24. User interfaces](manual/24-gui.md) | Windows, buttons, lists, menus and dialogs |
 | [25. Sharing your game](manual/25-sharing.md) | Making a stand-alone game, graphics quality options, and plugins |
 
+## Build a whole game
+
+Two projects that take you from an empty file to a finished game, a step at
+a time, running it after each step.
+
+| Project | What you will make |
+|---|---|
+| [Project 1: Star Catcher](manual/p1-star-catcher.md) | A 2D game of catching falling stars, with lives, a title screen and a saved best score |
+| [Project 2: Crystal Hunt](manual/p2-crystal-hunt.md) | A 3D game of driving around collecting crystals against the clock, with collisions and a following camera |
+
 ## Part 4: Reference
 
 | | |
 |---|---|
+| [2D levels and sprites from other tools](TOOLS2D.md) | Maps from Tiled with layers and objects, and animated sprite sheets from Aseprite: a guide of its own |
+| [Character controllers](CHARACTERS.md) | Characters that walk, jump, climb stairs and ride platforms, in 3D and 2D: a guide of its own |
+| [Making levels in Blender](BLENDER.md) | Build levels in Blender and load their shapes, lights, cameras, solid objects and custom properties: a guide of its own |
+| [Neptune Level Editor](EDITOR.md) | Build levels in NeptuneBASIC's own 3D editor (an early version) and load them with the same command |
 | [The shader manual](SHADERS.md) | Materials, shaders, screen effects and shadows: a manual of its own |
 | [Command reference](COMMANDS.md) | Every command, with what it does and an example |
 | [Language summary](LANGUAGE.md) | The whole language on one page, for when you know it and need a reminder |
@@ -62,7 +76,10 @@ programmed before.
 
 - **New to programming?** Read parts 1 and 2 in order, and type in the
   examples rather than copying them: you learn more from the mistakes.
-  Then go to [chapter 12](manual/12-game-loop.md).
+  Then go to [chapter 12](manual/12-game-loop.md). Each chapter ends with
+  exercises and their answers.
+- **Want to make something straight away?** Learn the language up to
+  chapter 6, then build [Project 1](manual/p1-star-catcher.md).
 - **Programmed before, in another language?** Skim part 2 (the tables
   and examples are enough), then go to part 3.
 - **Looking for a command?** The [command reference](COMMANDS.md) has

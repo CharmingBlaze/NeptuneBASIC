@@ -286,6 +286,7 @@ pub const AUTO_PARAMS: &[(&str, Ty)] = &[
 /// Extra parameters of post-processing shaders, set by the post renderer.
 pub const POST_PARAMS: &[(&str, Ty)] = &[
     ("nb_wvp", Ty::Mat4),
+    ("nb_viewProj", Ty::Mat4),
     ("nb_invViewProj", Ty::Mat4),
     ("nb_prevViewProj", Ty::Mat4),
     ("nb_cameraPos", Ty::Vec3),

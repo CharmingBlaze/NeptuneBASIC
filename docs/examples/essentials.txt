@@ -13,9 +13,11 @@ shown = EaseBetween(0, 1500, 0.5, EASE_OUT)
 Print shown
 
 === UserFolder
-; keep saves where the player's account can always write
+; Keep saves in the player's own application folder, which is always writable.
+; The result ends with a slash, so add the file name straight on.
 folder$ = UserFolder("My Space Game")
-SaveSettings folder + "settings.txt"
+SetSetting "best.score", "1200"
+SaveSettings folder$ + "settings.txt"
 
 === SetSetting
 SetSetting "audio.music", 0.8
@@ -27,49 +29,90 @@ name$ = GetSetting("player.name", "Player")
 Print "Hello " + name
 
 === GetSettingInt
-best = GetSettingInt("best.score", 0)
+; Show the best score, or 0 when no score has been saved yet
+SetSetting "best.score", "1200"   ; normally this comes from LoadSettings
+Print GetSettingInt("best.score", 0)    ; 1200
+Print GetSettingInt("best.time", -1)    ; -1 (no such setting, so the default)
 
 === GetSettingFloat
-volume# = GetSettingFloat("audio.music", 1.0)
+; Music volume from the options, falling back to full volume the first time
+SetSetting "audio.music", "0.75"
+Print GetSettingFloat("audio.music", 1.0)    ; 0.75
+Print GetSettingFloat("audio.effects", 1.0)  ; 1.0
 
 === SettingExists
-If SettingExists("slot1.level") Then Print "Continue?"
+; Offer "Continue" only when a game has been saved
+SetSetting "slot1.level", "4"
+If SettingExists("slot1.level") Then Print "Continue?"   ; Continue?
+If Not SettingExists("slot2.level") Then Print "Slot 2 is empty"   ; Slot 2 is empty
 
 === DeleteSetting
-DeleteSetting "slot1.level"        ; the save slot is empty again
+; Empty a save slot
+SetSetting "slot1.level", "4"
+DeleteSetting "slot1.level"
+Print SettingExists("slot1.level")   ; 0
 
 === ClearSettings
-ClearSettings                      ; back to the defaults
+; Reset to the defaults (the saved file is untouched until SaveSettings is called)
+SetSetting "audio.music", "0.2"
+ClearSettings
+Print GetSettingFloat("audio.music", 1.0)   ; 1.0
 
 === SaveSettings
-SetSetting "fullscreen", 1
-SaveSettings UserFolder("My Space Game") + "settings.txt"
+; Save the options to a text file the player can read and edit
+SetSetting "fullscreen", "1"
+SaveSettings "settings.txt"   ; in a real game: UserFolder("My Game") + "settings.txt"
+f = ReadFile("settings.txt")
+Print ReadLine(f)   ; fullscreen = 1
+CloseFile f
+DeleteFile "settings.txt"
 
 === LoadSettings
-; the first time there is no file yet: keep the defaults
-If LoadSettings(UserFolder("My Space Game") + "settings.txt") = 0 Then Print "first run"
+; Read the options at start-up. The first run has no file, so keep the defaults
+SetSetting "fullscreen", "0"
+SaveSettings "settings.txt"
+ClearSettings
+If LoadSettings("settings.txt") Then Print "loaded"   ; loaded
+DeleteFile "settings.txt"
+If LoadSettings("settings.txt") = 0 Then Print "first run"   ; first run
 
 === JoyRumble
-; a heavy thump when the player lands
-JoyRumble 0.8, 0.3, 200
+; a heavy thump when the player lands; JoyRumble returns 1 if a gamepad shook
+landed = True
+If landed Then
+    If JoyRumble(0.8, 0.3, 200) = 0 Then Print "No gamepad to rumble"   ; printed when none is connected
+EndIf
 
 === BindKey
 BindKey "jump", KEY_SPACE
 BindKey "jump", KEY_W              ; an action can have several keys
 
 === BindMouse
+; Fire with the left mouse button or the space bar: one action, two inputs
 BindMouse "fire", MOUSE_LEFT
+BindKey "fire", KEY_SPACE
+Print ActionInputs("fire")   ; mouse:1,key:57
 
 === BindJoy
+; Jump and pause on any connected gamepad
 BindJoy "jump", JOY_A
 BindJoy "pause", JOY_START
+Print ActionInputs("jump")   ; joy:1
 
 === BindJoyAxis
 BindJoyAxis "left", "x", -1        ; left stick pushed left
 BindJoyAxis "right", "x", 1
 
 === BindAction
-BindAction "jump", "key:57"        ; the same as BindKey "jump", KEY_SPACE
+; Let the player pick the key for "jump": LastInput gives what was pressed, in BindAction's form
+Graphics 640, 480
+While Not KeyHit(KEY_ESCAPE)
+    pressed$ = LastInput()
+    If pressed <> "" Then BindAction "jump", pressed
+    Cls
+    Text 10, 10, "Press anything to bind jump. Now: " + ActionInputs("jump")
+    Flip
+Wend
 
 === ClearAction
 ClearAction "jump"
@@ -86,9 +129,19 @@ BindJoy "jump", JOY_A
 If ActionHit("jump") Then Print "jump!"
 
 === ActionValue
-; walk slowly when the stick is pushed a little
+; Walk slowly when the stick is pushed a little, quickly when pushed far; keys are 0 or 1
+Graphics 640, 480
 BindJoyAxis "right", "x", 1
-x# = x + 4 * ActionValue("right")
+BindJoyAxis "left", "x", -1
+BindKey "right", KEY_RIGHT
+BindKey "left", KEY_LEFT
+x# = 320
+While Not KeyHit(KEY_ESCAPE)
+    x = x + 4 * (ActionValue("right") - ActionValue("left"))
+    Cls
+    Rect x, 220, 20, 20
+    Flip
+Wend
 
 === ActionInputs
 BindKey "jump", KEY_SPACE
@@ -110,7 +163,13 @@ Print InputName("key:57")          ; Space
 Print InputName("joy:1")           ; Gamepad A
 
 === SaveActions
-SaveActions UserFolder("My Space Game") + "controls.txt"
+; Save the player's controls so they can be loaded next time with LoadActions
+BindKey "jump", KEY_SPACE
+SaveActions "controls.txt"   ; in a real game: UserFolder("My Game") + "controls.txt"
+f = ReadFile("controls.txt")
+Print ReadLine(f)   ; jump=key:57
+CloseFile f
+DeleteFile "controls.txt"
 
 === LoadActions
 If LoadActions(UserFolder("My Space Game") + "controls.txt") = 0
@@ -118,14 +177,28 @@ If LoadActions(UserFolder("My Space Game") + "controls.txt") = 0
 EndIf
 
 === TweenPosition
-; a door slides open over a second
+; a door slides 2 units to the right in one second, and the loop waits until it is open
+Graphics3D 800, 600
+cam = CreateCamera()
 door = CreateCube()
-TweenPosition door, 2, 0, 0, 1
+PositionEntity door, 0, 0, 6
+TweenPosition door, 2, 0, 6, 1        ; the target is a position, like PositionEntity
+While Tweening(door)
+    RenderWorld
+    Flip
+Wend
 
 === TweenRotation
-; a coin turns half way round, springing past and back
-coin = CreateCylinder()
-TweenRotation coin, 0, 180, 0, 0.6, EASE_OUT_BACK
+; a turret swings round to face right over one and a half seconds, starting slowly and ending slowly
+Graphics3D 800, 600
+cam = CreateCamera()
+turret = CreateCone()
+PositionEntity turret, 0, 0, 6
+TweenRotation turret, 0, 90, 0, 1.5, EASE_IN_OUT
+While Tweening(turret)
+    RenderWorld
+    Flip
+Wend
 
 === TweenScale
 ; a pickup pops into view
@@ -134,14 +207,29 @@ ScaleEntity gem, 0, 0, 0
 TweenScale gem, 1, 1, 1, 0.4, EASE_OUT_BACK
 
 === TweenAlpha
-; a ghost fades away
+; a ghost fades away over two seconds, then is removed
+Graphics3D 800, 600
+cam = CreateCamera()
 ghost = CreateSphere()
-TweenAlpha ghost, 0, 2
+PositionEntity ghost, 0, 0, 5
+TweenAlpha ghost, 0, 2                ; 0 = fully see-through
+While Tweening(ghost)
+    RenderWorld
+    Flip
+Wend
+FreeEntity ghost
 
 === TweenColor
-; a lamp glows from white to red when the alarm goes off
+; a warning lamp turns from white to red in half a second
+Graphics3D 800, 600
+cam = CreateCamera()
 lamp = CreateSphere()
+PositionEntity lamp, 0, 0, 5
 TweenColor lamp, 255, 40, 40, 0.5
+While Not KeyHit(KEY_ESCAPE)
+    RenderWorld
+    Flip
+Wend
 
 === Tweening
 door = CreateCube()
@@ -157,7 +245,8 @@ TweenPosition lift, 0, 10, 0, 5
 StopTweens lift                    ; the lift stops where it is
 
 === CameraShake
-; an explosion nearby
+; an explosion nearby shakes the picture for 0.6 seconds
+Graphics3D 800, 600
 cam = CreateCamera()
 CameraShake cam, 1.5, 0.6
 
@@ -175,12 +264,28 @@ ScreenFade 255, 255, 255, 0, 0.3   ; a white flash fading out
 If ScreenFading() Then Print "fading"
 
 === CreateParticles2D
-; sparks from a soft white dot
+; make a spark system, give it a position and shoot 30 particles when something is hit
+Graphics3D 800, 600
 sparks = CreateParticles2D()
+PositionParticles2D sparks, 400, 300
+EmitParticles2D sparks, 30
+While Not KeyHit(KEY_ESCAPE)
+    Cls
+    DrawParticles2D sparks
+    Flip
+Wend
 
 === PositionParticles2D
+; a campfire at the bottom middle of the screen, burning continuously
+Graphics 640, 480
 fire = CreateParticles2D()
 PositionParticles2D fire, 320, 400
+Particles2DRate fire, 40
+While Not KeyHit(KEY_ESCAPE)
+    Cls
+    DrawParticles2D fire
+    Flip
+Wend
 
 === Particles2DRate
 smoke = CreateParticles2D()
@@ -193,13 +298,19 @@ PositionParticles2D boom, 200, 150
 EmitParticles2D boom, 200
 
 === Particles2DLife
+; short-lived dust puffs, lasting between 0.3 and 0.8 seconds
 dust = CreateParticles2D()
 Particles2DLife dust, 0.3, 0.8
+EmitParticles2D dust, 20
+Print Particles2DCount(dust)        ; 20
 
 === Particles2DSpeed
-; a fountain: fast, upwards, in a narrow spray
+; a fountain: fast, upwards, in a narrow spray (-90 is up, spread of 20 degrees)
 fountain = CreateParticles2D()
 Particles2DSpeed fountain, 200, 300, -90, 20
+Particles2DGravity fountain, 0, 400
+EmitParticles2D fountain, 100
+Print Particles2DCount(fountain)        ; 100
 
 === Particles2DGravity
 fountain = CreateParticles2D()
@@ -210,8 +321,12 @@ smoke = CreateParticles2D()
 Particles2DSize smoke, 0.5, 3              ; puffs grow as they rise
 
 === Particles2DSpin
+; falling leaves that twirl either way, up to 90 degrees a second
 leaves = CreateParticles2D()
 Particles2DSpin leaves, -90, 90
+Particles2DGravity leaves, 0, 30
+EmitParticles2D leaves, 10
+Print Particles2DCount(leaves)        ; 10
 
 === Particles2DColor
 fire = CreateParticles2D()
@@ -239,5 +354,8 @@ EmitParticles2D sparks, 50
 Print Particles2DCount(sparks)
 
 === FreeParticles2D
-sparks = CreateParticles2D()
-FreeParticles2D sparks
+; free an explosion once it has finished, so it does not pile up
+boom = CreateParticles2D()
+EmitParticles2D boom, 80
+FreeParticles2D boom
+boom = 0

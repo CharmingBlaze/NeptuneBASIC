@@ -2,7 +2,8 @@
 // particle shader (MIT licence, fyrox-material), changed in one place:
 // particles use the texture's colour and alpha (Blitz3D style), where Fyrox
 // uses only its red channel as a mask, which turned soft round textures
-// into squares.
+// into squares. The pass is "NeptuneBlended" (see blended.rs), so that
+// particles are drawn after everything solid.
 (
     name: "NeptuneParticleShader",
 
@@ -61,11 +62,11 @@
         ),
     ],
 
-    disabled_passes: ["GBuffer", "DirectionalShadow", "PointShadow", "SpotShadow"],
+    disabled_passes: ["GBuffer", "Forward", "DirectionalShadow", "PointShadow", "SpotShadow"],
 
     passes: [
         (
-            name: "Forward",
+            name: "NeptuneBlended",
             draw_parameters: DrawParameters(
                 cull_face: None,
                 color_write: ColorMask(

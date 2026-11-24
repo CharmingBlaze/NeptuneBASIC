@@ -7,7 +7,8 @@ PositionEntity banner, 0, 5, 0
 ClothPinEdge banner, 0
 
 === CreateRope
-; a rope from a hook to the ground, a little slack
+; a rope from a hook 5 units up to the ground, 20 pieces, with a little slack
+Graphics3D 800, 600
 rope = CreateRope(0, 5, 0, 1, 0, 0, 20, 0.05, 6)
 ClothPin rope, 0
 
@@ -33,11 +34,13 @@ ClothPinEdge cape, 0, hero
 
 === ClothStiffness
 ; stiff canvas that hardly folds
+Graphics3D 800, 600
 tent = CreateCloth(3, 2)
 ClothStiffness tent, 1, 0.8
 
 === ClothDamping
 ; heavy wet cloth that settles fast
+Graphics3D 800, 600
 sheet = CreateCloth(2, 2)
 ClothDamping sheet, 0.1
 

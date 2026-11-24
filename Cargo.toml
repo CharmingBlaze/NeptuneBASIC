@@ -1,18 +1,23 @@
 [workspace]
 resolver = "2"
-members = ["crates/neptune-lang", "crates/neptune-vm", "crates/neptune-runtime", "crates/neptune-cli", "sdk/rust", "sdk/examples/rust-hello"]
+members = ["crates/neptune-lang", "crates/neptune-vm", "crates/neptune-runtime", "crates/neptune-cli", "crates/neptune-ide", "crates/neptune-editor", "sdk/rust", "sdk/examples/rust-hello"]
+# our copy of Fyrox's editor: built as a dependency of neptune-editor, not
+# tested or linted as our own code
+exclude = ["vendor/fyroxed_base"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "Zlib"
-repository = "https://github.com/neptunebasic/neptunebasic"
+repository = "https://github.com/CharmingBlaze/NeptuneBASIC"
 
 [workspace.dependencies]
 neptune-lang = { path = "crates/neptune-lang" }
 neptune-vm = { path = "crates/neptune-vm" }
 neptune-runtime = { path = "crates/neptune-runtime" }
 fyrox = "1.0.1"
+iroh = "1.4"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 
 [profile.dev.package."*"]
 opt-level = 3

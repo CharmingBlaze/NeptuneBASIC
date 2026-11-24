@@ -1,0 +1,484 @@
+; SKY RACE - little biplanes racing round a volcano island, in the style of a
+; 1990s console. Run from the repository root:
+;     neptune run examples/games/skyrace.nb
+;
+;   A / D ........ turn                      W / S ........ dive and climb
+;   Space ........ barrel roll, to dodge     R ............ back on the course
+;   P ............ let the computer fly      Esc .......... quit
+;
+; Fly through the gold hoops for a burst of speed.
+;
+; The shared look, course building and race rules are in retro64.nb. This file
+; shows the other thing a character controller can do: in CHAR_FLY mode it has
+; no gravity and moves in every direction, but mountains still stop it. Flying
+; is then only a matter of saying which way the nose points.
+
+Include "retro64.nb"
+
+SeedRnd 52
+
+Const CRUISE# = 46              ; normal speed, metres a second
+Const BOOST_SPEED# = 66         ; speed just after a hoop
+Const TURN_RATE# = 60           ; degrees a second at full turn
+Const MAX_PITCH# = 34           ; steepest dive or climb, in degrees
+Const MIN_HEIGHT# = 7           ; pull up when this close to the ground
+Const MAX_HEIGHT# = 240         ; the top of the sky
+Const HOOP_RADIUS# = 10
+Const HOOP_BOOST# = 1.5         ; seconds of speed a hoop gives
+Const ROLL_TIME# = 0.55         ; seconds a barrel roll takes
+Const RACE_LAPS = 2
+
+; ---- a golden afternoon ---------------------------------------------------------
+RetroWindow "Sky Race", 246, 218, 190, 230, 950
+SetSun -0.5, 0.68, 0.52, 255, 236, 200, 150, 146, 170
+MakeSky 40, 100, 205, 246, 218, 190, 255, 244, 226, 0.4, 255, 240, 190
+InitBeeps
+waterLevel = 0                  ; shadows and the camera stop at the sea
+
+; ---- the course: a loop in the air, with a height for every point ------------------
+LandSetup 240, 5
+Dim ctrlH#(CTRL_MAX)
+Function Waypoint(x#, z#, height#)
+    ctrlH(ctrlCount) = height
+    TrackPoint x, z
+End Function
+Waypoint -300, -330, 60 : Waypoint -60, -385, 42  : Waypoint 200, -340, 34
+Waypoint 380, -220, 72  : Waypoint 430, -20, 118  : Waypoint 330, 140, 142
+Waypoint 360, 320, 96   : Waypoint 170, 400, 54   : Waypoint -40, 320, 30
+Waypoint -150, 210, 44  : Waypoint -215, 60, 66   : Waypoint -230, -90, 92
+Waypoint -320, -210, 84
+TrackBuild 4
+
+; Spread each point's height smoothly along the samples between the points.
+For n = 0 To ctrlCount - 1
+    m = (n + 1) Mod ctrlCount
+    first0 = ctrlSample(n)
+    last0 = ctrlSample(m)
+    If m = 0 Then last0 = trackCount
+    For s = first0 To last0 - 1
+        t# = Float(s - first0) / (last0 - first0)
+        trackY(s) = ctrlH(n) + (ctrlH(m) - ctrlH(n)) * t
+    Next
+Next
+TrackSmooth 40
+
+; ---- the land -----------------------------------------------------------------------
+; Rolling noise makes hills and bays. A volcano and a second peak are added on
+; top, and everything sinks into the sea towards the edge of the map.
+Const VOLCANO_X# = 30, VOLCANO_Z# = -30
+TrackStamp 78, 3
+For j = 0 To mapN
+    For i = 0 To mapN
+        x# = GridX(i) : z# = GridZ(j)
+        h# = (Fractal(x * 0.006 + 3, z * 0.006 + 7, 5) - 0.5) * 130
+
+        d# = Sqr((x - VOLCANO_X) ^ 2 + (z - VOLCANO_Z) ^ 2)
+        k# = Max(0, 1 - d / 230)
+        h = h + k * k * (3 - 2 * k) * 250
+        h = h - SmoothStep(32, 8, d) * 38         ; the crater
+
+        d2# = Sqr((x + 430) ^ 2 + (z - 70) ^ 2)
+        k = Max(0, 1 - d2 / 130)
+        h = h + k * k * (3 - 2 * k) * 160
+
+        shore# = 1 - SmoothStep(440, 595, Max(Abs(x), Abs(z)))
+        h = h * shore - 14 * (1 - shore)
+
+        ; Never let the land rise into the course: that cuts valleys and
+        ; canyons exactly where the planes will fly.
+        s = tNear(i, j)
+        If s >= 0
+            roof# = trackY(s) - 20
+            If h > roof Then h = roof + (h - roof) * SmoothStep(26, 76, Sqr(tDist(i, j)))
+        End If
+        hMap(i, j) = h
+    Next
+Next
+
+; ---- painting -------------------------------------------------------------------------
+sand = RGB(238, 218, 164)
+grass = RGB(112, 172, 72)
+forest = RGB(58, 124, 62)
+rock = RGB(126, 112, 104)
+ash = RGB(70, 58, 60)
+For j = 0 To mapN
+    For i = 0 To mapN
+        x# = GridX(i) : z# = GridZ(j)
+        y# = hMap(i, j)
+        c = MixRGB(sand, grass, SmoothStep(1.5, 5, y))
+        c = MixRGB(c, forest, SmoothStep(14, 40, y + Noise2(x * 0.04, z * 0.04) * 20))
+        slope# = Abs(hMap(Min(i + 1, mapN), j) - y) + Abs(hMap(i, Min(j + 1, mapN)) - y)
+        c = MixRGB(c, rock, SmoothStep(3.5, 7, slope))
+        c = MixRGB(c, ash, SmoothStep(120, 165, y))
+        ; molten rock glowing at the bottom of the crater
+        d# = Sqr((x - VOLCANO_X) ^ 2 + (z - VOLCANO_Z) ^ 2)
+        If d < 20 Then c = MixRGB(RGB(255, 140, 30), c, SmoothStep(8, 20, d))
+        cMap(i, j) = JitterRGB(c, 6)
+    Next
+Next
+BuildLand MakeDetailTexture(205, 255, 16), 3
+UpdateWorld : RenderWorld
+
+; The sea is one big flat sheet, with a small texture repeated across it.
+sea = CreateMesh()
+seaSurf = CreateSurface(sea)
+For k = 0 To 3
+    sx# = -2600 : sz# = -2600
+    If k = 1 Or k = 2 Then sx = 2600
+    If k >= 2 Then sz = 2600
+    AddVertex seaSurf, sx, 0, sz, sx / 40, sz / 40
+    VertexColor seaSurf, k, 30, 120, 190
+Next
+AddTriangle seaSurf, 0, 3, 2
+AddTriangle seaSurf, 0, 2, 1
+UpdateNormals sea
+EntityFX sea, 1 + 2 + 16
+Global seaRipple = MakeDetailTexture(190, 255, 8)
+EntityTexture sea, seaRipple
+
+; ---- scenery ----------------------------------------------------------------------------
+; A puffy ball of triangles. Several of them together make one cloud.
+Function PropPuff(x#, y#, z#, r#, c)
+    propCX = x : propCY = y : propCZ = z
+    For lat = 0 To 3
+        a0# = -90 + lat * 45 : a1# = a0 + 45
+        For lon = 0 To 8
+            b0# = lon * 40 : b1# = b0 + 40
+            r0# = Cos(a0) * r : r1# = Cos(a1) * r
+            y0# = y + Sin(a0) * r * 0.62 : y1# = y + Sin(a1) * r * 0.62
+            PropQuad x + Cos(b0) * r0, y0, z + Sin(b0) * r0, x + Cos(b1) * r0, y0, z + Sin(b1) * r0, x + Cos(b1) * r1, y1, z + Sin(b1) * r1, x + Cos(b0) * r1, y1, z + Sin(b0) * r1, c
+        Next
+    Next
+End Function
+
+PropsBegin
+placed = 0
+tries = 0
+While placed < 760 And tries < 26000
+    tries = tries + 1
+    x# = Rnd(-560, 560)
+    z# = Rnd(-560, 560)
+    y# = GroundY(x, z)
+    If y > 2 And SlopeAt(x, z) < 0.8
+        If y < 13
+            PropPalm x, y - 0.3, z, Rnd(1.8, 3)
+        ElseIf y < 95
+            PropPine x, y - 0.3, z, Rnd(2, 3.6), JitterRGB(RGB(38, 100, 62), 12)
+        Else
+            PropRock x, y, z, Rnd(1.5, 4), RGB(112, 104, 104)
+        End If
+        placed = placed + 1
+    End If
+Wend
+
+; Clouds drift beside the course, where they rush past and show your speed.
+For n = 1 To 70
+    s = Rand(0, trackCount - 1)
+    side# = Rnd(40, 170)
+    If Rand(0, 1) Then side = -side
+    cx# = trackX(s) + trackDZ(s) * side
+    cz# = trackZ(s) - trackDX(s) * side
+    cy# = Max(trackY(s) + Rnd(-16, 60), GroundY(cx, cz) + 26)
+    For p = 1 To Rand(4, 7)
+        PropPuff cx + Rnd(-26, 26), cy + Rnd(-4, 7), cz + Rnd(-26, 26), Rnd(9, 20), RGB(255, 255, 255)
+    Next
+Next
+
+PropArch 0, 16, 11, RGB(240, 70, 60), RGB(255, 250, 235)
+PropsEnd
+FarMountains 1700, -2, 150, 46, RGB(176, 180, 200), RGB(206, 206, 214)
+
+; The volcano smokes gently.
+smoke = CreateEmitter(MakePuffTexture())
+PositionEntity smoke, VOLCANO_X, GroundY(VOLCANO_X, VOLCANO_Z) + 16, VOLCANO_Z
+EmitterShape smoke, 0, 12
+EmitterMax smoke, 120
+EmitterRate smoke, 10
+EmitterLife smoke, 6, 10
+EmitterVelocity smoke, 2, 13, 1, 3
+EmitterSize smoke, 12, 4
+EmitterColor smoke, 92, 84, 88, 170
+EmitterFadeColor smoke, 180, 172, 176, 0
+
+; ---- boost hoops ---------------------------------------------------------------------
+; One ring built by hand, striped so that its spin can be seen, then copied.
+Const HOOP_SIDES = 18, TUBE_SIDES = 5, TUBE# = 0.85
+Function MakeHoopMesh()
+    e = CreateMesh()
+    surf = CreateSurface(e)
+    For a = 0 To HOOP_SIDES
+        ca# = Cos(a * 360.0 / HOOP_SIDES) : sa# = Sin(a * 360.0 / HOOP_SIDES)
+        For b = 0 To TUBE_SIDES
+            cb# = Cos(b * 360.0 / TUBE_SIDES) : sb# = Sin(b * 360.0 / TUBE_SIDES)
+            v = AddVertex(surf, ca * (HOOP_RADIUS + cb * TUBE), sa * (HOOP_RADIUS + cb * TUBE), sb * TUBE)
+            light# = 0.72 + 0.28 * Clamp(sa * cb + 0.4, 0, 1)
+            If (a / 2) Mod 2 = 0
+                VertexColor surf, v, 255 * light, 206 * light, 50 * light
+            Else
+                VertexColor surf, v, 255 * light, 245 * light, 210 * light
+            End If
+        Next
+    Next
+    For a = 0 To HOOP_SIDES - 1
+        For b = 0 To TUBE_SIDES - 1
+            q = a * (TUBE_SIDES + 1) + b
+            AddTriangle surf, q, q + 1, q + TUBE_SIDES + 2
+            AddTriangle surf, q, q + TUBE_SIDES + 2, q + TUBE_SIDES + 1
+        Next
+    Next
+    UpdateNormals e
+    EntityFX e, 1 + 2 + 16
+    Return e
+End Function
+
+Type Hoop
+    Field e, id, x#, y#, z#, yaw#, spin#, flash#
+End Type
+
+hoopMesh = MakeHoopMesh()
+hoopCount = 0
+For s = 30 To trackCount - 20 Step 44
+    o.Hoop = New Hoop
+    hoopCount = hoopCount + 1
+    o\id = hoopCount
+    o\e = CopyEntity(hoopMesh)
+    o\x = trackX(s) : o\y = trackY(s) : o\z = trackZ(s)
+    o\yaw = ATan2(-trackDX(s), trackDZ(s))
+    PositionEntity o\e, o\x, o\y, o\z
+Next
+HideEntity hoopMesh
+
+; ---- the planes --------------------------------------------------------------------------
+Function BuildPlane(v.Rider)
+    ; The body is lifted to mid-height of the character, so it pivots
+    ; about its own middle when it banks and dives.
+    PositionEntity v\body, 0, 0.9, 0
+    b = v\body
+    PartBox b, 0, 0, 0.2, 0.42, 0.42, 1.6, v\r, v\g, v\b               ; fuselage
+    PartBox b, 0, 0.05, -1.9, 0.2, 0.22, 0.75, v\r, v\g, v\b           ; tail boom
+    PartBall b, 0, 0, 1.85, 0.46, 0.46, 0.4, 70, 70, 80                ; engine cowl
+
+    ; both wings, with struts between them
+    PartBox b, 0, 0.82, 0.55, 2.9, 0.07, 0.62, 250, 236, 200
+    PartBox b, 0, -0.4, 0.55, 2.7, 0.07, 0.62, 250, 236, 200
+    For side = -1 To 1 Step 2
+        PartBox b, side * 2.1, 0.2, 0.55, 0.05, 0.6, 0.05, 90, 70, 60
+        PartBox b, side * 0.5, 0.42, 0.55, 0.05, 0.4, 0.05, 90, 70, 60
+    Next
+    PartBox b, 0, 0.5, -2.45, 0.05, 0.5, 0.36, v\r, v\g, v\b           ; fin
+    PartBox b, 0, 0.1, -2.45, 1, 0.05, 0.34, 250, 236, 200             ; tailplane
+
+    ; the propeller is a blade on a pivot, spun every frame
+    v\wheel1 = CreatePivot(b)
+    PositionEntity v\wheel1, 0, 0, 2.3
+    PartBox v\wheel1, 0, 0, 0, 1.15, 0.09, 0.04, 40, 40, 44
+    PartBall v\wheel1, 0, 0, 0.05, 0.15, 0.15, 0.2, 240, 200, 60
+
+    ; undercarriage
+    For side = -1 To 1 Step 2
+        PartBox b, side * 0.55, -0.68, 0.9, 0.04, 0.3, 0.04, 90, 90, 100
+        wheel = CreateCylinder(8, True, b)
+        RotateEntity wheel, 0, 0, 90
+        ScaleEntity wheel, 0.26, 0.08, 0.26
+        PositionEntity wheel, side * 0.55, -0.98, 0.9
+        EntityColor wheel, 28, 28, 34
+    Next
+
+    ; the pilot: a head, a helmet and goggles, looking out of the cockpit
+    PartBall b, 0, 0.62, -0.2, 0.22, 0.24, 0.22, 226, 180, 140
+    PartBall b, 0, 0.74, -0.2, 0.24, 0.17, 0.26, 130, 84, 50
+    PartBox b, 0, 0.68, 0.02, 0.2, 0.05, 0.03, 40, 200, 240
+
+    ; a thin white trail behind the tail
+    v\dust = CreateEmitter(MakePuffTexture())
+    EmitterMax v\dust, 160
+    EmitterRate v\dust, 0
+    EmitterLife v\dust, 0.5, 0.9
+    EmitterVelocity v\dust, 0, 0.2, 0, 0.3
+    EmitterSize v\dust, 0.35, 1
+    EmitterColor v\dust, 255, 255, 255, 170
+    EmitterFadeColor v\dust, 255, 255, 255, 0
+End Function
+
+Function AddPlane.Rider(name$, isPlayer, row, side, r, g, b, skill#)
+    v.Rider = NewRider(name, isPlayer, -8 - row * 10, side * 8, BOOST_SPEED, 0, TURN_RATE, r, g, b)
+    v\skill = skill
+    ; This one line is what makes it an aeroplane: no gravity, free in every
+    ; direction, still stopped by mountains.
+    CharMode v\ctrl, CHAR_FLY
+    BuildPlane v
+    Return v
+End Function
+
+player = AddPlane("YOU", True, 2, 1, 226, 56, 50, 1)
+AddPlane "AVA", False, 0, -1, 250, 200, 60, 0.97
+AddPlane "BARON", False, 0, 1, 70, 190, 110, 0.94
+AddPlane "CIRRUS", False, 1, -1, 80, 140, 245, 0.91
+AddPlane "ZEPHYR", False, 1, 1, 245, 130, 50, 0.88
+AddPlane "GALE", False, 2, -1, 190, 110, 225, 0.84
+
+; ---- how a plane flies ---------------------------------------------------------------------
+; W dives and S climbs, the way a flight stick works: push forward to go down.
+ClearAction "gas" : BindKey "gas", KEY_W : BindKey "gas", KEY_UP : BindJoyAxis "gas", "y", -1
+ClearAction "brake" : BindKey "brake", KEY_S : BindKey "brake", KEY_DOWN : BindJoyAxis "brake", "y", 1
+
+; The nose is held by two numbers: yaw and pitch (positive pitch is nose down).
+Function FlyPlane(v.Rider, steer#, dive#, flying, dt#)
+    c = v\ctrl
+    v\steer = v\steer + (steer - v\steer) * Clamp(6 * dt, 0, 1)
+    wantPitch# = dive * MAX_PITCH
+
+    ; Pull up before the ground gets close, looking ahead as well as down.
+    aheadX# = CharX(c) - Sin(v\yaw) * 30
+    aheadZ# = CharZ(c) + Cos(v\yaw) * 30
+    floorY# = Max(GroundOrWater(CharX(c), CharZ(c)), GroundOrWater(aheadX, aheadZ)) + MIN_HEIGHT
+    If CharY(c) < floorY Then wantPitch = Min(wantPitch, -24)
+    If CharY(c) > MAX_HEIGHT Then wantPitch = Max(wantPitch, 18)
+    v\pitch = v\pitch + (wantPitch - v\pitch) * Clamp(4 * dt, 0, 1)
+
+    If flying
+        v\yaw = v\yaw + v\steer * v\turn * dt
+        ; Diving speeds you up and climbing slows you down.
+        target# = CRUISE * RubberBand(v) + v\pitch * 0.35
+        rate# = 1.5
+        If v\boost > 0
+            target = BOOST_SPEED
+            rate = 5
+        End If
+        v\speed = v\speed + (target - v\speed) * Clamp(rate * dt, 0, 1)
+    End If
+    v\boost = v\boost - dt
+    RotateEntity v\ent, 0, v\yaw, 0
+
+    ; Turn the two angles into a direction, and tell the controller to go there.
+    level# = Cos(v\pitch)
+    CharMove c, -Sin(v\yaw) * level * v\speed / v\top, -Sin(v\pitch) * v\speed / v\top, Cos(v\yaw) * level * v\speed / v\top
+    UpdateChar c, dt
+
+    ; If the controller went much slower than we asked, we hit a mountain.
+    moved# = Sqr(CharVX(c) ^ 2 + CharVY(c) ^ 2 + CharVZ(c) ^ 2)
+    If flying And v\speed > moved + 14
+        v\speed = v\speed * 0.55
+        v\pitch = -24
+        If v\isPlayer Then CameraShake camera, 0.9, 0.4
+    End If
+
+    TurnEntity v\wheel1, 0, 0, (800 + v\speed * 30) * dt      ; spin the propeller
+    UpdateProgress v
+End Function
+
+; A barrel roll: the picture spins once while a sideways shove moves the plane.
+Function StartRoll(v.Rider, direction)
+    If v\rollTime > -0.5 Then Return
+    v\rollTime = ROLL_TIME
+    v\rollDir = direction
+    CharImpulse v\ctrl, Cos(v\yaw) * direction * 26, 0, Sin(v\yaw) * direction * 26
+End Function
+
+; Steering for the computer pilots: aim at a point further along the course.
+Global aiDive#
+Function ThinkPlane(v.Rider, seconds#)
+    c = v\ctrl
+    k = (v\sample + 8 + Abs(v\speed) * 0.3) Mod trackCount
+    lane# = v\lane + Sin(seconds * 17 + v\seed) * 5
+    dx# = trackX(k) + trackDZ(k) * lane - CharX(c)
+    dz# = trackZ(k) - trackDX(k) * lane - CharZ(c)
+    dy# = trackY(k) + Sin(seconds * 23 + v\seed) * 4 - CharY(c)
+    aiSteer = Clamp(AngleDiff(v\yaw, ATan2(-dx, dz)) / 16, -1, 1)
+    aiDive = Clamp(-ATan2(dy, Sqr(dx * dx + dz * dz)) / MAX_PITCH, -1, 1)
+End Function
+
+engineSound = MakeEngine("plane", 105, 0.07)
+If engineSound
+    SoundVolume engineSound, 0.42
+    engineChannel = PlaySound(engineSound)
+End If
+
+StartRace RACE_LAPS
+ChaseCamera player, 10, 4.2, True, 0.02
+seconds# = 0
+
+; ---- the main loop -------------------------------------------------------------------------
+While Not KeyHit(KEY_ESCAPE)
+    dt# = LastFrameTime()
+    seconds = seconds + dt
+    UpdateRace dt
+    PositionTexture seaRipple, seconds * 0.02, seconds * 0.03
+
+    If ActionHit("reset")
+        If raceState = STATE_DONE Then RestartRace Else RespawnRider player
+    End If
+    rollPressed = ActionHit("jump")
+
+    For v.Rider = Each Rider
+        c = v\ctrl
+        If raceState = STATE_COUNTDOWN
+            FlyPlane v, 0, 0, False, dt
+        ElseIf v\isPlayer And autopilot = False And raceState = STATE_RACE
+            turn# = ActionValue("left") - ActionValue("right")
+            If rollPressed
+                If turn > 0 Then StartRoll v, -1 Else StartRoll v, 1
+            End If
+            FlyPlane v, turn, ActionValue("gas") - ActionValue("brake"), True, dt
+        Else
+            ThinkPlane v, seconds
+            FlyPlane v, aiSteer, aiDive, True, dt
+        End If
+
+        ; Bank into turns. Positive roll lifts the right wing, for a left turn.
+        v\rollTime = Max(-1, v\rollTime - dt)
+        bank# = v\steer * 52
+        If v\rollTime > 0 Then bank = bank + (1 - v\rollTime / ROLL_TIME) * 360 * v\rollDir
+        hover# = Sin(seconds * 110 + v\seed) * 0.12
+        PoseRider v, 0, 1, 0, hover, v\pitch, bank, dt
+
+        ; The trail streams from the tail, thicker while boosting.
+        rearX# = CharX(c) + Sin(v\yaw) * 3
+        rearZ# = CharZ(c) - Cos(v\yaw) * 3
+        PositionEntity v\dust, rearX, CharY(c) + 0.9 + Sin(v\pitch) * 3, rearZ
+        If v\boost > 0
+            EmitterRate v\dust, 90
+        Else
+            EmitterRate v\dust, v\speed * 0.7
+        End If
+
+        ; Through a hoop? Each hoop counts only once in a row for each plane.
+        For o.Hoop = Each Hoop
+            If v\lastHoop <> o\id
+                If Abs(CharX(c) - o\x) < HOOP_RADIUS + 3 And Abs(CharZ(c) - o\z) < HOOP_RADIUS + 3
+                    d# = Sqr((CharX(c) - o\x) ^ 2 + (CharY(c) + 0.9 - o\y) ^ 2 + (CharZ(c) - o\z) ^ 2)
+                    If d < HOOP_RADIUS + 1
+                        v\lastHoop = o\id
+                        v\boost = HOOP_BOOST
+                        If v\isPlayer
+                            o\flash = 0.5
+                            If sndBeep Then PlaySound sndBeep
+                        End If
+                    End If
+                End If
+            End If
+        Next
+
+        CheckStuck v, dt
+    Next
+
+    ; Hoops turn slowly, and swell for a moment when the player goes through.
+    For o.Hoop = Each Hoop
+        o\spin = o\spin + 50 * dt
+        o\flash = Max(0, o\flash - dt)
+        RotateEntity o\e, 0, o\yaw, o\spin
+        ScaleEntity o\e, 1 + o\flash * 0.7, 1 + o\flash * 0.7, 1 + o\flash * 0.7
+    Next
+
+    If engineChannel Then ChannelPitch engineChannel, 11025 * (0.8 + 0.9 * Abs(player\speed) / BOOST_SPEED)
+
+    ChaseCamera player, 10, 4.2, False, dt
+    UpdateWorld
+    RenderWorld
+
+    DrawRaceHud "SKY RACE"
+    If player\boost > 0 Then BigText GraphicsWidth() / 2, 130, "BOOST!", 9, 255, 220, 80, True
+    BigText GraphicsWidth() - 24 - TextWidth2("ALT " + Int(CharY(player\ctrl)), 5), GraphicsHeight() - 44, "ALT " + Int(CharY(player\ctrl)), 5, 255, 255, 255
+    RetroFlip
+Wend
+End

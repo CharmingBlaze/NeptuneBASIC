@@ -1,0 +1,227 @@
+; COIN RUSH - a multiplayer game in about 150 lines.
+;
+; Try it on one computer:
+;     neptune run --players 2 examples/games/coinrush.nb
+; On a local network, just start it on each computer: they find each other.
+; Over the internet, the host's invite code is saved in coinrush-invite.txt.
+; Everyone else adds it to the command line:
+;     neptune run examples/games/coinrush.nb <invite>
+;
+; W A S D move. First to 10 coins wins. F2 pretends the network is bad.
+;
+; Mechanics shown: NetPlay finds or starts a game, NetTemplate and NetSpawn
+; put an entity on every computer, NetSet shares the score, NetRecv reports
+; who came and went, and the host alone decides who picked up a coin.
+
+Graphics3D 1024, 600, 32, 2
+AppTitle "Coin Rush"
+SeedRnd MilliSecs()
+
+Const ARENA# = 14, SPEED# = 10, COIN_COUNT = 6, WINNING_SCORE = 10, ROUND_PAUSE = 4000
+
+Type Runner
+    Field entity
+End Type
+
+Type Coin
+    Field entity
+End Type
+
+; ---- the game on the network ------------------------------------------
+Global result
+If CommandLine() <> ""
+    result = NetJoin(CommandLine())
+Else
+    result = NetPlay("Coin Rush")
+EndIf
+If result = 0 Then RuntimeError "Could not start a game: " + NetError()
+
+If NetIsHost()
+    invite = WriteFile("coinrush-invite.txt")
+    WriteLine invite, NetInvite()
+    CloseFile invite
+EndIf
+
+; ---- the world --------------------------------------------------------
+camera = CreateCamera()
+CameraClsColor camera, 28, 34, 52
+sun = CreateLight(1)
+RotateEntity sun, 60, 30, 0
+AmbientLight 90, 90, 100
+
+ground = CreatePlane()
+EntityColor ground, 58, 86, 74
+
+; What runners and coins look like. A template is only a pattern: every
+; computer has the same ones, and NetSpawn makes the copies.
+runner_shape = CreateCube()
+ScaleEntity runner_shape, 0.6, 0.9, 0.6
+NetTemplate "runner", runner_shape
+
+coin_shape = CreateCylinder(16)
+ScaleEntity coin_shape, 0.5, 0.08, 0.5
+RotateEntity coin_shape, 90, 0, 0
+EntityColor coin_shape, 255, 205, 60
+NetTemplate "coin", coin_shape
+
+Global me = AddRunner(NetSpawn("runner", Rnd(-8, 8), 0.9, Rnd(-8, 8)))
+
+Global message$ = "", message_until
+Global bad_network = False
+Global round_over_at = 0
+Global last_time = MilliSecs()
+
+; ---- the main loop ----------------------------------------------------
+While Not KeyHit(KEY_ESCAPE)
+    now = MilliSecs()
+    seconds# = (now - last_time) / 1000.0
+    last_time = now
+
+    MoveMe seconds
+    ReadNetwork
+    If NetIsHost() Then RunTheRound now
+
+    For c.Coin = Each Coin
+        If NetIsMine(c\entity) Then TurnEntity c\entity, 0, 120 * seconds, 0
+    Next
+
+    PositionEntity camera, EntityX(me) * 0.6, 20, EntityZ(me) * 0.6 - 15
+    PointEntity camera, me
+
+    If KeyHit(KEY_F2)
+        bad_network = Not bad_network
+        If bad_network
+            NetSimulate 150, 10
+        Else
+            NetSimulate 0, 0
+        EndIf
+    EndIf
+
+    UpdateWorld
+    RenderWorld
+    DrawScores
+    Flip
+Wend
+End
+
+; ---- your own runner --------------------------------------------------
+Function MoveMe(seconds#)
+    x# = KeyDown(KEY_D) - KeyDown(KEY_A)
+    z# = KeyDown(KEY_W) - KeyDown(KEY_S)
+    If x = 0 And z = 0 Then Return
+    length# = Sqr(x * x + z * z)
+    TranslateEntity me, x / length * SPEED * seconds, 0, z / length * SPEED * seconds
+    RotateEntity me, 0, ATan2(-x, z), 0
+    PositionEntity me, Max(-ARENA, Min(ARENA, EntityX(me))), 0.9, Max(-ARENA, Min(ARENA, EntityZ(me)))
+End Function
+
+; Runners get a colour from their owner, so everyone agrees who is who.
+Function AddRunner(entity)
+    r.Runner = New Runner
+    r\entity = entity
+    id = NetOwner(entity)
+    EntityColor entity, 90 + (id * 83) Mod 165, 90 + (id * 151) Mod 165, 90 + (id * 197) Mod 165
+    Return entity
+End Function
+
+; ---- what the network says --------------------------------------------
+Function ReadNetwork()
+    While NetRecv()
+        Select NetEvent()
+            Case "join"
+                Say NetData() + " joined"
+            Case "leave"
+                Say "Somebody left"
+            Case "lost"
+                RuntimeError "The host has gone."
+            Case "spawn"
+                If NetData() = "runner"
+                    AddRunner NetEntity()
+                Else
+                    AddCoin NetEntity()
+                EndIf
+            Case "despawn"
+                ForgetEntity NetEntity()
+        End Select
+    Wend
+End Function
+
+Function Say(text$)
+    message = text
+    message_until = MilliSecs() + 3000
+End Function
+
+Function AddCoin(entity)
+    c.Coin = New Coin
+    c\entity = entity
+End Function
+
+Function ForgetEntity(entity)
+    For r.Runner = Each Runner
+        If r\entity = entity Then Delete r
+    Next
+    For c.Coin = Each Coin
+        If c\entity = entity Then Delete c
+    Next
+End Function
+
+; ---- only the host runs this: one computer decides, so nobody disagrees
+Function RunTheRound(now)
+    If round_over_at <> 0
+        If now > round_over_at
+            round_over_at = 0
+            For i = 1 To NetCountPlayers()
+                NetSet "score" + NetPlayerAt(i), 0
+            Next
+            NetSet "winner", ""
+        EndIf
+        Return
+    EndIf
+
+    count = 0
+    For c.Coin = Each Coin
+        count = count + 1
+    Next
+    While count < COIN_COUNT
+        AddCoin NetSpawn("coin", Rnd(-ARENA, ARENA), 1, Rnd(-ARENA, ARENA))
+        count = count + 1
+    Wend
+
+    For c.Coin = Each Coin
+        For r.Runner = Each Runner
+            If EntityDistance(r\entity, c\entity) < 1.5
+                GiveCoin NetOwner(r\entity), now
+                FreeEntity c\entity
+                Delete c
+                Exit
+            EndIf
+        Next
+    Next
+End Function
+
+Function GiveCoin(player, now)
+    score = Int(NetGet("score" + player, "0")) + 1
+    NetSet "score" + player, score
+    If score >= WINNING_SCORE
+        NetSet "winner", NetPlayerName(player)
+        round_over_at = now + ROUND_PAUSE
+    EndIf
+End Function
+
+; ---- the screen -------------------------------------------------------
+Function DrawScores()
+    Color 255, 255, 255
+    For i = 1 To NetCountPlayers()
+        player = NetPlayerAt(i)
+        Text 12, 8 + i * 18, NetPlayerName(player) + ": " + NetGet("score" + player, "0")
+    Next
+    role$ = "Playing"
+    If NetIsHost() Then role = "Hosting (invite saved in coinrush-invite.txt)"
+    Text 12, 8, role + "   ping " + NetPing() + " ms"
+    If bad_network Then Text 12, GraphicsHeight() - 24, "Pretending the network is bad (F2)"
+    If NetGet("winner") <> ""
+        Text GraphicsWidth() / 2, 200, NetGet("winner") + " wins!", True, True
+    ElseIf MilliSecs() < message_until
+        Text GraphicsWidth() / 2, 60, message, True, True
+    EndIf
+End Function

@@ -1,0 +1,168 @@
+=== NetPlay
+; find a game of this name on the network, or start one
+If NetPlay("Coin Rush", "Alice") = 0 Then RuntimeError NetError()
+Print "Playing as " + NetPlayerName(NetMe())
+
+=== NetCreate
+; always start a new game, for a "Host" button in a menu
+If NetCreate("Coin Rush") = 2 Then Print "Invite: " + NetInvite()
+
+=== NetJoin
+; join a friend's game with the code they sent you
+If NetJoin(CommandLine(), "Bob") = 0 Then Print "Could not join: " + NetError()
+
+=== NetInvite
+; show the code that lets a friend join from anywhere
+If NetCreate("Coin Rush") Then Print NetInvite()
+
+=== NetError
+; say why a game could not start
+If NetPlay("Coin Rush") = 0 Then Print NetError()
+
+=== NetIsHost
+; one computer decides who won
+If NetIsHost() Then NetSet "round", 1
+
+=== NetMe
+; your own player
+If NetPlay("Coin Rush") Then Print "My name: " + NetPlayerName(NetMe())
+
+=== NetHostPlayer
+; send something to whoever is hosting
+NetSend "ready", "", NetHostPlayer()
+
+=== NetCountPlayers
+; list everybody
+For i = 1 To NetCountPlayers()
+    Print NetPlayerName(NetPlayerAt(i))
+Next
+
+=== NetPlayerAt
+; the first player to join is number 1
+oldest = NetPlayerAt(1)
+Print NetPlayerName(oldest)
+
+=== NetPing
+; show how long the network takes
+Print "Ping: " + NetPing() + " ms"
+
+=== NetSet
+; every computer gets the same value, and so does anybody who joins later
+NetSet "round", 3
+
+=== NetGet
+; a shared value, or a default if nobody has set it
+round = Int(NetGet("round", "1"))
+Print "Round " + round
+
+=== NetSend
+; tell everybody something happened, or pass a player id to tell one
+NetSend "boom", "12,40"
+
+=== NetRecv
+; read what happened since the last frame
+While NetRecv()
+    Print NetEvent() + " from " + NetPlayerName(NetFrom())
+Wend
+
+=== NetEvent
+; the kind of thing that happened
+While NetRecv()
+    If NetEvent() = "join" Then Print NetData() + " joined"
+    If NetEvent() = "lost" Then Print "The game has ended"
+Wend
+
+=== NetData
+; the text sent with an event
+While NetRecv()
+    If NetEvent() = "boom" Then Print "Explosion at " + NetData()
+Wend
+
+=== NetFrom
+; who an event came from
+While NetRecv()
+    Print NetPlayerName(NetFrom())
+Wend
+
+=== NetEntity
+; the entity a "spawn" event is about
+While NetRecv()
+    If NetEvent() = "spawn" Then EntityColor NetEntity(), 255, 80, 80
+Wend
+
+=== NetSimulate
+; test with 150 ms of lag and 10% of fast messages lost
+NetSimulate 150, 10
+
+=== NetRelay
+; use your own relay server (set it before starting a game)
+NetRelay "https://relay.example.com"
+result = NetPlay("Coin Rush")
+
+=== NetTemplate
+; what a "kart" looks like, on every computer
+Graphics3D 800, 600, 32, 2
+kart = CreateCube()
+NetTemplate "kart", kart
+
+=== NetSpawn
+; a kart everyone can see; move it with the usual commands
+Graphics3D 800, 600, 32, 2
+If NetPlay("Karts") = 0 Then RuntimeError NetError()
+NetTemplate "kart", CreateCube()
+mine = NetSpawn("kart", 0, 1, 0)
+MoveEntity mine, 0, 0, 1
+
+=== NetIsMine
+; move only what belongs to this computer
+Graphics3D 800, 600, 32, 2
+kart = CreateCube()
+If NetIsMine(kart) Then MoveEntity kart, 0, 0, 1
+
+=== NetOwner
+; which player an entity belongs to
+Graphics3D 800, 600, 32, 2
+kart = CreateCube()
+Print NetPlayerName(NetOwner(kart))
+
+=== NetCharacter
+; a character the host checks, used like any other
+Graphics3D 800, 600, 32, 2
+If NetPlay("Runners") = 0 Then RuntimeError NetError()
+hero = CreateCube()
+pattern = CreateCharController(hero, 0.4, 1.8)
+CharSet pattern, "speed", 7
+NetTemplate "hero", hero
+player = NetCharacter(NetSpawn("hero", 0, 1, 0))
+CharMove player, 1, 0, 0
+UpdateChar player
+
+=== NetFire
+; fire along the camera, and let the host decide what that hit
+Graphics3D 800, 600, 32, 2
+If NetPlay("Duel") = 0 Then RuntimeError NetError()
+camera = CreateCamera()
+If MouseHit(1) Then NetFire "shot", camera, 100, "pistol"
+
+=== NetHit
+; the host judges each shot against what the shooter could see
+While NetRecv()
+    If NetEvent() = "shot"
+        target = NetHit()
+        If target <> 0 Then NetSend "hit", NetData() + " at " + PickedX(), NetOwner(target)
+    EndIf
+Wend
+
+=== NetCorrections
+; how often the host has had to put this character right
+Graphics3D 800, 600, 32, 2
+If NetPlay("Runners") = 0 Then RuntimeError NetError()
+hero = CreateCube()
+pattern = CreateCharController(hero, 0.4, 1.8)
+NetTemplate "hero", hero
+player = NetCharacter(NetSpawn("hero"))
+Print NetCorrections(player)
+
+=== NetRate
+; send positions 30 times a second, for a fast game
+NetRate 30

@@ -10,7 +10,7 @@
 //! lines to the file named by `NEPTUNE_BENCH_OUT` (see `benchmarks/bench.nb`).
 //! The demos `examples/island.nb` and `examples/beach.nb` are measured too:
 //! with `NEPTUNE_BENCH_FRAMES` set they run that many frames and report
-//! their frame rate. The report (default `docs/BENCHMARKS.md`) lists the
+//! their frame rate. The report (default `docs/dev/BENCHMARKS.md`) lists the
 //! machine and every result, followed by `notes.md` from the folder.
 
 use std::collections::BTreeMap;
@@ -33,6 +33,8 @@ const GROUPS: &[(&str, &str)] = &[
     ("physics", "Rigid bodies falling and stacking (Rapier physics), and spheres sliding over a level with Blitz3D-style collisions (frames per second)."),
     ("queries", "Picking, navigation meshes, pathfinding, agents and terrain erosion (milliseconds per call, or frames per second)."),
     ("rendering", "Terrain with and without level of detail, particles, sprites and 2D drawing over the 3D view (frames per second)."),
+    ("quality", "One scene that leans on the graphics card (shadows from the sun and six lamps, ambient occlusion, bloom, anti-aliasing) at each `GraphicsQuality` level, with the card that drew it (frames per second). When the numbers are alike, the graphics card is not the limit."),
+    ("world", "A world of 40,000 objects in 100 chunks, with only the chunks near the camera in view: the far chunks hidden (`HideEntity`), then stored (`StoreEntity`), and chunks swapped in and out (milliseconds, or frames per second)."),
     ("demos", "The example demos as they are, run for a fixed number of frames (frames per second)."),
 ];
 
@@ -40,7 +42,7 @@ const DEMOS: &[&str] = &["examples/island.nb", "examples/beach.nb"];
 
 pub fn run(args: &[String]) -> ExitCode {
     let mut folder = PathBuf::from("benchmarks");
-    let mut out = PathBuf::from("docs/BENCHMARKS.md");
+    let mut out = PathBuf::from("docs/dev/BENCHMARKS.md");
     let mut only: Option<String> = None;
     let mut runs: usize = 1;
     let mut i = 0;

@@ -1,0 +1,29 @@
+118
+11.0
+zero3
+55
+1.25
+49
+36
+4
+0
+10
+3.0
+tee6
+5
+6.5
+15
+20000
+3000
+21.0
+5050
+caught array index out of bounds (99 not in 0..2)
+caught array index out of bounds (-1 not in 0..2)
+caught array index out of bounds (9 not in 0..4)
+caught Integer divide by zero
+caught Integer divide by zero
+caught Object does not exist
+-10
+caught Integer divide by zero
+10
+done

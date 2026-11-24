@@ -1,0 +1,381 @@
+; Examples for Tiled maps and sprite sheets. Format: see tools/check_doc_examples.py.
+
+=== LoadTiledMap
+; a level drawn in the Tiled editor
+Graphics 800, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+If map = 0 Then RuntimeError "meadow.tmx not found"
+
+=== FreeTiledMap
+; a game with two levels: free each map before loading the next
+For level = 1 To 2
+    map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+    Print "Level " + level + " has " + CountTiledObjects(map, "coin") + " coins"   ; 8 coins
+    FreeTiledMap map                  ; the map, its layers, objects and picture are freed
+Next
+
+=== DrawTiledMap
+; every visible layer, scrolled by the 2D camera
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Camera2D 480, 240
+DrawTiledMap map
+
+=== TiledMapImage
+; the picture holding every tile, for drawing tile objects
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+coin = TiledObject(map, 1, "coin")
+DrawImage TiledMapImage(map), TiledObjectX(coin), TiledObjectY(coin), TiledObjectTile(coin)
+
+=== TiledMapProperty
+; read the map's own properties, with a fallback for ones the map does not set
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+title$ = TiledMapProperty(map, "title", "Untitled")
+music$ = TiledMapProperty(map, "music", "none")
+Print title$                          ; Meadow Run
+Print music$                          ; none
+
+=== CountTiledLayers
+; how many tile layers the map has
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print CountTiledLayers(map)
+
+=== TiledLayerName
+; list the layers
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+For i = 1 To CountTiledLayers(map)
+    Print TiledLayerName(map, i)
+Next
+
+=== TiledLayer
+; a layer is a tile map: make the ground solid
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+ground = TiledLayer(map, "Ground")
+TileMapBody2D ground
+
+=== ShowTiledLayer
+; draw a level, and let the player switch the Decor layer off and on with D
+Graphics 960, 480
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+show = True
+While Not KeyHit(KEY_ESCAPE)
+    If KeyHit(KEY_D) Then show = Not show
+    ShowTiledLayer map, "Decor", show
+    Cls
+    DrawTiledMap map
+    Flip
+Wend
+
+=== CountTiledObjects
+; how many coins are in the level
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print CountTiledObjects(map, "coin")
+
+=== TiledObject
+; walk through all the coins of a map and read the value typed on each in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+For i = 1 To CountTiledObjects(map, "coin")
+    coin = TiledObject(map, i, "coin")
+    Print "coin " + i + " is worth " + TiledObjectProperty(coin, "value")
+Next                                  ; the first line is: coin 1 is worth 10
+
+=== FindTiledObject
+; find the level's goal by the name given to it in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+goal = FindTiledObject(map, "Goal")
+If goal = 0 Then RuntimeError "This level has no Goal"
+Print TiledObjectType(goal)           ; goal
+Print TiledObjectWidth(goal) + " x " + TiledObjectHeight(goal)   ; 32.0 x 96.0
+
+=== TiledObjectName
+; the name typed in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectName(TiledObject(map, 1, "goal"))
+
+=== TiledObjectType
+; what kind of object the first one is
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectType(TiledObject(map, 1))
+
+=== TiledObjectLayer
+; which object layer it is on
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectLayer(TiledObject(map, 1))
+
+=== TiledObjectX
+; start the player at the marked place
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+start = TiledObject(map, 1, "spawn")
+px# = TiledObjectX(start)
+
+=== TiledObjectY
+; start the player at the marked place
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+start = TiledObject(map, 1, "spawn")
+py# = TiledObjectY(start)
+
+=== TiledObjectWidth
+; the size of an area drawn in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectWidth(FindTiledObject(map, "Goal"))
+
+=== TiledObjectHeight
+; the size of an area drawn in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectHeight(FindTiledObject(map, "Goal"))
+
+=== TiledObjectRotation
+; how far it was turned in Tiled, in degrees
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectRotation(TiledObject(map, 1))
+
+=== TiledObjectShape
+; 2 is a point
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+If TiledObjectShape(TiledObject(map, 1, "spawn")) = 2 Then Print "a point"
+
+=== TiledObjectTile
+; which frame a tile object shows
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectTile(TiledObject(map, 1, "coin"))
+
+=== CountTiledObjectPoints
+; a polyline drawn in Tiled makes a patrol route
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+route = TiledObject(map, 1)
+Print CountTiledObjectPoints(route)
+
+=== TiledObjectPointX
+; walk along a polyline drawn in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+route = TiledObject(map, 1)
+For i = 1 To CountTiledObjectPoints(route)
+    Print TiledObjectPointX(route, i)
+Next
+
+=== TiledObjectPointY
+; walk along a polyline drawn in Tiled
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+route = TiledObject(map, 1)
+For i = 1 To CountTiledObjectPoints(route)
+    Print TiledObjectPointY(route, i)
+Next
+
+=== TiledObjectProperty
+; text typed on an object, or "" if it has none
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectProperty(TiledObject(map, 1, "goal"), "message", "Well done!")
+
+=== TiledObjectPropertyInt
+; what this coin is worth
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledObjectPropertyInt(TiledObject(map, 1, "coin"), "value", 10)
+
+=== TiledObjectPropertyFloat
+; a coin carries a value typed in Tiled; use 1.5 when a property is missing
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+coin = TiledObject(map, 1, "coin")
+Print TiledObjectPropertyFloat(coin, "value", 1.5)    ; 10.0
+Print TiledObjectPropertyFloat(coin, "bounce", 1.5)   ; 1.5
+
+=== TiledObjectHasProperty
+; only some coins have a value of their own
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+If TiledObjectHasProperty(TiledObject(map, 1, "coin"), "value") Then Print "valued"
+
+=== LoadSheetImage
+; a character from Aseprite: trimmed frames come back the same size
+Graphics 800, 480, 0, 2
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+MidHandle hero
+DrawImage hero, 100, 100, 0
+
+=== CountSheetTags
+; how many named animations the sheet has
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+Print CountSheetTags(hero)
+
+=== SheetTagName
+; list the named animations
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+For i = 1 To CountSheetTags(hero)
+    Print SheetTagName(hero, i)
+Next
+
+=== SheetTagFirst
+; play the "run" tag of a sprite sheet: its first and last frame set the animation
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+startFrame = SheetTagFirst(hero, "run")
+endFrame = SheetTagLast(hero, "run")
+run = CreateAnim2D(hero, startFrame, endFrame, 12)
+Print "Run uses frames " + startFrame + " to " + endFrame
+
+=== SheetTagLast
+; how long a tag is
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+Print SheetTagLast(hero, "run") - SheetTagFirst(hero, "run") + 1
+
+=== SheetFrameTime
+; how many milliseconds a frame shows
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+Print SheetFrameTime(hero, 0)
+
+=== Anim2DPlayTag
+; safe to ask every frame: it only restarts when the tag changes
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+anim = CreateAnim2D(hero)
+Anim2DPlayTag anim, "run"
+DrawImage hero, 100, 100, Anim2DFrame(anim)
+
+=== Anim2DTag
+; which tag is playing
+hero = LoadSheetImage("examples/media/tiled/hero.json")
+anim = CreateAnim2D(hero)
+Anim2DPlayTag anim, "idle"
+Print Anim2DTag(anim)
+
+=== CountTiledLevels
+; an LDtk project or Tiled world can hold several levels
+map = LoadTiledMap("examples/media/tiled/forest.ldtk")
+Print CountTiledLevels(map)           ; 1
+
+=== TiledLevelName
+; list the levels of a file
+map = LoadTiledMap("examples/media/tiled/forest.ldtk")
+For i = 1 To CountTiledLevels(map)
+    Print TiledLevelName(map, i)      ; Forest
+Next
+
+=== TiledLevelX
+; where the editor put the first level
+map = LoadTiledMap("examples/media/tiled/forest.ldtk")
+Print TiledLevelX(map, 1)
+
+=== TiledLevelY
+; where the editor put the first level
+map = LoadTiledMap("examples/media/tiled/forest.ldtk")
+Print TiledLevelY(map, 1)
+
+=== TiledMapLevel
+; which level was loaded
+map = LoadTiledMap("examples/media/tiled/forest.ldtk", "Forest")
+Print TiledMapLevel(map)              ; Forest
+
+=== TiledMapWidth
+; the size of a map in cells
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledMapWidth(map) + " cells wide"
+
+=== TiledMapHeight
+; the size of a map in cells
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledMapHeight(map) + " cells high"
+
+=== TiledMapTileWidth
+; the size of the grid
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledMapTileWidth(map)          ; 32
+
+=== TiledMapTileHeight
+; the size of the grid
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledMapTileHeight(map)         ; 32
+
+=== TiledMapPixelWidth
+; keep the camera inside a map of any shape
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+Print TiledMapPixelWidth(map)         ; 640
+
+=== TiledMapPixelHeight
+; keep the camera inside a map of any shape
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+Print TiledMapPixelHeight(map)        ; 320
+
+=== TiledMapOrientation
+; the shape of the grid
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+Print TiledMapOrientation(map)        ; isometric
+
+=== TiledMapBackground
+; clear the screen to the colour set in the editor
+Graphics 640, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+c = TiledMapBackground(map)
+If c >= 0 Then ClsColor c Shr 16, (c Shr 8) And 255, c And 255
+Cls
+
+=== TiledMapBody2D
+; solid only where the tileset has collision shapes
+Graphics 640, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+walls = TiledMapBody2D(map, "Props")
+
+=== TiledLayerProperty
+; a custom property of a layer
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+Print TiledLayerProperty(map, "Ground", "music", "none")
+
+=== TiledLayerAlpha
+; fade a layer
+Graphics 640, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+TiledLayerAlpha map, "Props", 0.5
+
+=== TiledImageLayer
+; a picture layer as an image
+Graphics 640, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+hills = TiledImageLayer(map, "Hills")
+DrawImage hills, 0, 0
+
+=== TiledTileType
+; what kind of tile is at a cell
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+props = TiledLayer(map, "Props")
+t = GetTile(props, 8, 12)
+If t >= 0 Then Print TiledTileType(map, t)   ; hazard
+
+=== TiledTileProperty
+; data typed on a tile in the tileset
+map = LoadTiledMap("examples/media/tiled/extras.tmx")
+props = TiledLayer(map, "Props")
+t = GetTile(props, 8, 12)
+If t >= 0 Then Print TiledTileProperty(map, t, "damage", "0")   ; 1
+
+=== TiledObjectText
+; the words of each text object
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+For i = 1 To CountTiledObjects(map)
+    If TiledObjectShape(TiledObject(map, i)) = 6 Then Print TiledObjectText(TiledObject(map, i))
+Next
+
+=== DrawTiledObject
+; tile objects at their place, size and rotation
+Graphics 960, 480, 0, 2
+map = LoadTiledMap("examples/media/tiled/meadow.tmx")
+For i = 1 To CountTiledObjects(map, "coin")
+    DrawTiledObject TiledObject(map, i, "coin")
+Next
+
+=== TileMapPickX
+; the cell under a point on a map of any shape
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+ground = TiledLayer(map, "Ground")
+Print TileMapPickX(ground, 320, 170)
+
+=== TileMapPickY
+; the cell under a point on a map of any shape
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+ground = TiledLayer(map, "Ground")
+Print TileMapPickY(ground, 320, 170)
+
+=== TileMapCellCenterX
+; stand something in the middle of a cell
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+ground = TiledLayer(map, "Ground")
+Print TileMapCellCenterX(ground, 3, 4)
+
+=== TileMapCellCenterY
+; stand something in the middle of a cell
+map = LoadTiledMap("examples/media/tiled/iso.tmx")
+ground = TiledLayer(map, "Ground")
+Print TileMapCellCenterY(ground, 3, 4)

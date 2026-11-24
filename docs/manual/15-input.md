@@ -12,6 +12,7 @@ shows how to read each.
 - [Mouse look](#mouse-look)
 - [Gamepads and joysticks](#gamepads-and-joysticks)
 - [Supporting several kinds of input](#supporting-several-kinds-of-input)
+- [Try it yourself](#try-it-yourself)
 
 ## Held down, or just pressed?
 
@@ -190,5 +191,140 @@ Function ReadControls()
     moveX = Clamp(moveX, -1, 1)
 End Function
 ```
+
+## Try it yourself
+
+1. **Sprinter.** Draw a square that moves with the arrow keys *or* W, A, S and
+   D, and runs twice as fast while Shift is held. It must not leave the window.
+   Escape quits.
+   *Hint: `KeyDown` is true every frame the key is held, so add up the directions pressed, then multiply by the speed.*
+2. **Secret code.** Show a box where the player types a code. Backspace deletes
+   a letter. When Enter is pressed, show `Door unlocked!` if the code is
+   `NEPTUNE` (any capitals), or `Wrong code` and an empty box if it is not.
+   *Hint: `GetKey()` gives the typed character, and Enter does not give one in the printable range, so use `KeyHit(KEY_ENTER)` for that.*
+3. **Target practice.** A round target appears at a random place. Click it
+   with the left button to score a point and make it jump to a new place. You
+   have 15 seconds; when time is up, stop and show the final score.
+   *Hint: a click hits when the distance from `MouseX()`, `MouseY()` to the target centre is less than its radius.*
+
+### Answers
+
+1.
+
+```basic
+Graphics 800, 600
+x# = 400
+y# = 300
+
+While Not KeyHit(KEY_ESCAPE)
+    speed# = 4
+    If KeyDown(KEY_LSHIFT) Or KeyDown(KEY_RSHIFT) Then speed = 8
+
+    moveX = KeyDown(KEY_RIGHT) - KeyDown(KEY_LEFT) + KeyDown(KEY_D) - KeyDown(KEY_A)
+    moveY = KeyDown(KEY_DOWN) - KeyDown(KEY_UP) + KeyDown(KEY_S) - KeyDown(KEY_W)
+    x = Clamp(x + moveX * speed, 15, 785)
+    y = Clamp(y + moveY * speed, 15, 585)
+
+    Cls
+    Color 80, 220, 120
+    Rect x - 15, y - 15, 30, 30
+    Color 255, 255, 255
+    Text 10, 10, "Arrows or WASD to move, Shift to run, Escape to quit"
+    Flip
+Wend
+```
+
+`KeyDown` gives 1 while a key is held and 0 otherwise, so right minus left
+is 1, -1 or 0, and the sum of both key sets works too. Multiplying by the
+speed moves the square, and `Clamp` keeps its centre far enough from each
+edge that the whole square stays in the window.
+
+2.
+
+```basic
+Graphics 800, 600
+typed$ = ""
+message$ = "Type the code and press Enter"
+
+While Not KeyHit(KEY_ESCAPE)
+    c = GetKey()
+    If c = 8 And Len(typed) > 0
+        typed = Left(typed, Len(typed) - 1)
+    ElseIf c >= 32
+        typed = typed + Chr(c)
+    EndIf
+
+    If KeyHit(KEY_ENTER)
+        If Upper(typed) = "NEPTUNE"
+            message = "Door unlocked!"
+        Else
+            message = "Wrong code"
+        EndIf
+        typed = ""
+    EndIf
+
+    Cls
+    Color 255, 255, 255
+    Text 300, 240, message
+    Rect 300, 280, 200, 30, False
+    Text 308, 288, typed + "_"
+    Flip
+Wend
+```
+
+`GetKey` returns one typed character at a time (or 0), so each frame adds at
+most one letter. Backspace is character 8, and anything of 32 or more can be
+shown on screen. Enter is not one of those, so it is read with `KeyHit`.
+`Upper` makes the comparison ignore capitals, and the box is emptied either
+way so the player can try again.
+
+3.
+
+```basic
+Graphics 800, 600
+SeedRnd MilliSecs()
+
+radius = 30
+targetX = 400
+targetY = 300
+score = 0
+start = MilliSecs()
+
+While Not KeyHit(KEY_ESCAPE)
+    remaining = 15 - (MilliSecs() - start) / 1000
+    playing = remaining > 0
+
+    If playing And MouseHit(1)
+        dx = MouseX() - targetX
+        dy = MouseY() - targetY
+        If Sqr(dx * dx + dy * dy) < radius
+            score = score + 1
+            targetX = Rand(radius, 800 - radius)
+            targetY = Rand(60, 600 - radius)
+        EndIf
+    EndIf
+
+    Cls
+    Color 255, 255, 255
+    If playing
+        Text 10, 10, "Score: " + score + "    Time left: " + remaining
+        Color 255, 70, 70
+        Oval targetX - radius, targetY - radius, radius * 2, radius * 2
+        Color 255, 255, 255
+        Oval targetX - 12, targetY - 12, 24, 24
+        Color 255, 70, 70
+        Oval targetX - 4, targetY - 4, 8, 8
+    Else
+        Text 400, 280, "Time is up! Final score: " + score, True, True
+    EndIf
+    Flip
+Wend
+```
+
+`MouseHit(1)` is true once for each click, so holding the button does not
+score again. The distance formula from earlier chapters tells whether the
+click landed inside the circle. The time left is worked out from `MilliSecs`;
+when it reaches 0, `playing` is false, so clicks stop counting and the final
+message replaces the target.
 
 [Contents](../MANUAL.md) · Previous: [14. 2D games](14-2d-games.md) · Next: [16. Sound and movies](16-sound.md)

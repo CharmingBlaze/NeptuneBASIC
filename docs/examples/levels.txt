@@ -1,0 +1,69 @@
+; Examples for levels made in Blender. Format: see tools/check_doc_examples.py.
+
+=== LoadLevelFile
+; a whole level: shapes, lights, solid objects and crates that fall
+Graphics3D 800, 600, 32, 2
+level = LoadLevelFile("examples/media/courtyard.glb")
+If level = 0 Then RuntimeError "courtyard.glb not found"
+
+=== CountLevelObjects
+; how many gems the level designer placed
+level = LoadLevelFile("examples/media/courtyard.glb")
+Print "Gems to find: " + CountLevelObjects(level, "gem")
+
+=== LevelObject
+; put the player where the level says to start
+level = LoadLevelFile("examples/media/courtyard.glb")
+start = LevelObject(level, 1, "spawn")
+player = CreateCube()
+PositionEntity player, EntityX(start, True), EntityY(start, True), EntityZ(start, True)
+
+=== EntityProperty
+; read text typed in Blender; "unknown" if the object does not have it
+level = LoadLevelFile("examples/media/courtyard.glb")
+gem = LevelObject(level, 1, "gem")
+Print EntityProperty(gem, "type", "unknown")
+
+=== EntityPropertyInt
+; each gem says how many points it is worth, 10 if it does not say
+level = LoadLevelFile("examples/media/courtyard.glb")
+score = 0
+For i = 1 To CountLevelObjects(level, "gem")
+    score += EntityPropertyInt(LevelObject(level, i, "gem"), "points", 10)
+Next
+Print "This level is worth " + score
+
+=== EntityPropertyFloat
+; a mass typed in Blender, used for a heavier push
+level = LoadLevelFile("examples/media/courtyard.glb")
+crate = LevelObject(level, 1, "crate")
+ApplyImpulse crate, 0, 5 * EntityPropertyFloat(crate, "mass", 1), 0
+
+=== EntityHasProperty
+; lamps marked in Blender flicker
+level = LoadLevelFile("examples/media/courtyard.glb")
+lamp = FindChild(level, "Lamp.000")
+If EntityHasProperty(lamp, "flicker") Then LightRange lamp, 14 + Rnd(0, 2)
+
+=== SetEntityProperty
+; any entity can carry values of your own
+chest = CreateCube()
+SetEntityProperty chest, "contents", "gold"
+Print EntityProperty(chest, "contents")
+
+=== CountEntityProperties
+; how many values an object has
+chest = CreateCube()
+SetEntityProperty chest, "contents", "gold"
+SetEntityProperty chest, "locked", "1"
+Print CountEntityProperties(chest)
+
+=== EntityPropertyName
+; list everything set on an object
+chest = CreateCube()
+SetEntityProperty chest, "contents", "gold"
+SetEntityProperty chest, "locked", "1"
+For i = 1 To CountEntityProperties(chest)
+    name$ = EntityPropertyName(chest, i)
+    Print name + " = " + EntityProperty(chest, name)
+Next

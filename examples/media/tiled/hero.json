@@ -1,0 +1,181 @@
+{
+ "frames": {
+  "hero 0.aseprite": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 24,
+    "h": 32
+   },
+   "duration": 500
+  },
+  "hero 1.aseprite": {
+   "frame": {
+    "x": 24,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 24,
+    "h": 32
+   },
+   "duration": 500
+  },
+  "hero 2.aseprite": {
+   "frame": {
+    "x": 48,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 24,
+    "h": 32
+   },
+   "duration": 90
+  },
+  "hero 3.aseprite": {
+   "frame": {
+    "x": 72,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 24,
+    "h": 32
+   },
+   "duration": 90
+  },
+  "hero 4.aseprite": {
+   "frame": {
+    "x": 96,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 24,
+    "h": 32
+   },
+   "duration": 90
+  },
+  "hero 5.aseprite": {
+   "frame": {
+    "x": 120,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 24,
+    "h": 32
+   },
+   "duration": 90
+  },
+  "hero 6.aseprite": {
+   "frame": {
+    "x": 144,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 24,
+    "h": 32
+   },
+   "duration": 200
+  }
+ },
+ "meta": {
+  "app": "https://www.aseprite.org/",
+  "image": "hero.png",
+  "format": "RGBA8888",
+  "size": {
+   "w": 168,
+   "h": 32
+  },
+  "scale": "1",
+  "frameTags": [
+   {
+    "name": "idle",
+    "from": 0,
+    "to": 1,
+    "direction": "forward"
+   },
+   {
+    "name": "run",
+    "from": 2,
+    "to": 5,
+    "direction": "forward"
+   },
+   {
+    "name": "jump",
+    "from": 6,
+    "to": 6,
+    "direction": "forward"
+   }
+  ]
+ }
+}

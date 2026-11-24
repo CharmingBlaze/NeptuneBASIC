@@ -1,0 +1,192 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::fyrox::{
+    core::{
+        pool::Handle, reflect::prelude::*, type_traits::prelude::*, uuid_provider,
+        visitor::prelude::*,
+    },
+    gui::{
+        button::{ButtonBuilder, ButtonMessage},
+        define_widget_deref,
+        grid::{Column, GridBuilder, Row},
+        inspector::{
+            editors::{
+                PropertyEditorBuildContext, PropertyEditorDefinition, PropertyEditorInstance,
+                PropertyEditorMessageContext, PropertyEditorTranslationContext,
+            },
+            FieldAction, InspectorError, PropertyChanged,
+        },
+        message::{MessageDirection, UiMessage},
+        text::TextBuilder,
+        widget::{Widget, WidgetBuilder},
+        window::WindowMessage,
+        BuildContext, Control, Thickness, UiNode, UserInterface,
+    },
+    scene::animation::spritesheet::prelude::*,
+};
+use crate::plugins::inspector::editors::spritesheet::window::SpriteSheetFramesEditorWindow;
+
+use fyrox::gui::button::Button;
+use fyrox::gui::message::MessageData;
+use fyrox::gui::window::WindowAlignment;
+use std::any::TypeId;
+
+mod window;
+
+#[derive(Debug)]
+pub struct SpriteSheetFramesContainerEditorDefinition;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpriteSheetFramesPropertyEditorMessage {
+    Value(SpriteSheetFramesContainer),
+}
+impl MessageData for SpriteSheetFramesPropertyEditorMessage {}
+
+#[derive(Clone, Debug, Reflect, Visit, ComponentProvider)]
+#[reflect(derived_type = "UiNode")]
+pub struct SpriteSheetFramesPropertyEditor {
+    widget: Widget,
+    edit_button: Handle<Button>,
+    container: SpriteSheetFramesContainer,
+}
+
+define_widget_deref!(SpriteSheetFramesPropertyEditor);
+
+uuid_provider!(SpriteSheetFramesPropertyEditor = "8994228d-6106-4e41-872c-5191840badcc");
+
+impl Control for SpriteSheetFramesPropertyEditor {
+    fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
+        self.widget.handle_routed_message(ui, message);
+
+        if let Some(ButtonMessage::Click) = message.data() {
+            if message.destination() == self.edit_button {
+                let window = SpriteSheetFramesEditorWindow::build(
+                    &mut ui.build_ctx(),
+                    self.container.clone(),
+                    self.handle,
+                );
+
+                ui.send(
+                    window,
+                    WindowMessage::Open {
+                        alignment: WindowAlignment::Center,
+                        modal: true,
+                        focus_content: true,
+                    },
+                );
+            }
+        } else if let Some(SpriteSheetFramesPropertyEditorMessage::Value(value)) =
+            message.data_for(self.handle)
+        {
+            self.container = value.clone();
+        }
+    }
+}
+
+impl SpriteSheetFramesPropertyEditor {
+    pub fn build(
+        ctx: &mut BuildContext,
+        container: SpriteSheetFramesContainer,
+    ) -> Handle<SpriteSheetFramesPropertyEditor> {
+        let edit_button;
+        let grid = GridBuilder::new(
+            WidgetBuilder::new()
+                .with_child(
+                    TextBuilder::new(
+                        WidgetBuilder::new()
+                            .with_margin(Thickness::uniform(1.0))
+                            .on_column(0),
+                    )
+                    .with_text(format!("Frames: {}", container.len()))
+                    .build(ctx),
+                )
+                .with_child({
+                    edit_button = ButtonBuilder::new(
+                        WidgetBuilder::new()
+                            .with_width(60.0)
+                            .with_margin(Thickness::uniform(1.0))
+                            .on_column(1),
+                    )
+                    .with_text("Edit...")
+                    .build(ctx);
+                    edit_button
+                }),
+        )
+        .add_row(Row::auto())
+        .add_column(Column::stretch())
+        .add_column(Column::auto())
+        .build(ctx);
+
+        ctx.add(Self {
+            widget: WidgetBuilder::new().with_child(grid).build(ctx),
+            edit_button,
+            container,
+        })
+    }
+}
+
+impl PropertyEditorDefinition for SpriteSheetFramesContainerEditorDefinition {
+    fn value_type_id(&self) -> TypeId {
+        TypeId::of::<SpriteSheetFramesContainer>()
+    }
+
+    fn create_instance(
+        &self,
+        ctx: PropertyEditorBuildContext,
+    ) -> Result<PropertyEditorInstance, InspectorError> {
+        let value = ctx
+            .property_info
+            .cast_value::<SpriteSheetFramesContainer>()?;
+
+        let editor = SpriteSheetFramesPropertyEditor::build(ctx.build_context, value.clone());
+
+        Ok(PropertyEditorInstance::simple(editor))
+    }
+
+    fn create_message(
+        &self,
+        ctx: PropertyEditorMessageContext,
+    ) -> Result<Option<UiMessage>, InspectorError> {
+        let value = ctx
+            .property_info
+            .cast_value::<SpriteSheetFramesContainer>()?;
+
+        Ok(Some(UiMessage::for_widget(
+            ctx.instance,
+            SpriteSheetFramesPropertyEditorMessage::Value(value.clone()),
+        )))
+    }
+
+    fn translate_message(&self, ctx: PropertyEditorTranslationContext) -> Option<PropertyChanged> {
+        if ctx.message.direction() == MessageDirection::FromWidget {
+            if let Some(SpriteSheetFramesPropertyEditorMessage::Value(container)) =
+                ctx.message.data()
+            {
+                return Some(PropertyChanged {
+                    name: ctx.name.to_string(),
+
+                    action: FieldAction::object(container.clone()),
+                });
+            }
+        }
+        None
+    }
+}

@@ -1,0 +1,80 @@
+; Crowd steering and navigation links.
+; Two teams swap sides without touching. A runner jumps a gap over a link.
+; Space shuts the link or opens it again. Escape quits.
+
+Graphics3D 1280, 720, 0, 2
+SetBuffer BackBuffer()
+
+Const TEAM_SIZE = 8
+
+cam = CreateCamera()
+PositionEntity cam, 0, 34, -34
+RotateEntity cam, 45, 0, 0
+light = CreateLight()
+RotateEntity light, 60, 30, 0
+
+left_floor = CreateCube()
+ScaleEntity left_floor, 12, 0.5, 12
+PositionEntity left_floor, -17, -0.5, 0
+EntityColor left_floor, 90, 110, 90
+EntityPickMode left_floor, 2
+
+right_floor = CreateCube()
+ScaleEntity right_floor, 12, 0.5, 12
+PositionEntity right_floor, 17, -0.5, 0
+EntityColor right_floor, 90, 110, 90
+EntityPickMode right_floor, 2
+
+nav = GenerateNavMesh(-29, -12, 58, 24, 1)
+gap = CreateNavLink(nav, -6, 0, -8, 6, 0, -8, 1, 1, 4)
+gap_open = 1
+
+Dim walker(TEAM_SIZE * 2)
+Dim side#(TEAM_SIZE * 2)
+For i = 0 To TEAM_SIZE * 2 - 1
+    person = CreateSphere()
+    ScaleEntity person, 0.5, 0.5, 0.5
+    z# = -3 + (i Mod TEAM_SIZE) * 1.8
+    If i < TEAM_SIZE
+        side(i) = -1
+        EntityColor person, 240, 90, 70
+    Else
+        side(i) = 1
+        EntityColor person, 70, 130, 240
+    EndIf
+    PositionEntity person, -17 + side(i) * 10, 0.5, z
+    walker(i) = CreateAgent(person, nav, 4, 0.5)
+    AgentCrowd walker(i)
+    AgentMoveTo walker(i), -17 - side(i) * 10, 0, z
+Next
+
+runner = CreateCone()
+EntityColor runner, 250, 220, 60
+PositionEntity runner, -24, 1, -8
+racer = CreateAgent(runner, nav, 7, 0.6)
+AgentMoveTo racer, 24, 0, -8
+heading = 1
+
+While Not KeyHit(1)
+    If KeyHit(57)
+        gap_open = 1 - gap_open
+        NavLinkEnable nav, gap, gap_open
+    EndIf
+    For i = 0 To TEAM_SIZE * 2 - 1
+        If AgentArrived(walker(i))
+            side(i) = -side(i)
+            person = AgentEntity(walker(i))
+            AgentMoveTo walker(i), -17 - side(i) * 10, 0, EntityZ(person)
+        EndIf
+    Next
+    If AgentArrived(racer)
+        heading = -heading
+        AgentMoveTo racer, heading * 24, 0, -8
+    EndIf
+    UpdateWorld
+    RenderWorld
+    If AgentOnLink(racer) Then Text 10, 30, "Jumping!"
+    If gap_open Then Text 10, 10, "Link open (Space to shut)" Else Text 10, 10, "Link shut (Space to open)"
+    Flip
+Wend
+End

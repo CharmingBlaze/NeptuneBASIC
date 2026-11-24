@@ -1,0 +1,356 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::{
+    fyrox::{
+        core::{
+            algebra::Vector2,
+            pool::Handle,
+            visitor::{Visit, VisitResult, Visitor},
+        },
+        gui::{
+            border::BorderBuilder,
+            button::{ButtonBuilder, ButtonMessage},
+            decorator::DecoratorBuilder,
+            file_browser::{FileSelectorBuilder, FileSelectorMessage, PathFilter},
+            formatted_text::WrapMode,
+            grid::{Column, GridBuilder, Row},
+            list_view::{ListViewBuilder, ListViewMessage},
+            message::UiMessage,
+            stack_panel::StackPanelBuilder,
+            text::TextBuilder,
+            text::TextMessage,
+            text_box::TextBoxBuilder,
+            widget::{WidgetBuilder, WidgetMessage},
+            window::WindowAlignment,
+            window::{WindowBuilder, WindowMessage, WindowTitle},
+            BuildContext, HorizontalAlignment, Orientation, Thickness, UiNode, VerticalAlignment,
+        },
+    },
+    message::MessageSender,
+    Engine, Message,
+};
+use fyrox::gui::button::Button;
+use fyrox::gui::file_browser::FileSelector;
+use fyrox::gui::list_view::ListView;
+use fyrox::gui::text_box::TextBox;
+use fyrox::gui::window::Window;
+use std::{env, path::PathBuf};
+
+#[derive(Default, Eq, PartialEq, Visit)]
+struct HistoryEntry {
+    work_dir: PathBuf,
+}
+
+pub const HISTORY_PATH: &str = "history.bin";
+
+pub struct Configurator {
+    pub window: Handle<Window>,
+    work_dir_selector: Handle<FileSelector>,
+    select_work_dir: Handle<Button>,
+    ok: Handle<Button>,
+    sender: MessageSender,
+    work_dir: PathBuf,
+    tb_work_dir: Handle<TextBox>,
+    lv_history: Handle<ListView>,
+    history: Vec<HistoryEntry>,
+}
+
+fn make_history_entry_widget(ctx: &mut BuildContext, entry: &HistoryEntry) -> Handle<UiNode> {
+    DecoratorBuilder::new(BorderBuilder::new(
+        WidgetBuilder::new()
+            .with_height(18.0)
+            .with_margin(Thickness {
+                left: 1.0,
+                top: 0.0,
+                right: 1.0,
+                bottom: 1.0,
+            })
+            .with_child(
+                TextBuilder::new(WidgetBuilder::new().with_margin(Thickness::left(5.0)))
+                    .with_text(format!("{}", entry.work_dir.display(),))
+                    .with_vertical_text_alignment(VerticalAlignment::Center)
+                    .build(ctx),
+            ),
+    ))
+    .build(ctx)
+    .to_base()
+}
+
+impl Configurator {
+    pub fn new(sender: MessageSender, ctx: &mut BuildContext) -> Self {
+        let select_work_dir;
+        let ok;
+        let tb_work_dir;
+
+        let current_path = env::current_dir().unwrap();
+
+        let work_dir_selector = FileSelectorBuilder::new(
+            WindowBuilder::new(WidgetBuilder::new().with_width(300.0).with_height(400.0))
+                .open(false)
+                .with_title(WindowTitle::text("Select Working Directory")),
+        )
+        .with_filter(PathFilter::folder())
+        .build(ctx);
+
+        // Load history.
+        let mut history: Vec<HistoryEntry> = Vec::new();
+        if let Ok(mut visitor) =
+            fyrox::core::futures::executor::block_on(Visitor::load_from_file(HISTORY_PATH))
+        {
+            let _ = history.visit("History", &mut visitor);
+        }
+
+        // Remove entries with invalid paths.
+        history = history
+            .into_iter()
+            .filter(|e| e.work_dir.exists())
+            .collect::<Vec<_>>();
+
+        let message = "Please select the working directory of \
+        your current project. In most cases it will be the root folder \
+        of your project";
+
+        let lv_history;
+        let window = WindowBuilder::new(
+            WidgetBuilder::new()
+                .with_width(370.0)
+                .with_height(250.0)
+                .with_min_size(Vector2::new(370.0, 250.0)),
+        )
+        .with_title(WindowTitle::text("Configure Editor"))
+        .open(false)
+        .can_close(false)
+        .with_content(
+            GridBuilder::new(
+                WidgetBuilder::new()
+                    .with_margin(Thickness::uniform(1.0))
+                    .with_child(
+                        TextBuilder::new(WidgetBuilder::new().with_margin(Thickness::uniform(1.0)))
+                            .with_text(message)
+                            .with_wrap(WrapMode::Word)
+                            .build(ctx),
+                    )
+                    .with_child(
+                        GridBuilder::new(
+                            WidgetBuilder::new()
+                                .on_row(1)
+                                .with_child(
+                                    TextBuilder::new(
+                                        WidgetBuilder::new()
+                                            .on_row(0)
+                                            .on_column(0)
+                                            .with_margin(Thickness::uniform(1.0))
+                                            .with_vertical_alignment(VerticalAlignment::Center),
+                                    )
+                                    .with_text("Working Directory")
+                                    .build(ctx),
+                                )
+                                .with_child({
+                                    tb_work_dir = TextBoxBuilder::new(
+                                        WidgetBuilder::new()
+                                            .on_row(0)
+                                            .on_column(1)
+                                            .with_margin(Thickness::uniform(1.0))
+                                            .with_enabled(false),
+                                    )
+                                    .with_text(
+                                        (current_path.clone())
+                                            .into_os_string()
+                                            .into_string()
+                                            .unwrap(),
+                                    )
+                                    .with_vertical_text_alignment(VerticalAlignment::Center)
+                                    .build(ctx);
+                                    tb_work_dir
+                                })
+                                .with_child({
+                                    select_work_dir = ButtonBuilder::new(
+                                        WidgetBuilder::new()
+                                            .with_tab_index(Some(0))
+                                            .on_row(0)
+                                            .on_column(2)
+                                            .with_margin(Thickness::uniform(1.0)),
+                                    )
+                                    .with_text("...")
+                                    .build(ctx);
+                                    select_work_dir
+                                }),
+                        )
+                        .add_row(Row::strict(25.0))
+                        .add_column(Column::strict(120.0))
+                        .add_column(Column::stretch())
+                        .add_column(Column::strict(25.0))
+                        .build(ctx),
+                    )
+                    .with_child(
+                        TextBuilder::new(
+                            WidgetBuilder::new()
+                                .with_margin(Thickness::uniform(5.0))
+                                .on_row(2),
+                        )
+                        .with_text("Previous Configurations")
+                        .with_horizontal_text_alignment(HorizontalAlignment::Center)
+                        .build(ctx),
+                    )
+                    .with_child({
+                        lv_history = ListViewBuilder::new(
+                            WidgetBuilder::new().with_tab_index(Some(1)).on_row(3),
+                        )
+                        .with_items(
+                            history
+                                .iter()
+                                .map(|entry| make_history_entry_widget(ctx, entry))
+                                .collect(),
+                        )
+                        .build(ctx);
+                        lv_history
+                    })
+                    .with_child(
+                        StackPanelBuilder::new(
+                            WidgetBuilder::new()
+                                .on_row(4)
+                                .with_horizontal_alignment(HorizontalAlignment::Right)
+                                .with_vertical_alignment(VerticalAlignment::Bottom)
+                                .with_child({
+                                    ok = ButtonBuilder::new(
+                                        WidgetBuilder::new()
+                                            .with_tab_index(Some(2))
+                                            .with_enabled(true) // Enabled by default.
+                                            .with_width(80.0)
+                                            .with_height(25.0)
+                                            .with_margin(Thickness::uniform(1.0)),
+                                    )
+                                    .with_text("OK")
+                                    .build(ctx);
+                                    ok
+                                }),
+                        )
+                        .with_orientation(Orientation::Horizontal)
+                        .build(ctx),
+                    ),
+            )
+            .add_row(Row::auto())
+            .add_row(Row::auto())
+            .add_row(Row::auto())
+            .add_row(Row::strict(80.0))
+            .add_row(Row::stretch())
+            .add_column(Column::stretch())
+            .build(ctx),
+        )
+        .build(ctx);
+
+        Self {
+            window,
+            work_dir_selector,
+            select_work_dir,
+            ok,
+            sender,
+            tb_work_dir,
+            work_dir: current_path,
+            lv_history,
+            history,
+        }
+    }
+
+    fn validate(&mut self, engine: &mut Engine) {
+        let is_valid_scene_path = self.work_dir.exists();
+        engine
+            .user_interfaces
+            .first_mut()
+            .send(self.ok, WidgetMessage::Enabled(is_valid_scene_path));
+    }
+
+    pub fn handle_ui_message(&mut self, message: &UiMessage, engine: &mut Engine) {
+        if let Some(WindowMessage::Close) = message.data::<WindowMessage>() {
+            if message.destination() == self.window {
+                // Save history for next editor runs.
+                let mut visitor = Visitor::new();
+                self.history.visit("History", &mut visitor).unwrap();
+                visitor.save_binary_to_file(HISTORY_PATH).unwrap();
+            }
+        } else if let Some(ListViewMessage::Selection(selected_indices)) =
+            message.data_from(self.lv_history)
+        {
+            if let Some(index) = selected_indices.first().cloned() {
+                let entry = &self.history[index];
+                self.work_dir.clone_from(&entry.work_dir);
+
+                engine.user_interfaces.first().send(
+                    self.tb_work_dir,
+                    TextMessage::Text(self.work_dir.to_string_lossy().to_string()),
+                );
+
+                self.validate(engine);
+            }
+        } else if let Some(FileSelectorMessage::Commit(path)) =
+            message.data::<FileSelectorMessage>()
+        {
+            if message.destination() == self.work_dir_selector {
+                if let Ok(work_dir) = path.clone().canonicalize() {
+                    self.work_dir = work_dir;
+                    engine.user_interfaces.first().send(
+                        self.tb_work_dir,
+                        TextMessage::Text(self.work_dir.to_string_lossy().to_string()),
+                    );
+
+                    self.validate(engine);
+                }
+            }
+        } else if let Some(ButtonMessage::Click) = message.data::<ButtonMessage>() {
+            if message.destination() == self.ok {
+                self.sender.send(Message::Configure {
+                    working_directory: self.work_dir.clone(),
+                });
+
+                let new_entry = HistoryEntry {
+                    work_dir: self.work_dir.clone(),
+                };
+                if !self.history.iter().any(|e| e == &new_entry) {
+                    self.history.push(new_entry);
+
+                    let widget = make_history_entry_widget(
+                        &mut engine.user_interfaces.first_mut().build_ctx(),
+                        self.history.last().unwrap(),
+                    );
+
+                    engine
+                        .user_interfaces
+                        .first()
+                        .send(self.lv_history, ListViewMessage::AddItem(widget));
+                }
+
+                engine
+                    .user_interfaces
+                    .first()
+                    .send(self.window, WindowMessage::Close);
+            } else if message.destination() == self.select_work_dir {
+                engine.user_interfaces.first().send(
+                    self.work_dir_selector,
+                    WindowMessage::Open {
+                        alignment: WindowAlignment::Center,
+                        modal: true,
+                        focus_content: true,
+                    },
+                );
+            }
+        }
+    }
+}

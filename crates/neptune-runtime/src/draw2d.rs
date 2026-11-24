@@ -135,6 +135,9 @@ pub enum DrawOp {
     /// (ext) A rotated or scaled image (`DrawImageEx`): corners clockwise from
     /// the top-left, tinted by `color`.
     Quad { pts: [Vector2<f32>; 4], uv: Rect<f32>, texture: TextureResource, color: Color },
+    /// (ext) The 3D picture when it is drawn smaller than the window
+    /// (`RenderScale`): stretched over the whole window, opaque.
+    Frame { texture: TextureResource },
 }
 
 impl DrawOp {
@@ -177,6 +180,7 @@ impl DrawOp {
                     *p *= k;
                 }
             }
+            DrawOp::Frame { .. } => {}
         }
         op
     }
@@ -202,6 +206,9 @@ pub struct Canvas2D {
     applied: Option<Matrix3<f32>>,
     /// (ext) `ScreenFade`: a colour laid over the whole screen.
     pub fade: Option<crate::screenfx::Fade>,
+    /// (ext) The picture the 3D view is drawn into while `RenderScale` is
+    /// below 1; every frame shown starts with it.
+    pub frame: Option<TextureResource>,
 }
 
 impl Default for Canvas2D {
@@ -218,6 +225,7 @@ impl Default for Canvas2D {
             camera_on: false,
             applied: None,
             fade: None,
+            frame: None,
         }
     }
 }
@@ -288,9 +296,15 @@ impl Canvas2D {
             self.items.push(DrawOp::Transform { m: None });
             self.items.push(DrawOp::Clip { rect: None });
             self.items.push(DrawOp::Rect { x: -10.0, y: -10.0, w: 100_000.0, h: 100_000.0, color: c, solid: true });
-            self.applied = None;
         }
-        self.published = Some(std::mem::take(&mut self.items));
+        let mut items = std::mem::take(&mut self.items);
+        if let Some(texture) = self.frame.clone() {
+            // under everything, where Fyrox would have put the 3D view itself
+            items.insert(0, DrawOp::Frame { texture });
+        }
+        self.published = Some(items);
+        // each frame's list starts in screen space
+        self.applied = None;
     }
 }
 
@@ -320,9 +334,33 @@ impl Control for CanvasWidget {
         // the widget's own transform; the 2D camera is applied on top of it
         let base = *ctx.transform_stack.transform();
         let mut pushed = false;
+        // Shapes that follow each other with the same clip, colour and texture
+        // are sent to the GPU together: a thousand `DrawImage`s of one image
+        // are one draw call, not a thousand. Anything that changes one of
+        // those (or the transform) sends what has gathered first, so the
+        // order on screen is the order of drawing.
+        let mut pending: Option<(Rect<f32>, Color, Option<&TextureResource>)> = None;
+        macro_rules! flush {
+            () => {
+                if let Some((clip, color, texture)) = pending.take() {
+                    let texture = texture.map_or(CommandTexture::None, |t| CommandTexture::Texture(t.clone()));
+                    ctx.commit(clip, Brush::Solid(color), texture, material, None);
+                }
+            };
+        }
+        macro_rules! batch {
+            ($color:expr, $texture:expr) => {{
+                let key = (clip, $color, $texture);
+                if pending != Some(key) {
+                    flush!();
+                    pending = Some(key);
+                }
+            }};
+        }
         for op in &self.ops {
             match op {
                 DrawOp::Transform { m } => {
+                    flush!();
                     if pushed {
                         ctx.transform_stack.pop();
                         pushed = false;
@@ -339,15 +377,24 @@ impl Control for CanvasWidget {
                         Vector2::new(uv.x() + uv.w(), uv.y() + uv.h()),
                         Vector2::new(uv.x(), uv.y() + uv.h()),
                     ];
+                    batch!(*color, Some(texture));
                     let i = ctx.last_vertex_index();
                     for (p, t) in pts.iter().zip(tc) {
                         ctx.push_vertex(*p, t);
                     }
                     ctx.push_triangle(i, i + 1, i + 2);
                     ctx.push_triangle(i, i + 2, i + 3);
-                    ctx.commit(clip, Brush::Solid(*color), CommandTexture::Texture(texture.clone()), material, None);
+                }
+                DrawOp::Frame { texture } => {
+                    flush!();
+                    // render targets are stored bottom-up: V runs from 1 to 0
+                    let tc = [Vector2::new(0.0, 1.0), Vector2::new(1.0, 1.0), Vector2::new(1.0, 0.0), Vector2::new(0.0, 0.0)];
+                    ctx.push_rect_filled(&Rect::new(0.0, 0.0, full.w(), full.h()), Some(&tc));
+                    let opaque = crate::renderscale::frame_material();
+                    ctx.commit(full, Brush::Solid(Color::WHITE), CommandTexture::Texture(texture.clone()), &opaque, None);
                 }
                 DrawOp::Clip { rect } => {
+                    flush!();
                     clip = match rect {
                         // viewport is in screen pixels; the widget's clip bounds are too
                         Some(r) => {
@@ -360,6 +407,7 @@ impl Control for CanvasWidget {
                     };
                 }
                 DrawOp::Text { x, y, text, color, font } => {
+                    flush!();
                     let mut ft = FormattedTextBuilder::new(font.resource.clone())
                         .with_text(text.clone())
                         .with_font_size(font.size.into())
@@ -370,15 +418,16 @@ impl Control for CanvasWidget {
                     ctx.draw_text(clip, Vector2::new(*x, *y), material, &ft);
                 }
                 DrawOp::Rect { x, y, w, h, color, solid } => {
+                    batch!(*color, None);
                     let r = Rect::new(*x, *y, *w, *h);
                     if *solid {
                         ctx.push_rect_filled(&r, None);
                     } else {
                         ctx.push_rect(&r, 1.0);
                     }
-                    ctx.commit(clip, Brush::Solid(*color), CommandTexture::None, material, None);
                 }
                 DrawOp::Oval { x, y, w, h, color, solid } => {
+                    batch!(*color, None);
                     let (cx, cy, rx, ry) = (x + w / 2.0, y + h / 2.0, w / 2.0, h / 2.0);
                     let n = ((rx.max(ry) * 0.75) as usize).clamp(12, 128);
                     let pt = |i: usize| {
@@ -392,11 +441,10 @@ impl Control for CanvasWidget {
                             ctx.push_line(pt(i), pt(i + 1), 1.0);
                         }
                     }
-                    ctx.commit(clip, Brush::Solid(*color), CommandTexture::None, material, None);
                 }
                 DrawOp::Line { x1, y1, x2, y2, color } => {
+                    batch!(*color, None);
                     ctx.push_line(Vector2::new(*x1, *y1), Vector2::new(*x2, *y2), 1.0);
-                    ctx.commit(clip, Brush::Solid(*color), CommandTexture::None, material, None);
                 }
                 DrawOp::Image { x, y, w, h, uv, texture } => {
                     let tc = [
@@ -405,11 +453,12 @@ impl Control for CanvasWidget {
                         Vector2::new(uv.x() + uv.w(), uv.y() + uv.h()),
                         Vector2::new(uv.x(), uv.y() + uv.h()),
                     ];
+                    batch!(Color::WHITE, Some(texture));
                     ctx.push_rect_filled(&Rect::new(*x, *y, *w, *h), Some(&tc));
-                    ctx.commit(clip, Brush::Solid(Color::WHITE), CommandTexture::Texture(texture.clone()), material, None);
                 }
             }
         }
+        flush!();
         if pushed {
             ctx.transform_stack.pop();
         }

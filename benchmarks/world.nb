@@ -1,0 +1,118 @@
+; Large worlds: 40,000 objects in 100 chunks, of which only the chunks near
+; the camera are shown, the way a big game keeps its world in memory.
+Include "bench.nb"
+Graphics3D 1280, 720
+cam = BenchScene(0, 30, 0, 0, 0, 60)
+
+Const CHUNKS = 10        ; chunks along each side
+Const PER_SIDE = 20      ; objects along each side of a chunk
+Const SPACING# = 3.0
+Const CHUNK_SIZE# = PER_SIDE * SPACING
+
+Global proto = CreateCube()
+EntityColor proto, 150, 170, 120
+HideEntity proto
+
+Dim chunk(CHUNKS * CHUNKS)
+Dim shown(CHUNKS * CHUNKS)
+
+; one chunk: a pivot with its objects as children
+Function BuildChunk(cx, cz)
+    root = CreatePivot()
+    PositionEntity root, cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE
+    For i = 0 To PER_SIDE * PER_SIDE - 1
+        c = CopyEntity(proto, root)
+        ShowEntity c
+        PositionEntity c, (i Mod PER_SIDE) * SPACING, 0, (i / PER_SIDE) * SPACING
+        ScaleEntity c, 1, 1 + (i * 7 + cx * 3 + cz) Mod 5, 1
+    Next
+    HideEntity root
+    Return root
+End Function
+
+t = MilliSecs()
+For cz = 0 To CHUNKS - 1
+    For cx = 0 To CHUNKS - 1
+        chunk(cz * CHUNKS + cx) = BuildChunk(cx, cz)
+    Next
+Next
+Report "world", "build a world of 40000 objects in 100 chunks", MilliSecs() - t, "ms"
+
+Report "world", "40000 objects in memory, none shown", MeasureFps(150, 10), "fps"
+
+; walk across the world, showing the 3 x 3 chunks around the camera
+t = MilliSecs()
+For f = 0 To 299
+    x# = 60 + f * 1.5
+    z# = 60 + f * 1.2
+    PositionEntity cam, x, 30, z
+    mx = Int(Floor(x / CHUNK_SIZE)) : mz = Int(Floor(z / CHUNK_SIZE))
+    For cz = 0 To CHUNKS - 1
+        For cx = 0 To CHUNKS - 1
+            near = Abs(cx - mx) <= 1 And Abs(cz - mz) <= 1
+            k = cz * CHUNKS + cx
+            If near <> shown(k)
+                shown(k) = near
+                If near Then ShowEntity chunk(k) Else HideEntity chunk(k)
+            EndIf
+        Next
+    Next
+    UpdateWorld
+    RenderWorld
+    Flip
+Next
+Report "world", "walking through it, 9 chunks (3600 objects) shown", 300000.0 / Max(1, MilliSecs() - t), "fps"
+
+; the same world with the far chunks stored (StoreEntity) instead of hidden:
+; stored objects are out of the scene and cost nothing each frame
+For k = 0 To CHUNKS * CHUNKS - 1
+    ShowEntity chunk(k)
+    StoreEntity chunk(k)
+    shown(k) = 0
+Next
+Report "world", "40000 objects stored, none in the scene", MeasureFps(150, 10), "fps"
+
+t = MilliSecs()
+For f = 0 To 299
+    x# = 60 + f * 1.5
+    z# = 60 + f * 1.2
+    PositionEntity cam, x, 30, z
+    mx = Int(Floor(x / CHUNK_SIZE)) : mz = Int(Floor(z / CHUNK_SIZE))
+    For cz = 0 To CHUNKS - 1
+        For cx = 0 To CHUNKS - 1
+            near = Abs(cx - mx) <= 1 And Abs(cz - mz) <= 1
+            k = cz * CHUNKS + cx
+            If near <> shown(k)
+                shown(k) = near
+                If near Then RestoreEntity chunk(k) Else StoreEntity chunk(k)
+            EndIf
+        Next
+    Next
+    UpdateWorld
+    RenderWorld
+    Flip
+Next
+Report "world", "walking through it, far chunks stored", 300000.0 / Max(1, MilliSecs() - t), "fps"
+
+t = MilliSecs()
+For i = 0 To 49
+    k = 50 + i
+    If shown(k) Then StoreEntity chunk(k) Else RestoreEntity chunk(k)
+    shown(k) = 1 - shown(k)
+Next
+Report "world", "store or restore a chunk of 400 objects (each)", (MilliSecs() - t) / 50.0, "ms"
+
+; streaming: a chunk leaves memory and another one is built
+t = MilliSecs()
+For i = 0 To 19
+    FreeEntity chunk(i)
+    chunk(i) = BuildChunk(i Mod CHUNKS, i / CHUNKS)
+Next
+Report "world", "free a chunk of 400 objects and build another (each)", (MilliSecs() - t) / 20.0, "ms"
+
+t = MilliSecs()
+For k = 0 To CHUNKS * CHUNKS - 1
+    FreeEntity chunk(k)
+Next
+Report "world", "free the whole world", MilliSecs() - t, "ms"
+End

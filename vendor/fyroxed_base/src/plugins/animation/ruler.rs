@@ -1,0 +1,497 @@
+// Copyright (c) 2019-present Dmitry Stepanov and Fyrox Engine contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+use crate::fyrox::graph::SceneGraph;
+use crate::fyrox::{
+    core::{
+        algebra::{Point2, Vector2},
+        math::Rect,
+        pool::Handle,
+        reflect::prelude::*,
+        type_traits::prelude::*,
+        uuid_provider,
+        visitor::prelude::*,
+    },
+    gui::{
+        define_widget_deref,
+        draw::{CommandTexture, Draw, DrawingContext},
+        formatted_text::{FormattedText, FormattedTextBuilder},
+        menu::MenuItemMessage,
+        message::{MessageDirection, MouseButton, UiMessage},
+        popup::PopupBuilder,
+        popup::{Placement, PopupMessage},
+        stack_panel::StackPanelBuilder,
+        widget::{Widget, WidgetBuilder, WidgetMessage},
+        BuildContext, Control, RcUiNodeHandle, UiNode, UserInterface,
+    },
+};
+use crate::menu::create_menu_item;
+
+use fyrox::gui::curve::{CurveTransformCell, STANDARD_GRID_SIZE};
+use fyrox::gui::menu::{ContextMenuBuilder, MenuItem};
+use fyrox::gui::message::MessageData;
+use fyrox::gui::style::resource::StyleResourceExt;
+use fyrox::gui::style::Style;
+use std::{
+    cell::{Cell, RefCell},
+    fmt::{Debug, Formatter},
+};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RulerMessage {
+    Zoom(f32),
+    ViewPosition(f32),
+    Value(f32),
+    AddSignal(f32),
+    RemoveSignal(Uuid),
+    SyncSignals(Vec<SignalView>),
+    MoveSignal { id: Uuid, new_position: f32 },
+    SelectSignal(Uuid),
+}
+impl MessageData for RulerMessage {}
+
+#[derive(Clone)]
+struct ContextMenu {
+    menu: RcUiNodeHandle,
+    add_signal: Handle<MenuItem>,
+    remove_signal: Handle<MenuItem>,
+    selected_position: Cell<f32>,
+}
+
+impl ContextMenu {
+    pub const ADD_SIGNAL: Uuid = uuid!("c207c481-bc18-4c4b-86aa-2881eaa61e92");
+    pub const REMOVE_SIGNAL: Uuid = uuid!("0b272e64-1015-4f29-918b-8e9a12e9fffd");
+
+    fn new(ctx: &mut BuildContext) -> Self {
+        let add_signal;
+        let remove_signal;
+        let menu = ContextMenuBuilder::new(
+            PopupBuilder::new(WidgetBuilder::new().with_visibility(false))
+                .with_content(
+                    StackPanelBuilder::new(
+                        WidgetBuilder::new()
+                            .with_child({
+                                add_signal =
+                                    create_menu_item("Add Signal", Self::ADD_SIGNAL, vec![], ctx);
+                                add_signal
+                            })
+                            .with_child({
+                                remove_signal = create_menu_item(
+                                    "Remove Signal",
+                                    Self::REMOVE_SIGNAL,
+                                    vec![],
+                                    ctx,
+                                );
+                                remove_signal
+                            }),
+                    )
+                    .build(ctx),
+                )
+                .with_restrict_picking(false),
+        )
+        .build(ctx);
+        let menu = RcUiNodeHandle::new(menu, ctx.sender());
+
+        Self {
+            menu,
+            add_signal,
+            remove_signal,
+            selected_position: Cell::new(0.0),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SignalView {
+    pub id: Uuid,
+    pub time: f32,
+    pub selected: bool,
+}
+
+impl SignalView {
+    fn screen_bounds(&self, ruler: &Ruler) -> Rect<f32> {
+        let view_x = ruler.local_to_view(self.time);
+        let view_y = ruler.bounding_rect().size.y - SignalView::SIZE;
+
+        let min = ruler
+            .visual_transform()
+            .transform_point(&Point2::new(view_x - SignalView::SIZE * 0.5, view_y))
+            .coords;
+        let max = ruler
+            .visual_transform()
+            .transform_point(&Point2::new(
+                view_x + SignalView::SIZE * 0.5,
+                ruler.bounding_rect().size.y,
+            ))
+            .coords;
+
+        Rect::new(min.x, min.y, max.x - min.x, max.y - min.y)
+    }
+}
+
+impl SignalView {
+    const SIZE: f32 = 10.0;
+}
+
+#[derive(Clone)]
+enum DragEntity {
+    TimePosition,
+    Signal(Uuid),
+}
+
+#[derive(Clone)]
+struct DragContext {
+    entity: DragEntity,
+}
+
+#[derive(Clone, Visit, Reflect, ComponentProvider)]
+#[reflect(derived_type = "UiNode")]
+pub struct Ruler {
+    widget: Widget,
+    #[visit(skip)]
+    #[reflect(hidden)]
+    transform: CurveTransformCell,
+    #[visit(skip)]
+    #[reflect(hidden)]
+    text: RefCell<FormattedText>,
+    value: f32,
+    #[visit(skip)]
+    #[reflect(hidden)]
+    drag_context: Option<DragContext>,
+    #[visit(skip)]
+    #[reflect(hidden)]
+    signals: RefCell<Vec<SignalView>>,
+    #[visit(skip)]
+    #[reflect(hidden)]
+    context_menu: ContextMenu,
+}
+
+impl Debug for Ruler {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Ruler")
+    }
+}
+
+define_widget_deref!(Ruler);
+
+impl Ruler {
+    fn local_to_view(&self, x: f32) -> f32 {
+        self.transform
+            .curve_to_local()
+            .transform_point(&Point2::new(x, 0.0))
+            .x
+    }
+
+    #[allow(unused)]
+    fn view_to_local(&self, x: f32) -> f32 {
+        self.transform
+            .local_to_curve()
+            .transform_point(&Point2::new(x, 0.0))
+            .x
+    }
+
+    fn screen_to_value_space(&self, x: f32) -> f32 {
+        self.transform
+            .screen_to_curve()
+            .transform_point(&Point2::new(x, 0.0))
+            .x
+    }
+}
+
+uuid_provider!(Ruler = "98655c9b-428f-4977-a478-ad3674cc66d4");
+
+impl Control for Ruler {
+    fn draw(&self, ctx: &mut DrawingContext) {
+        self.transform.set_bounds(self.screen_bounds());
+        self.transform.update_transform();
+        let local_bounds = self.bounding_rect();
+
+        // Add clickable rectangle first.
+        ctx.push_rect_filled(&local_bounds, None);
+        ctx.commit(
+            self.clip_bounds(),
+            self.background(),
+            CommandTexture::None,
+            &self.material,
+            None,
+        );
+
+        // Then draw the rest.
+        for x in self.transform.x_step_iter(STANDARD_GRID_SIZE) {
+            ctx.push_line(
+                Vector2::new(x, local_bounds.size.y * 0.5),
+                Vector2::new(x, local_bounds.size.y),
+                1.0,
+            );
+        }
+        ctx.commit(
+            self.clip_bounds(),
+            self.foreground(),
+            CommandTexture::None,
+            &self.material,
+            None,
+        );
+
+        // Draw values.
+        let mut text = self.text.borrow_mut();
+
+        for x in self.transform.x_step_iter(STANDARD_GRID_SIZE) {
+            text.set_text(format!("{x:.1}s")).measure_and_arrange();
+            let vx = self.local_to_view(x);
+            ctx.draw_text(
+                self.clip_bounds(),
+                Vector2::new(vx + 1.0, 0.0),
+                &self.material,
+                &text,
+            );
+        }
+
+        // Draw signals.
+        for signal in self.signals.borrow().iter() {
+            let size = SignalView::SIZE;
+            let x = self.local_to_view(signal.time);
+
+            ctx.push_triangle_filled([
+                Vector2::new(x - size * 0.5, local_bounds.h() - size),
+                Vector2::new(x + size * 0.5, local_bounds.h() - size),
+                Vector2::new(x, local_bounds.h()),
+            ]);
+            let brush = if signal.selected {
+                ctx.style.get_or_default(Style::BRUSH_BRIGHT_BLUE)
+            } else {
+                ctx.style.get_or_default(Style::BRUSH_DIM_BLUE)
+            };
+            ctx.commit(
+                self.clip_bounds(),
+                brush,
+                CommandTexture::None,
+                &self.material,
+                None,
+            );
+        }
+    }
+
+    fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
+        self.widget.handle_routed_message(ui, message);
+
+        if let Some(msg) = message.data_for::<RulerMessage>(self.handle) {
+            match msg {
+                RulerMessage::Zoom(zoom) => {
+                    self.transform.set_scale(Vector2::new(*zoom, 1.0));
+                    self.invalidate_visual();
+                }
+                RulerMessage::ViewPosition(position) => {
+                    self.transform.set_position(Vector2::new(*position, 0.0));
+                    self.invalidate_visual();
+                }
+                RulerMessage::Value(value) => {
+                    if value.ne(&self.value) {
+                        self.value = *value;
+                        ui.try_send_response(message);
+                        self.invalidate_visual();
+                    }
+                }
+                RulerMessage::AddSignal(_)
+                | RulerMessage::RemoveSignal(_)
+                | RulerMessage::MoveSignal { .. }
+                | RulerMessage::SelectSignal(_) => {
+                    // Do nothing. These messages are only for output.
+                }
+                RulerMessage::SyncSignals(signals) => {
+                    self.signals.borrow_mut().clone_from(signals);
+                    self.invalidate_visual();
+                }
+            }
+        } else if let Some(msg) = message.data::<WidgetMessage>() {
+            if message.direction() == MessageDirection::FromWidget {
+                match msg {
+                    WidgetMessage::MouseDown { pos, button } => {
+                        if *button == MouseButton::Left {
+                            ui.capture_mouse(self.handle);
+
+                            for signal in self.signals.borrow_mut().iter_mut() {
+                                signal.selected = false;
+
+                                let bounds = signal.screen_bounds(self);
+
+                                if self.drag_context.is_none() && bounds.contains(*pos) {
+                                    signal.selected = true;
+                                    self.drag_context = Some(DragContext {
+                                        entity: DragEntity::Signal(signal.id),
+                                    });
+
+                                    ui.post(self.handle, RulerMessage::SelectSignal(signal.id));
+                                }
+
+                                self.invalidate_visual();
+                            }
+
+                            if self.drag_context.is_none() {
+                                ui.send(
+                                    self.handle,
+                                    RulerMessage::Value(self.screen_to_value_space(pos.x)),
+                                );
+
+                                self.drag_context = Some(DragContext {
+                                    entity: DragEntity::TimePosition,
+                                });
+                            }
+                        }
+                    }
+                    WidgetMessage::MouseUp { button, pos } => {
+                        if *button == MouseButton::Left {
+                            ui.release_mouse_capture();
+
+                            if let Some(drag_context) = self.drag_context.take() {
+                                if let DragEntity::Signal(id) = drag_context.entity {
+                                    if let Some(signal) =
+                                        self.signals.borrow_mut().iter_mut().find(|s| s.id == id)
+                                    {
+                                        signal.selected = false;
+
+                                        ui.post(
+                                            self.handle,
+                                            RulerMessage::MoveSignal {
+                                                id,
+                                                new_position: self.screen_to_value_space(pos.x),
+                                            },
+                                        );
+
+                                        self.invalidate_visual();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    WidgetMessage::MouseMove { pos, .. } => {
+                        if let Some(drag_context) = self.drag_context.as_ref() {
+                            match drag_context.entity {
+                                DragEntity::TimePosition => {
+                                    ui.send(
+                                        self.handle,
+                                        RulerMessage::Value(self.screen_to_value_space(pos.x)),
+                                    );
+                                }
+
+                                DragEntity::Signal(id) => {
+                                    if let Some(signal) =
+                                        self.signals.borrow_mut().iter_mut().find(|s| s.id == id)
+                                    {
+                                        signal.time = self.screen_to_value_space(pos.x);
+                                        self.invalidate_visual();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
+                };
+            }
+        }
+    }
+
+    fn preview_message(&self, ui: &UserInterface, message: &mut UiMessage) {
+        if let Some(MenuItemMessage::Click) = message.data() {
+            if message.destination() == self.context_menu.add_signal {
+                ui.post(
+                    self.handle,
+                    RulerMessage::AddSignal(self.context_menu.selected_position.get()),
+                );
+            } else if message.destination() == self.context_menu.remove_signal {
+                for signal in self.signals.borrow().iter() {
+                    if signal
+                        .screen_bounds(self)
+                        .contains(ui.node(self.context_menu.menu.handle()).screen_position())
+                    {
+                        ui.post(self.handle, RulerMessage::RemoveSignal(signal.id));
+                        break; // No multi-selection
+                    }
+                }
+            }
+        } else if let Some(PopupMessage::Placement(Placement::Cursor(_))) = message.data() {
+            self.context_menu
+                .selected_position
+                .set(self.screen_to_value_space(ui.cursor_position().x));
+
+            let can_remove = self
+                .signals
+                .borrow()
+                .iter()
+                .any(|signal| signal.screen_bounds(self).contains(ui.cursor_position()));
+
+            ui.send(
+                self.context_menu.remove_signal,
+                WidgetMessage::Enabled(can_remove),
+            );
+        }
+    }
+}
+
+pub struct RulerBuilder {
+    widget_builder: WidgetBuilder,
+    value: f32,
+}
+
+impl RulerBuilder {
+    pub fn new(widget_builder: WidgetBuilder) -> Self {
+        Self {
+            widget_builder,
+            value: 0.0,
+        }
+    }
+
+    pub fn with_value(mut self, value: f32) -> Self {
+        self.value = value;
+        self
+    }
+
+    pub fn build(self, ctx: &mut BuildContext) -> Handle<Ruler> {
+        let context_menu = ContextMenu::new(ctx);
+
+        let ruler = Ruler {
+            widget: self
+                .widget_builder
+                .with_preview_messages(true)
+                .with_context_menu(context_menu.menu.clone())
+                .with_background(ctx.style.property(Style::BRUSH_DARKER))
+                .with_foreground(ctx.style.property(Style::BRUSH_LIGHTER))
+                .build(ctx),
+            transform: Default::default(),
+            text: RefCell::new(FormattedTextBuilder::new(ctx.default_font()).build()),
+            value: self.value,
+            drag_context: None,
+            signals: Default::default(),
+            context_menu,
+        };
+
+        ctx.add(ruler)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::plugins::animation::ruler::RulerBuilder;
+    use fyrox::{gui::test::test_widget_deletion, gui::widget::WidgetBuilder};
+
+    #[test]
+    fn test_deletion() {
+        test_widget_deletion(|ctx| RulerBuilder::new(WidgetBuilder::new()).build(ctx));
+    }
+}

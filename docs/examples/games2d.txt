@@ -222,9 +222,17 @@ FreeAnim2D anim                ; frees the animation, not the image
 FreeImage frames
 
 === Physics2DGravity
+; a ball dropping onto a floor under 600 pixels per second squared of gravity
 Graphics 640, 480
-; gravity of 600 pixels per second squared, pulling down (Y down)
 Physics2DGravity 0, 600
+floor = CreateBody2D(1, 320, 460) : Body2DBox floor, 640, 40
+ball = CreateBody2D(0, 320, 50) : Body2DCircle ball, 16
+While Not KeyHit(1)
+    UpdateWorld
+    Cls
+    Oval Body2DX(ball) - 16, Body2DY(ball) - 16, 32, 32
+    Flip
+Wend
 
 === Physics2DScale
 Graphics 640, 480
